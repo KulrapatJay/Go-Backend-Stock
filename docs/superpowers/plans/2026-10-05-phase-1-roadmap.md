@@ -71,7 +71,7 @@
 - [x] เพิ่ม health endpoint annotations และคำสั่ง swag init ของโปรเจกต์เพื่อ generate docs.go/swagger.json/swagger.yaml ลง docs/api/
 - [x] เปิด /docs, /swagger.json และ /swagger.yaml ผ่าน Go API; ใน CI generate ซ้ำ/ตรวจ generated diff และ validate spec พร้อมระบุ endpoints ที่ยังไม่พร้อม
 - [x] สร้าง local bootstrap (`deploy/local/initdb/`) สำหรับ roles และ schema `app` แล้วรัน goose ด้วย `-table app.goose_db_version` พร้อม baseline migration เพื่อทดสอบ migrate service; พิสูจน์ว่า goose รองรับชื่อตารางแบบ schema-qualified และไม่มีตารางใดถูกสร้างใน `public`; ตารางธุรกิจเพิ่มใน milestone 3
-- [x] ตั้ง CI เริ่มต้นสำหรับ Go vet/lint/test, API image build และ Swagger checks; เพิ่ม sqlc consistency และ repository tests ใน milestone 3 โดยยังไม่มี web jobs (เขียน workflow และตรวจ syntax ด้วย actionlint แล้ว; ขั้นตอนเทียบเท่าทั้งหมดรันผ่านในเครื่องด้วย `make check` และ `make test-integration`; **CI บน GitHub จะตรวจจริงเมื่อสร้าง remote repository แล้ว** และยังไม่เคยรันบน GitHub)
+- [x] ตั้ง CI เริ่มต้นสำหรับ Go vet/lint/test, API image build และ Swagger checks; เพิ่ม sqlc consistency และ repository tests ใน milestone 3 โดยยังไม่มี web jobs (เขียน workflow และตรวจ syntax ด้วย actionlint แล้ว; ขั้นตอนเทียบเท่าทั้งหมดรันผ่านในเครื่องด้วย `make check` และ `make test-integration`; **ผู้ใช้ยืนยันแล้ว (2026-10-15) ว่า CI บน GitHub ผ่าน** หลังสร้าง remote repository)
 - [x] บันทึกวิธีเปิดระบบด้วย `cp .env.example .env && docker compose up --build` และวิธีดู application log
 
 **ผ่านเมื่อ:** เปิด backend stack ได้โดยไม่มี web service, migration จบก่อน API เริ่ม, health/readiness และ Swagger UI ใช้งานได้, API image build และ checks ที่ตั้งไว้ผ่าน ยังไม่อ้างว่า auth/พอร์ตใช้งานได้ใน milestone นี้
