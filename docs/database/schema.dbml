@@ -1,0 +1,308 @@
+  // Paste this entire file into https://dbdiagram.io
+  // Source: docs/superpowers/specs/2026-10-05-phase-1-design.md
+  // DBML syntax: https://dbml.dbdiagram.io/docs/
+  // Design proposal only. Goose migrations remain the schema deployment source.
+
+  Project stock_portfolio {
+    database_type: 'PostgreSQL'
+    Note: '''
+      Phase 1 backend. Private app schema; Supabase Database only.
+      UUIDv7 IDs and timestamps are supplied by the Go application.
+      IDs are references, not secrets; tokens use separate crypto/rand values.
+      Monetary values use numeric(28,10); API values are decimal strings.
+      Holdings are calculated from transactions, not stored in a table.
+      PostgreSQL-specific migration requirements are documented in table notes.
+      Bootstrap (not goose) creates the roles and schema app owned by app_migrator.
+      goose runs with -table app.goose_db_version; nothing is created in public.
+    '''
+  }
+
+  Table app.users {
+    id uuid [pk, not null]
+    email varchar(254) [not null, unique, note: 'Trim and lowercase; preserve dots and plus suffixes.']
+    password_hash text [null, note: 'Argon2id PHC string; NULL for Google-only accounts. Selected only by login/register/reset queries.']
+    email_verified_at timestamptz [null, note: 'NULL until email OTP confirm, successful password reset, or Google email_verified signup. Never reset to NULL.']
+    created_at timestamptz [not null]
+    updated_at timestamptz [not null]
+
+    checks {
+      `email = lower(btrim(email)) AND length(email) > 0` [name: 'users_email_normalized']
+    }
+
+    Note: 'A Google-only user and its auth_provider must be created atomically. No account deletion in phase 1.'
+  }
+
+  Table app.auth_providers {
+    id uuid [pk, not null]
+    user_id uuid [not null]
+    provider text [not null]
+    provider_subject varchar(255) [not null, note: 'Google sub (max 255 chars); email is not the provider identity.']
+    created_at timestamptz [not null]
+
+    indexes {
+      (provider, provider_subject) [unique]
+      (user_id, provider) [unique]
+    }
+
+    checks {
+      `provider = 'google'` [name: 'auth_providers_provider_allowed']
+    }
+  }
+
+  Table app.sessions {
+    id uuid [pk, not null]
+    user_id uuid [not null]
+    token_hash bytea [not null, unique, note: 'SHA-256 of random session token; never store the raw token.']
+    created_at timestamptz [not null]
+    expires_at timestamptz [not null, note: 'Absolute lifetime: 7 days.']
+    revoked_at timestamptz [null]
+    revoke_reason text [null]
+
+    indexes {
+      (user_id, expires_at)
+      expires_at
+    }
+
+    checks {
+      `expires_at > created_at` [name: 'sessions_expiry_valid']
+      `octet_length(token_hash) = 32` [name: 'sessions_hash_length']
+      `(revoked_at IS NULL) = (revoke_reason IS NULL)` [name: 'sessions_revoke_pair']
+      `revoke_reason IN ('logout', 'password_reset')` [name: 'sessions_revoke_reason_allowed']
+    }
+  }
+
+  Table app.portfolios {
+    id uuid [pk, not null]
+    user_id uuid [not null]
+    name varchar(100) [not null]
+    description varchar(1000) [not null, default: '']
+    currency char(3) [not null]
+    version integer [not null, default: 1, note: 'Optimistic locking for name/description; exposed as ETag, required via If-Match on PUT/DELETE.']
+    created_at timestamptz [not null]
+    updated_at timestamptz [not null]
+
+    indexes {
+      (user_id, created_at, id)
+      (user_id, `lower(name)`) [unique, name: 'portfolios_user_name_unique', note: 'Case-insensitive unique name per user.']
+    }
+
+    checks {
+      `name = btrim(name) AND length(name) > 0` [name: 'portfolios_name_trimmed']
+      `currency = 'USD'` [name: 'portfolios_currency_usd']
+      `version > 0` [name: 'portfolios_version_positive']
+    }
+
+    Note: 'Lock this row before mutations. Delete only when no transactions remain. Currency is immutable.'
+  }
+
+  Table app.instruments {
+    id uuid [pk, not null, note: 'Surrogate key: symbols can change (FB -> META) and tickers can be reused.']
+    symbol varchar(15) [not null, unique, note: 'Current uppercase ticker, e.g. AAPL, BRK.B. Phase 1: unique across the table.']
+    provider_asset_id varchar(64) [null, note: 'Stable provider ID (Alpaca asset id); required when source = alpaca.']
+    name varchar(200) [not null, note: 'Company/fund name from the provider, e.g. Apple Inc.']
+    exchange varchar(20) [not null, note: 'e.g. NASDAQ, NYSE, ARCA.']
+    asset_class text [not null]
+    status text [not null, note: 'Provider status at verified_at; inactive symbols remain usable for historical trades.']
+    source text [not null, note: 'demo rows exist only in dev/test.']
+    verified_at timestamptz [not null, note: 'Last time the provider confirmed this symbol. No background refresh in phase 1.']
+    created_at timestamptz [not null]
+    updated_at timestamptz [not null]
+
+    indexes {
+      (source, provider_asset_id) [unique, name: 'instruments_provider_asset_unique']
+    }
+
+    checks {
+      `symbol ~ '^[A-Z][A-Z0-9.-]{0,14}$'` [name: 'instruments_symbol_format']
+      `source = 'demo' OR provider_asset_id IS NOT NULL` [name: 'instruments_provider_asset_required']
+      `asset_class = 'us_equity'` [name: 'instruments_asset_class_allowed']
+      `status IN ('active', 'inactive')` [name: 'instruments_status_allowed']
+      `source IN ('alpaca', 'demo')` [name: 'instruments_source_allowed']
+    }
+
+    Note: '''
+      Shared market reference data, not user data. Rows are never deleted.
+      Looked up before the portfolio lock; inserted/updated in the same DB
+      transaction as the trade that first uses the symbol.
+    '''
+  }
+
+  Table app.transactions {
+    id uuid [pk, not null]
+    portfolio_id uuid [not null]
+    sequence bigint [not null, unique, increment, note: 'Migration: GENERATED ALWAYS AS IDENTITY; immutable tie-breaker.']
+    instrument_id uuid [not null, note: 'FK to instruments.id; API accepts and returns the symbol.']
+    side text [not null]
+    quantity numeric(28,10) [not null]
+    price numeric(28,10) [not null]
+    fee numeric(28,10) [not null]
+    executed_at timestamptz [not null]
+    version integer [not null, default: 1, note: 'Optimistic locking; not incremented by idempotent replay.']
+    created_at timestamptz [not null]
+    updated_at timestamptz [not null]
+
+    indexes {
+      (portfolio_id, instrument_id, executed_at, sequence)
+      (portfolio_id, executed_at, sequence)
+    }
+
+    checks {
+      `side IN ('buy', 'sell')` [name: 'transactions_side_allowed']
+      `quantity > 0 AND quantity < 'Infinity'::numeric` [name: 'transactions_quantity_valid']
+      `price > 0 AND price < 'Infinity'::numeric` [name: 'transactions_price_valid']
+      `fee >= 0 AND fee < 'Infinity'::numeric` [name: 'transactions_fee_valid']
+      `executed_at >= '1970-01-01T00:00:00Z'::timestamptz` [name: 'transactions_executed_at_min']
+      `version > 0` [name: 'transactions_version_positive']
+    }
+
+    Note: 'Replay by executed_at ASC, sequence ASC. Go rejects future executed_at via Clock and excess precision before insertion and rejects any history with negative holdings. No transfer between portfolios.'
+  }
+
+  Table app.otp_challenges {
+    id uuid [pk, not null]
+    user_id uuid [not null]
+    purpose text [not null, note: 'email_verification or password_reset; included in the OTP HMAC.']
+    otp_hash bytea [not null, note: 'HMAC-SHA-256 bound to purpose, challenge and user; no raw OTP.']
+    created_at timestamptz [not null]
+    expires_at timestamptz [not null, note: '10-minute lifetime.']
+    failed_attempts smallint [not null, default: 0, note: 'Configured limit defaults to 5; config must be 1..20 (DB ceiling).']
+    consumed_at timestamptz [null]
+    invalidated_at timestamptz [null]
+
+    indexes {
+      (user_id, purpose, created_at)
+      expires_at
+    }
+
+    checks {
+      `purpose IN ('email_verification', 'password_reset')` [name: 'otp_challenges_purpose_allowed']
+      `expires_at > created_at` [name: 'otp_challenges_expiry_valid']
+      `failed_attempts BETWEEN 0 AND 20` [name: 'otp_challenges_attempts_valid']
+      `octet_length(otp_hash) = 32` [name: 'otp_challenges_hash_length']
+    }
+
+    Note: '''
+      Goose must add a partial UNIQUE index on (user_id, purpose)
+      WHERE consumed_at IS NULL AND invalidated_at IS NULL:
+      one open challenge per user per flow.
+      Every query filters by purpose. Invalidate the previous open
+      challenge of the same purpose before inserting a new one.
+      email_verification rows exist only for unverified local accounts.
+    '''
+  }
+
+  Table app.oauth_flows {
+    id uuid [pk, not null]
+    purpose text [not null]
+    user_id uuid [null, note: 'Set only for account linking.']
+    state_hash bytea [not null, unique]
+    nonce_hash bytea [not null]
+    browser_binding_hash bytea [not null, note: 'PKCE verifier is derived from HMAC(OIDC_SECRET, state + binding); not stored.']
+    created_at timestamptz [not null]
+    expires_at timestamptz [not null, note: '10-minute lifetime; consume once.']
+    consumed_at timestamptz [null]
+
+    indexes {
+      expires_at
+    }
+
+    checks {
+      `(purpose = 'login' AND user_id IS NULL) OR (purpose = 'link' AND user_id IS NOT NULL)` [name: 'oauth_flows_purpose_user_valid']
+      `expires_at > created_at` [name: 'oauth_flows_expiry_valid']
+      `octet_length(state_hash) = 32` [name: 'oauth_flows_state_hash_length']
+      `octet_length(nonce_hash) = 32` [name: 'oauth_flows_nonce_hash_length']
+      `octet_length(browser_binding_hash) = 32` [name: 'oauth_flows_binding_hash_length']
+    }
+  }
+
+  Table app.rate_limit_keys {
+    key_hash bytea [pk, not null, note: 'HMAC of scope + normalized email or trusted client IP.']
+    scope text [not null]
+    expires_at timestamptz [not null]
+    last_denial_audit_at timestamptz [null]
+
+    indexes {
+      expires_at
+    }
+
+    checks {
+      `scope IN ('login_email', 'login_ip', 'signup_ip', 'google_start_ip', 'email_verification_request_email', 'email_verification_request_ip', 'email_verification_confirm_ip', 'password_reset_request_email', 'password_reset_request_ip', 'password_reset_confirm_ip', 'instrument_lookup_user')` [name: 'rate_limit_keys_scope_allowed']
+    }
+
+    Note: 'Lock keys in key_hash order when admitting a request against multiple rolling-window limits. Do not store raw email or IP.'
+  }
+
+  Table app.rate_limit_events {
+    id bigint [pk, not null, increment, note: 'Migration: GENERATED ALWAYS AS IDENTITY.']
+    key_hash bytea [not null]
+    occurred_at timestamptz [not null]
+
+    indexes {
+      (key_hash, occurred_at)
+      occurred_at
+    }
+
+    Note: 'Persist admitted attempts so restarting the API does not reset quotas. Maintenance deletes expired events before unused keys.'
+  }
+
+  Table app.idempotency_keys {
+    portfolio_id uuid [not null]
+    user_id uuid [not null]
+    operation text [not null, note: 'Phase 1: transactions.create']
+    key varchar(128) [not null]
+    request_hash bytea [not null, note: 'Hash of normalized request fields.']
+    result jsonb [not null, note: 'Original transaction response snapshot; never cookies or tokens.']
+    created_at timestamptz [not null]
+    expires_at timestamptz [not null, note: '24 hours from the original creation.']
+
+    indexes {
+      (portfolio_id, user_id, operation, key) [pk, note: 'portfolio_id first so the FK check on portfolio delete uses this index.']
+      expires_at
+    }
+
+    checks {
+      `operation IN ('transactions.create')` [name: 'idempotency_keys_operation_allowed']
+      `expires_at > created_at` [name: 'idempotency_keys_expiry_valid']
+      `octet_length(result::text) <= 16384` [name: 'idempotency_keys_result_size']
+    }
+
+    Note: 'Commit with transaction mutation and audit. Same key/payload returns the original result; different payload conflicts. Check portfolio ownership in the same transaction.'
+  }
+
+  Table app.audit_events {
+    id uuid [pk, not null]
+    occurred_at timestamptz [not null]
+    event_type varchar(80) [not null]
+    actor_user_id uuid [null, note: 'Logical user reference; NULL for unauthenticated attempts. No FK.']
+    request_id uuid [not null]
+    session_id uuid [null, note: 'Logical session ID, not a token or token hash. No FK.']
+    target_type varchar(40) [not null]
+    target_id text [null, note: 'Logical target reference; survives deletion of the target.']
+    outcome text [not null]
+    reason_code varchar(80) [null]
+    metadata jsonb [not null, note: 'Allowlisted fields only; decimal values encoded as strings.']
+
+    indexes {
+      (actor_user_id, occurred_at)
+      occurred_at
+      request_id
+    }
+
+    checks {
+      `outcome IN ('success', 'failure', 'denied')` [name: 'audit_events_outcome_allowed']
+      `octet_length(metadata::text) <= 8192` [name: 'audit_events_metadata_size']
+    }
+
+    Note: 'Append-only for runtime role. No foreign keys to users, sessions or targets; no cascading deletion. Retain 90 days; cleanup uses a separate maintenance role.'
+  }
+
+  Ref: app.auth_providers.user_id > app.users.id [delete: restrict, update: no action]
+  Ref: app.sessions.user_id > app.users.id [delete: restrict, update: no action]
+  Ref: app.portfolios.user_id > app.users.id [delete: restrict, update: no action]
+  Ref: app.transactions.portfolio_id > app.portfolios.id [delete: restrict, update: no action]
+  Ref: app.transactions.instrument_id > app.instruments.id [delete: restrict, update: no action]
+  Ref: app.otp_challenges.user_id > app.users.id [delete: restrict, update: no action]
+  Ref: app.oauth_flows.user_id > app.users.id [delete: restrict, update: no action]
+  Ref: app.rate_limit_events.key_hash > app.rate_limit_keys.key_hash [delete: restrict, update: no action]
+  Ref: app.idempotency_keys.user_id > app.users.id [delete: restrict, update: no action]
+  Ref: app.idempotency_keys.portfolio_id > app.portfolios.id [delete: restrict, update: no action]

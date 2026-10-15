@@ -1,0 +1,218 @@
+# Phase 1 Implementation Plan — Roadmap
+
+> **For agentic workers:** เมื่อแบบระบบได้รับการยืนยันแล้ว ใช้ superpowers:executing-plans สำหรับการทำงานทีละส่วน หรือ superpowers:subagent-driven-development หากเลือกวิธีใช้ subagents ก่อนเริ่ม execution แตก milestone ที่กำลังทำเป็นแผนย่อยพร้อม interfaces และ tests ที่อ้างอิงแบบที่ยืนยันแล้ว
+
+**Goal:** สร้างเว็บ portfolio หุ้นสหรัฐฯ ที่สมัคร/login ได้ มีหลายพอร์ต บันทึกซื้อขาย คำนวณต้นทุนและกำไรขาดทุนด้วยราคาหน่วงเวลา พร้อม audit และเดโมที่เปิดผ่าน Docker ได้
+
+**Architecture:** Next.js เรียก Go API ซึ่งแยก core ออกจาก Fiber, PostgreSQL และผู้ให้บริการภายนอก ใช้ PostgreSQL ใน Docker สำหรับ local/CI และ Supabase เฉพาะ Database ตอน deploy Auth/OTP/session อยู่ใน Go; audit ของการเปลี่ยนข้อมูล commit พร้อมข้อมูลธุรกิจ
+
+**Tech Stack:** Go, Fiber, pgx, sqlc, goose, shopspring/decimal, PostgreSQL, Docker Compose, GitHub Actions, Alpaca, swaggo/swag + Swagger UI; เพิ่ม Next.js/TypeScript หลัง backend ผ่าน milestone 9
+
+**Spec:** [แบบระบบสำหรับตรวจยืนยัน](../specs/2026-10-05-phase-1-design.md) โดยยึดข้อกำหนดใน [AGENTS.md](../../../AGENTS.md)
+
+**Status:** ผู้ใช้ยืนยันให้เริ่มตามลำดับแล้ว จัดทำข้อเสนอ milestone 0 ใน spec ที่ลิงก์ด้านบนแล้ว ผู้ใช้ยืนยันข้อเสนอเดิมและเลื่อนหน้าหุ้นรายตัว/กราฟไปเฟสถัดไปแล้ว (2026-10-14) และยืนยันแบบ email verification, portfolio name uniqueness และกติการหัสผ่านแล้ว milestone 0 ผ่านการตรวจรับ ขั้นต่อไปคือ git init แล้วแตกแผนย่อยของ milestone 1 ยังไม่เริ่ม implementation
+
+## Global Constraints
+
+- หลายพอร์ตต่อผู้ใช้ตามขอบเขตข้างต้น ทุกพอร์ตใช้ USD และรองรับ fractional shares
+- Database ที่ deploy: Supabase PostgreSQL Free plan ใช้เฉพาะ Database ส่วน local development และ CI ใช้ PostgreSQL ใน Docker
+- Auth, Google OpenID Connect, OTP และ server-side sessions ยังคงพัฒนาใน Go ไม่ใช้ Supabase Auth
+- ห้ามใช้บริการเสียเงินในเฟสนี้
+- ประกอบ dependency (DI) ที่ main.go เท่านั้น ไม่ใช้ global state
+- ค่าที่ผู้ใช้บันทึก quantity, price และ fee ใช้ numeric(28,10); การหารสำหรับต้นทุนใช้ความละเอียด 28 ตำแหน่งหลังจุดทศนิยมและ round-half-even
+- อายุ session เริ่มต้น 7 วันแบบ absolute expiry; OTP 6 หลักหมดอายุใน 10 นาที กรอกผิดได้ไม่เกิน 5 ครั้งต่อ challenge
+- ขอ OTP ใหม่เว้นอย่างน้อย 60 วินาที ขอได้ไม่เกิน 5 ครั้งต่อชั่วโมงต่อบัญชี/อีเมล และ 20 ครั้งต่อชั่วโมงต่อ IP
+- Audit retention เริ่มต้น 90 วัน; แอปไม่มีสิทธิ์ UPDATE/DELETE audit และไม่ log secrets
+- แต่ละฟีเจอร์ต้องมี handler, audit และ tests ที่เกี่ยวข้องก่อนถือว่าเสร็จ
+- ทำ backend ถึง milestone 9 ให้ผ่านก่อนเริ่ม frontend ใน milestone 10; ไม่สร้าง Next.js skeleton, web Dockerfile/service หรือ web CI ล่วงหน้า
+- Swagger ใช้ Go handler/DTO annotations เป็นหลักแล้ว generate ด้วย swaggo/swag ลง docs/api/; ไม่แก้ generated spec ด้วยมือ
+- อัปเดต annotations, generated docs และ contract tests พร้อมแต่ละ endpoint
+- ข้อกำหนดทั้งหมดใน AGENTS.md ยังคงมีผล; รายการนี้ย้ำข้อกำหนดร่วม ไม่ได้ยกเลิกรายละเอียดที่ไม่ได้คัดลอกมา
+
+## Review Focus
+
+1. Cookie/CSRF/Google callback และ session revocation ถูกต้อง — ตรวจ HTTP/Swagger/browser ฝั่ง API ใน milestone 4 และ 9 แล้วตรวจซ้ำผ่าน Next.js same-origin routing ใน milestone 10
+2. แก้รายการย้อนหลังหรือส่งคำขอขายพร้อมกันแล้วไม่เกิดยอดติดลบ รวมถึงไม่กระทบอีกพอร์ต — ตรวจใน milestone 7
+3. ราคาเก่า/ไม่มีราคาไม่ทำให้แสดง unrealized P&L เป็นค่าที่ชวนเข้าใจผิด — ตรวจ API ใน milestone 8 และ 9 แล้วตรวจหน้าจอใน milestone 10
+4. Audit insert ล้มเหลวแล้วข้อมูลธุรกิจไม่สำเร็จแยกกัน แต่ failed login/OTP ยังมีบันทึก — ตรวจใน milestone 3, 4, 5 และ 7
+5. Local/CI ใช้ role/schema ตรงกับรูปแบบที่ deploy โดยไม่แตะ managed schemas หรือเปิดเผยข้อมูลผ่าน Supabase — ตรวจใน milestone 3 และ 11
+
+## ลำดับและเกณฑ์ตรวจรับ
+
+### 0. ออกแบบระบบให้ตรวจทานได้ก่อนลงมือ
+
+**ผลลัพธ์:** `docs/superpowers/specs/2026-10-05-phase-1-design.md`
+
+- [x] เสนอโครงไฟล์ รวม Docker/CI, ER diagram แบบข้อความ และ schema ของ users, auth_providers, sessions, portfolios, transactions, otp_challenges, audit_events, rate-limit state และ idempotency
+- [x] เสนอ ports พร้อม method signatures, domain errors, HTTP status mapping, API endpoints และรูปแบบ decimal strings/pagination
+- [x] ออกแบบ API contract รวม cookie/CSRF/errors/examples และวิธีเขียน Go annotations เพื่อ generate เอกสารด้วย swaggo/swag
+- [x] เสนอเวอร์ชัน generator, Fiber middleware, Swagger UI และ validator จากเอกสารทางการ เลือก Swagger 2.0 พร้อมข้อจำกัด cookie auth; generation/build/browser compatibility ต้องพิสูจน์ใน milestone 1
+- [x] กำหนดวิธีประสาน repositories ใน DB transaction เดียว พร้อมกติกา rollback, counters และ audit สำหรับผลล้มเหลว
+- [x] กำหนด Compose backend-only, runtime/migration/maintenance roles และออกแบบ same-origin routing ที่ frontend จะเชื่อมในภายหลัง โดยยังไม่สร้าง web
+- [x] เสนอ password hashing/parameters, tie-breaker ของ executed_at, อายุ idempotency, ขนาด audit metadata, IP masking และวิธี schedule cleanup ให้ตรวจพร้อมแบบ
+- [x] ระบุ timeframe/cutoff/stale policy ของราคา และยืนยันว่าหน้าหุ้นรายตัว/กราฟเลื่อนไปเฟสถัดไป (2026-10-14)
+- [x] ตรวจเวอร์ชันจากเอกสารทางการแล้ว pin เวอร์ชันที่จะใช้ และผู้ใช้ยืนยันข้อเสนอเดิม (2026-10-14)
+- [x] ผู้ใช้ยืนยันแบบ email verification (register ตอบ 202), portfolio name uniqueness และกติการหัสผ่าน (2026-10-14)
+- [x] ยืนยันการออกแบบเพื่ออนาคต: instruments surrogate key, optimistic locking, กติกา API/migration evolution, ADRs และ replay แบบ position events (2026-10-14); เขียน ADR ชุดแรกใน `docs/adr/`
+
+**ผ่านเมื่อ:** ผู้ใช้ตรวจโครงสร้าง/ข้อมูล/API ได้ครบ ไม่มีการเปลี่ยนขอบเขตที่ยังไม่ได้ตกลง และยืนยันแบบระบบแล้ว
+
+### 1. โครง Go + Docker/PostgreSQL + CI + application log + Swagger
+
+**แผนลงมือ:** [2026-10-14-milestone-1-backend-foundation.md](2026-10-14-milestone-1-backend-foundation.md)
+
+**ไฟล์หลัก:** `cmd/api/main.go`, `go.mod`, `internal/adapter/http/health.go`, `Dockerfile`, `docker-compose.yml`, `docker-compose.override.yml`, `.env.example`, `.gitignore`, `.dockerignore`, `.air.toml`, `.github/workflows/ci.yml`, `README.md`
+
+**เอกสาร API:** annotations ใน entrypoint/HTTP handlers/DTO, generated files ใน `docs/api/`, `internal/adapter/http/docs.go` และ Swagger UI assets ที่ bundle ใน API image
+
+- [ ] สร้าง Go API, config validation, JSON logger/request ID และ graceful shutdown โดยไม่สร้าง Next.js
+- [ ] เพิ่ม access-log/recover middleware และ error handler พร้อม tests ที่ตรวจ final status ของ success/error/panic และ secret redaction
+- [ ] สร้าง /healthz, /readyz และ Compose postgres/migrate/api/mailpit พร้อม Go hot reload และ non-root API image
+- [ ] เพิ่ม health endpoint annotations และคำสั่ง swag init ของโปรเจกต์เพื่อ generate docs.go/swagger.json/swagger.yaml ลง docs/api/
+- [ ] เปิด /docs, /swagger.json และ /swagger.yaml ผ่าน Go API; ใน CI generate ซ้ำ/ตรวจ generated diff และ validate spec พร้อมระบุ endpoints ที่ยังไม่พร้อม
+- [ ] สร้าง local bootstrap (`deploy/local/initdb/`) สำหรับ roles และ schema `app` แล้วรัน goose ด้วย `-table app.goose_db_version` พร้อม baseline migration เพื่อทดสอบ migrate service; พิสูจน์ว่า goose รองรับชื่อตารางแบบ schema-qualified และไม่มีตารางใดถูกสร้างใน `public`; ตารางธุรกิจเพิ่มใน milestone 3
+- [ ] ตั้ง CI เริ่มต้นสำหรับ Go vet/lint/test, API image build และ Swagger checks; เพิ่ม sqlc consistency และ repository tests ใน milestone 3 โดยยังไม่มี web jobs
+- [ ] บันทึกวิธีเปิดระบบด้วย `cp .env.example .env && docker compose up --build` และวิธีดู application log
+
+**ผ่านเมื่อ:** เปิด backend stack ได้โดยไม่มี web service, migration จบก่อน API เริ่ม, health/readiness และ Swagger UI ใช้งานได้, API image build และ checks ที่ตั้งไว้ผ่าน ยังไม่อ้างว่า auth/พอร์ตใช้งานได้ใน milestone นี้
+
+### 2. Domain + ports + กติกาข้อมูลพื้นฐาน
+
+**ไฟล์หลัก:** `internal/core/domain/{user,session,portfolio,transaction,money,price,audit,errors}.go`, `internal/core/port/` ตามรายชื่อและ signatures ที่ยืนยันใน milestone 0
+
+- [ ] สร้าง entities/value types และ validation สำหรับ quantity/price/fee, symbol, เวลา และ decimal strings
+- [ ] สร้าง service/repository/provider ports, Clock และขอบเขต atomic operations ตามแบบที่ยืนยัน
+- [ ] เพิ่ม unit tests สำหรับ precision/scale, ค่าติดลบ/ศูนย์ และค่าที่เกินช่วง โดยไม่ต้องใช้ DB หรือ Fiber
+
+**ผ่านเมื่อ:** core compile/test ได้เองและไม่มี import ของ Fiber, pgx, sqlc-generated code หรือ provider SDK
+
+### 3. Schema + goose + sqlc + repositories + audit persistence
+
+**ไฟล์หลัก:** `migrations/`, `sqlc.yaml`, `internal/adapter/postgres/queries/`, `internal/adapter/postgres/sqlc/`, `internal/adapter/postgres/` สำหรับ repository implementations/tests
+
+- [ ] เพิ่มตาราง constraints/indexes และ DB role permissions ตามแบบ รวม instruments (surrogate key) และ version columns; ไม่แก้ managed schema ของ Supabase; migration ใช้เลขลำดับต่อเนื่องและไม่แก้ไฟล์ที่รันแล้ว
+- [ ] เขียน SQL queries, generate sqlc, map numeric/domain types และทดสอบ repository กับ PostgreSQL จริง
+- [ ] สร้าง transaction coordination และ audit append/read พร้อม failure injection ที่พิสูจน์ว่า audit/data rollback ด้วยกัน
+- [ ] ทดสอบ runtime role แก้/ลบ audit ไม่ได้, maintenance cleanup จำกัดเฉพาะสิทธิ์ที่จำเป็น และ audit ไม่ถูก cascade ลบตามข้อมูลต้นทาง
+- [ ] เปิด CI ตรวจ goose บน DB ว่าง, repository integration tests และ `sqlc generate` ตามด้วย `git diff --exit-code`
+
+**ผ่านเมื่อ:** schema สร้างจากศูนย์ได้, generated code ไม่มี diff, role permissions ถูกต้อง และ integration tests ผ่านโดยไม่ใช้ Supabase จริง
+
+### 4. Auth + email verification + sessions + Google login + HTTP handlers
+
+**ไฟล์หลัก:** `internal/core/service/auth*.go`, `internal/core/service/otp*.go`, `internal/core/service/email_verification*.go`, `internal/adapter/http/auth*.go`, `internal/adapter/http/middleware/`, `internal/adapter/identity/`, `internal/adapter/mail/`
+
+- [ ] ทำ OTP generation/HMAC แบบมี purpose และ SMTP adapter ไป Mailpit ตั้งแต่ขั้นนี้ เพราะ signup ต้องยืนยันอีเมลก่อน login ได้
+- [ ] ทำ register ที่ตอบ 202 แบบเดียวกันทุกกรณี, confirm/resend รหัสยืนยันอีเมล และปฏิเสธ login ของบัญชีที่ยังไม่ยืนยันด้วย `email_not_verified`
+- [ ] ทำ email/password login/logout, current-user endpoint และ session authentication พร้อม expiry/revocation
+- [ ] เพิ่ม cookie, CSRF, Origin checks, login rate limit และ error mapping พร้อม audit ของผลสำเร็จ/ล้มเหลว
+- [ ] เพิ่ม Google OIDC, state/nonce validation, PKCE S256 และ explicit account linking; ปิด flow ชัดเจนเมื่อ config ไม่ครบ
+- [ ] login ของอีเมลที่ไม่มีบัญชี/บัญชี Google-only ตรวจกับ hash จำลองและตอบแบบเดียวกับรหัสผิด
+- [ ] ทำ password validator (ความยาว, ASCII, พิมพ์เล็ก/ใหญ่/อักขระพิเศษ, blocklist แบบ go:embed, ไม่มีส่วนของอีเมล) พร้อม unit tests ของทุก field reason
+- [ ] ทดสอบ fake identity provider, replayed callback, invalid audience/issuer, session หมดอายุ/revoked และการ rollback เมื่อ audit insert ล้มเหลว
+- [ ] เพิ่ม auth annotations/examples แล้ว generate เอกสารใหม่ ตรวจ Swagger UI/browser cookie/CSRF โดยไม่ลดความปลอดภัย พร้อม curl cookie-jar examples และขั้นตอน Google login สำหรับ flow ที่ UI ไม่รองรับ ทั้งหมดทดสอบได้โดยไม่ใช้ Next.js
+
+**ผ่านเมื่อ:** ทดสอบ flow สมัคร → ยืนยันอีเมลจาก Mailpit → login ผ่าน HTTP ได้ครบ, อีเมลซ้ำไม่เปิดเผยผ่าน response, logout แล้ว session เดิมเข้าถึง endpoint ที่ป้องกันไม่ได้, login ผิดยังมี audit และไม่มี secret ใน log; Google จริงตรวจเพิ่มเมื่อมี credentials ก่อนปล่อยระบบ
+
+### 5. Password reset + HTTP handlers
+
+**ไฟล์หลัก:** `internal/core/service/password_reset*.go`, `internal/adapter/http/password_reset*.go`
+
+- [ ] ใช้ OTP/Mailer จาก milestone 4 ทำ request/reset endpoints และตั้ง email_verified_at เมื่อ reset สำเร็จ
+- [ ] ทำ resend invalidation, cooldown และ account/IP limits ที่ไม่หายเมื่อ API restart
+- [ ] ทำ password update, OTP consume และ session revocation พร้อม audit ใน transaction เดียว โดยส่งอีเมลนอก transaction
+- [ ] ใช้ Clock fake ทดสอบ 10 นาที/60 วินาที/โควตาต่อชั่วโมง, กรอกผิด 5 ครั้ง, เลขศูนย์นำหน้า และ concurrent reset
+
+**ผ่านเมื่อ:** reset จากอีเมลใน Mailpit ได้ครั้งเดียว, session เก่าถูก revoke, กรอกผิดแล้ว counters/audit ยังคงอยู่ และ Google-only/unknown email ไม่เปิดเผยสถานะผ่าน response
+
+### 6. จัดการหลายพอร์ต + ownership + HTTP handlers
+
+**ไฟล์หลัก:** `internal/core/service/portfolio*.go`, `internal/adapter/http/portfolio*.go`
+
+- [ ] ทำสร้าง/รายการ/รายละเอียด/เปลี่ยนชื่อ/คำอธิบาย/ลบพอร์ต พร้อม audit; ชื่อพอร์ตซ้ำแบบไม่สนตัวพิมพ์ภายในผู้ใช้เดียวคืน 409 `portfolio_name_conflict` ส่วนต่างผู้ใช้ใช้ชื่อเดียวกันได้
+- [ ] ตรวจ ownership ทุกเส้นทาง และปฏิเสธการลบพอร์ตที่มี transactions
+- [ ] ส่ง ETag/version และบังคับ If-Match สำหรับ PUT/DELETE พร้อม HTTP tests ของ 428/412
+- [ ] ทดสอบด้วยผู้ใช้สองคนและหลายพอร์ตว่าการเดา ID ไม่ทำให้อ่านหรือแก้ข้อมูลข้ามผู้ใช้ได้
+
+**ผ่านเมื่อ:** ผู้ใช้คนเดียวมีหลายพอร์ตได้และขอบเขตสิทธิ์ถูกต้องทั้ง API/repository
+
+### 7. Transactions + replay validation + concurrency/idempotency
+
+**ไฟล์หลัก:** `internal/core/service/transaction*.go`, `internal/core/domain/position*.go`, `internal/adapter/http/transaction*.go`
+
+- [ ] ทำ InstrumentProvider port, demo adapter และ fake สำหรับ tests; ตรวจ symbol กับ instruments ก่อน แล้วเรียก provider นอก lock เมื่อยังไม่เคยตรวจ (unknown_symbol 422, provider ล่ม 503, rate limit `instrument_lookup_user`)
+- [ ] ทำ CRUD/list ซื้อขาย, decimal validation, stable chronological ordering และ audit before/after ตาม allowlist
+- [ ] ทำ replay จำนวนหุ้นและต้นทุนแบบ pure function ที่รับลำดับ position events (เฟส 1 มีแค่ trade) ตั้งแต่ขั้นนี้ เพราะการตรวจขายเกิน/แก้ย้อนหลังต้องใช้กติกาเดียวกับผลคำนวณพอร์ต
+- [ ] ล็อก portfolio ระหว่างอ่านประวัติ/ตรวจยอด/แก้รายการ/idempotency/audit และไม่ถือ lock ขณะเรียก external services
+- [ ] ทดสอบซื้อ/ขายเศษหุ้น, ขายบางส่วน/ทั้งหมด, ขายเกิน, แก้/ลบย้อนหลัง, เวลาเท่ากัน, เปลี่ยน symbol และพอร์ตแยกกัน
+- [ ] ทดสอบ concurrent sells, key เดิม/payload เดิม, key เดิม/payload ต่างกัน และ retry ที่ไม่เพิ่ม transaction, version หรือ success audit ซ้ำ
+- [ ] ทดสอบ If-Match ของ transaction update/delete (428/412) และว่าเปลี่ยน symbol แล้ว instrument_id ถูกต้อง
+
+**ผ่านเมื่อ:** บันทึกได้เฉพาะ symbol ที่ตรวจแล้ว, ประวัติหุ้นไม่ติดลบ ณ จุดใดหลัง mutation, concurrent requests ไม่ข้ามกติกา และ replay เป็นแหล่งคำนวณเดียวที่ milestone 8 ใช้ต่อ
+
+### 8. ราคาตัวอย่าง/Alpaca + holdings + realized/unrealized P&L
+
+**ไฟล์หลัก:** `internal/adapter/demo/`, `internal/adapter/alpaca/`, `internal/core/service/valuation*.go`, `internal/adapter/http/holding*.go`
+
+- [ ] เพิ่ม Alpaca InstrumentProvider ผ่าน Assets API พร้อม HTTP fixtures (พบ/ไม่พบ/inactive/ไม่ใช่ us_equity/timeout) และตรวจสิทธิ์ด้วยบัญชีจริงเมื่อมี credentials
+- [ ] เพิ่ม demo PriceProvider ที่ติดป้ายชัดเจน และ Alpaca adapter ตาม feed/cutoff ที่ยืนยัน โดยใช้ HTTP fixtures ใน tests
+- [ ] ใช้ replay จาก milestone 7 สรุป holdings/cost/realized P&L แล้วเติมราคาเพื่อคำนวณ market value/unrealized P&L
+- [ ] เพิ่ม batch/cache, timeout, bounded retry และ quote metadata ได้แก่ as_of/source/feed/fetched_at
+- [ ] ทดสอบ fees/rounding/full-sale residual, ตลาดปิด/วันหยุด, stale/missing price และ partial portfolio valuation
+- [ ] ตรวจ Alpaca จริงแบบ smoke test เมื่อมี credentials โดยไม่ทำให้ CI หรือโหมดเดโมพึ่งบริการจริง
+
+**ผ่านเมื่อ:** ผลคำนวณตรงตัวอย่างที่ตรวจด้วยมือ, ราคา unavailable ไม่ถูกแทนด้วยศูนย์, realized ยังดูได้เมื่อ provider ล้มเหลว และไม่มีการ fallback ไปข้อมูลเดโมเงียบ ๆ
+
+### 9. ตรวจ backend ทั้งระบบ + Swagger + คู่มือใช้งาน
+
+**ไฟล์หลัก:** `README.md`, `.github/workflows/ci.yml`, `docs/api/`, HTTP/integration tests และคำสั่ง maintenance cleanup ตามแบบที่ยืนยัน
+
+- [ ] ทดสอบ fresh clone/fresh DB ตาม README รวม failure ของ migrations, configuration และ external services โดยไม่ต้องมี Next.js
+- [ ] ตรวจ backend CI ครบ: Go vet/lint/tests, sqlc consistency, migrations, API Docker build และ Swagger generation/validation/contract checks
+- [ ] ตรวจ endpoint coverage, decimal/error schemas และตัวอย่างจาก annotations ให้ตรงกับ API จริง โดยไม่มี credentials ใน generated docs
+- [ ] ทดสอบ flow สมัคร → ยืนยันอีเมล → login → สร้างสองพอร์ต → ซื้อ/ขาย → ดูผล → logout และ reset password ผ่าน HTTP/Swagger/curl พร้อมตรวจ browser cookie/CSRF และ Google callback โดยไม่สร้าง frontend
+- [ ] ตรวจ provider adapters ด้วย fixtures/fakes และทำ smoke test ของ Google/Alpaca เมื่อมี credentials; แยกผลที่ตรวจจริงกับผลจำลองในคู่มือ และตรวจบริการจริงให้ครบก่อนเปิดใช้งานออนไลน์
+- [ ] ทดสอบ audit retention 90 วันด้วย maintenance role และวิธี schedule จริงที่เลือก พร้อมจำกัดขนาด/ปริมาณ logs
+- [ ] เพิ่มข้อมูลเดโม, architecture/ER diagram, API usage และ trade-offs ของ session, decimal, Supabase และ locking ใน README พร้อมลิงก์ ADRs; ตรวจว่า ADR ครอบคลุมการตัดสินใจที่เกิดระหว่าง milestones 1–8
+- [ ] ตั้ง backend required checks/branch protection และ CI badge เมื่อมี GitHub repository และสิทธิ์พร้อม
+
+**ผ่านเมื่อ:** API ขอบเขต backend ครบและผ่าน tests, เปิดเดโม/Swagger ตามคู่มือได้โดยไม่มี frontend, generated docs ตรงกับ API และไม่มีปัญหาที่ขวางการเชื่อมต่อ frontend จึงเริ่ม milestone 10
+
+### 10. เริ่ม Next.js และเชื่อม API ที่ผ่านการตรวจรับแล้ว
+
+**ไฟล์หลัก:** `web/` รวม `web/src/app/`, `web/src/components/`, `web/src/lib/`, `web/Dockerfile`, `docker-compose.yml`, `docker-compose.override.yml`, `.github/workflows/ci.yml`, `README.md`
+
+- [ ] สร้าง Next.js skeleton และ pin Node.js/dependencies เป็นครั้งแรกในขั้นนี้ พร้อม web Dockerfile แบบ multi-stage, service web และ web dev configuration
+- [ ] เพิ่ม web lint/typecheck/build, web image build และ npm cache ใน CI พร้อมเพิ่ม required checks เมื่อพร้อมใช้งานจริง
+- [ ] ออกแบบหน้าจอและ implement signup/login/reset, รายการพอร์ต, รายละเอียดพอร์ต และฟอร์มซื้อขายจาก API ที่ตรวจแล้ว
+- [ ] เชื่อม Go API ผ่าน same-origin routing; แสดง validation errors, loading/empty/error states และค่าตัวเลขที่ไม่ผ่าน float calculation
+- [ ] แสดงต้นทุน/P&L พร้อมที่มาและเวลาราคา รวมราคาเก่า/ไม่ครบ/เดโม และข้อจำกัด corporate actions
+- [ ] ทดสอบ browser flow สมัคร → ยืนยันอีเมล → login → สร้างสองพอร์ต → ซื้อ/ขาย → ดูผล → logout และ reset password พร้อม expired session/CSRF/Google redirect และ responsive layout
+- [ ] ตรวจ Swagger UI ผ่าน reverse proxy และอัปเดต README ให้คำสั่ง Compose เปิดทั้ง web/API ได้; ไม่ทำหน้าหุ้นรายตัว/กราฟในเฟสนี้ตามที่ยืนยันใน milestone 0
+- [ ] หากการเชื่อม frontend พบ API bug ให้แก้ backend พร้อม regression test/annotations/generated docs ไม่สร้าง business logic ซ้ำใน frontend
+
+**ผ่านเมื่อ:** ผู้ใช้ทำ flow หลักผ่าน UI ได้, web checks และ browser verification ผ่าน, backend checks ยังผ่าน และ Compose เปิดทั้งระบบได้ตามคู่มือ
+
+### 11. ตรวจทั้งระบบและ deploy + Supabase compatibility + recovery
+
+**ไฟล์หลัก:** deployment configuration/runbook, environment examples และ deployment workflow เมื่อเลือก hosting แล้ว
+
+- [ ] ตรวจ release จาก clean environment พร้อม backend/frontend CI และ end-to-end flow ทั้งระบบก่อน deploy
+- [ ] เลือก hosting web/API ที่รักษาเงื่อนไขฟรี ตรวจ same-origin routing และการส่งอีเมลจริง
+- [ ] ตั้ง Supabase Database, private schema/Data API settings, roles และ TLS โดยไม่ใช้ Supabase Auth
+- [ ] รัน migrations ด้วย migration role และตรวจ API queries/permissions ด้วย runtime role; CI ปกติยังใช้ local PostgreSQL
+- [ ] ตั้ง Google redirect URI, Alpaca และอีเมลจริงผ่าน secrets ของแต่ละ environment แล้วตรวจ flow จริงครบก่อนเปิดให้ใช้
+- [ ] กำหนด docs/Try it out config และ public base URL ให้ตรง deployment พร้อมตรวจว่า /docs โหลด assets/spec ได้
+- [ ] ตรวจ /healthz, /readyz และ business smoke test; ทดลอง backup/restore ใน DB แยกและระบุวิธีกู้คืนเมื่อ deploy ล้มเหลว
+- [ ] ทำ GHCR image tag ตาม SHA และ CD ขั้นต่อไปเมื่อถึงขอบเขตนั้น โดยใช้ migrations ที่เข้ากันได้กับเวอร์ชันก่อนหน้า ไม่สมมติว่าการ rollback image จะ rollback DB ด้วย
+
+**ผ่านเมื่อ:** ระบบออนไลน์ผ่าน flow หลัก, ไม่มีข้อมูลเปิดเผยผ่าน Data API, runtime role ทำงานได้จริง และมีขั้นตอน backup/restore/rollback ที่ตรวจแล้วภายใต้งบฟรี
+
+## วิธีเดินงานในแต่ละ milestone
+
+- แตกเป็นแผนย่อยของ subsystem ที่กำลังทำ โดยระบุไฟล์จริง, signatures, test cases และคำสั่งตรวจตาม design ที่ยืนยันแล้ว
+- สำหรับ business logic/security เขียน test ที่พิสูจน์พฤติกรรมก่อน implementation และใช้ PostgreSQL จริงเมื่อทดสอบ transaction/locking
+- ทำ handler/DTO/audit/Swagger annotations/generated docs/contract tests ในส่วนเดียวกัน อธิบายผลและ trade-off เมื่อจบแต่ละ milestone และ commit เป็นชุดที่ทบทวนได้เมื่อมี Git repository
+- เริ่มที่ milestone 0 ตามลำดับ; การยืนยันลำดับงานยังไม่แทนการยืนยันแบบระบบก่อนเขียนโค้ด
+- Milestones 0–9 เป็น backend-first และ milestone 10 จึงเริ่ม frontend; ไม่ใช้ความจำเป็นในการทดลอง API เป็นเหตุผลสร้าง Next.js ล่วงหน้า
+- หน้าหุ้นรายตัว/กราฟ (เริ่มด้วย daily bars แบบ delayed), live/extended-hours, dividends/splits และฟีเจอร์เพิ่มเติมนอกขอบเขตที่ยืนยัน เก็บไว้หลังเฟส 1

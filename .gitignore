@@ -1,0 +1,13 @@
+# Local secrets and environment
+.env
+
+# Build and tool output
+/bin/
+/tmp/
+*.test
+coverage.out
+
+# OS/editor
+.DS_Store
+.idea/
+.vscode/
