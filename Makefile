@@ -42,6 +42,10 @@ MIGRATION_DATABASE_URL ?= postgres://app_migrator:$(APP_MIGRATOR_PASSWORD)@$(LOC
 TEST_ADMIN_DATABASE_URL ?= postgres://$(POSTGRES_ADMIN_USER):$(POSTGRES_ADMIN_PASSWORD)@$(LOCAL_DB_HOST)/$(POSTGRES_DB)?sslmode=disable
 TEST_RUNTIME_DATABASE_URL ?= postgres://app_runtime:$(APP_RUNTIME_PASSWORD)@$(LOCAL_DB_HOST)/$(POSTGRES_DB)?sslmode=disable
 
+# `export` above would leak these into every recipe, so a plain `make test` would try to reach a
+# database instead of skipping integration tests. test-integration passes them explicitly.
+unexport TEST_ADMIN_DATABASE_URL TEST_RUNTIME_DATABASE_URL MIGRATION_DATABASE_URL
+
 .PHONY: migrate-up migrate-status test-integration
 
 migrate-up:
