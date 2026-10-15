@@ -35,3 +35,23 @@ tools:
 swagger:
 	$(SWAG) init -g cmd/api/main.go -d . --parseInternal -o docs/api --outputTypes go,json,yaml
 	$(SWAGGER) validate docs/api/swagger.yaml
+
+POSTGRES_HOST_PORT ?= 55432
+LOCAL_DB_HOST := 127.0.0.1:$(POSTGRES_HOST_PORT)
+MIGRATION_DATABASE_URL ?= postgres://app_migrator:$(APP_MIGRATOR_PASSWORD)@$(LOCAL_DB_HOST)/$(POSTGRES_DB)?sslmode=disable
+TEST_ADMIN_DATABASE_URL ?= postgres://$(POSTGRES_ADMIN_USER):$(POSTGRES_ADMIN_PASSWORD)@$(LOCAL_DB_HOST)/$(POSTGRES_DB)?sslmode=disable
+TEST_RUNTIME_DATABASE_URL ?= postgres://app_runtime:$(APP_RUNTIME_PASSWORD)@$(LOCAL_DB_HOST)/$(POSTGRES_DB)?sslmode=disable
+
+.PHONY: migrate-up migrate-status test-integration
+
+migrate-up:
+	$(GOOSE) -dir migrations -table app.goose_db_version postgres "$(MIGRATION_DATABASE_URL)" up
+
+migrate-status:
+	$(GOOSE) -dir migrations -table app.goose_db_version postgres "$(MIGRATION_DATABASE_URL)" status
+
+test-integration:
+	REQUIRE_INTEGRATION=1 \
+	TEST_ADMIN_DATABASE_URL="$(TEST_ADMIN_DATABASE_URL)" \
+	TEST_RUNTIME_DATABASE_URL="$(TEST_RUNTIME_DATABASE_URL)" \
+	go test -race -count=1 ./internal/adapter/postgres/...
