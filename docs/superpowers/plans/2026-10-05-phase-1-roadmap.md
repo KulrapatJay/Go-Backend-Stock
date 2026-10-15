@@ -10,7 +10,7 @@
 
 **Spec:** [แบบระบบสำหรับตรวจยืนยัน](../specs/2026-10-05-phase-1-design.md) โดยยึดข้อกำหนดใน [AGENTS.md](../../../AGENTS.md)
 
-**Status:** ผู้ใช้ยืนยันให้เริ่มตามลำดับแล้ว จัดทำข้อเสนอ milestone 0 ใน spec ที่ลิงก์ด้านบนแล้ว ผู้ใช้ยืนยันข้อเสนอเดิมและเลื่อนหน้าหุ้นรายตัว/กราฟไปเฟสถัดไปแล้ว (2026-10-14) และยืนยันแบบ email verification, portfolio name uniqueness และกติการหัสผ่านแล้ว milestone 0 ผ่านการตรวจรับ ขั้นต่อไปคือ git init แล้วแตกแผนย่อยของ milestone 1 ยังไม่เริ่ม implementation
+**Status:** ผู้ใช้ยืนยันให้เริ่มตามลำดับแล้ว จัดทำข้อเสนอ milestone 0 ใน spec ที่ลิงก์ด้านบนแล้ว ผู้ใช้ยืนยันข้อเสนอเดิมและเลื่อนหน้าหุ้นรายตัว/กราฟไปเฟสถัดไปแล้ว (2026-10-14) และยืนยันแบบ email verification, portfolio name uniqueness และกติการหัสผ่านแล้ว milestone 0 ผ่านการตรวจรับ; milestone 1 ลงมือครบทุก task ตามแผนย่อยแล้ว (2026-10-15) รอผู้ใช้ตรวจรับและรีวิวทั้ง branch ก่อนเริ่ม milestone 2
 
 ## Global Constraints
 
@@ -65,14 +65,14 @@
 
 **เอกสาร API:** annotations ใน entrypoint/HTTP handlers/DTO, generated files ใน `docs/api/`, `internal/adapter/http/docs.go` และ Swagger UI assets ที่ bundle ใน API image
 
-- [ ] สร้าง Go API, config validation, JSON logger/request ID และ graceful shutdown โดยไม่สร้าง Next.js
-- [ ] เพิ่ม access-log/recover middleware และ error handler พร้อม tests ที่ตรวจ final status ของ success/error/panic และ secret redaction
-- [ ] สร้าง /healthz, /readyz และ Compose postgres/migrate/api/mailpit พร้อม Go hot reload และ non-root API image
-- [ ] เพิ่ม health endpoint annotations และคำสั่ง swag init ของโปรเจกต์เพื่อ generate docs.go/swagger.json/swagger.yaml ลง docs/api/
-- [ ] เปิด /docs, /swagger.json และ /swagger.yaml ผ่าน Go API; ใน CI generate ซ้ำ/ตรวจ generated diff และ validate spec พร้อมระบุ endpoints ที่ยังไม่พร้อม
-- [ ] สร้าง local bootstrap (`deploy/local/initdb/`) สำหรับ roles และ schema `app` แล้วรัน goose ด้วย `-table app.goose_db_version` พร้อม baseline migration เพื่อทดสอบ migrate service; พิสูจน์ว่า goose รองรับชื่อตารางแบบ schema-qualified และไม่มีตารางใดถูกสร้างใน `public`; ตารางธุรกิจเพิ่มใน milestone 3
-- [ ] ตั้ง CI เริ่มต้นสำหรับ Go vet/lint/test, API image build และ Swagger checks; เพิ่ม sqlc consistency และ repository tests ใน milestone 3 โดยยังไม่มี web jobs
-- [ ] บันทึกวิธีเปิดระบบด้วย `cp .env.example .env && docker compose up --build` และวิธีดู application log
+- [x] สร้าง Go API, config validation, JSON logger/request ID และ graceful shutdown โดยไม่สร้าง Next.js
+- [x] เพิ่ม access-log/recover middleware และ error handler พร้อม tests ที่ตรวจ final status ของ success/error/panic และ secret redaction
+- [x] สร้าง /healthz, /readyz และ Compose postgres/migrate/api/mailpit พร้อม Go hot reload และ non-root API image
+- [x] เพิ่ม health endpoint annotations และคำสั่ง swag init ของโปรเจกต์เพื่อ generate docs.go/swagger.json/swagger.yaml ลง docs/api/
+- [x] เปิด /docs, /swagger.json และ /swagger.yaml ผ่าน Go API; ใน CI generate ซ้ำ/ตรวจ generated diff และ validate spec พร้อมระบุ endpoints ที่ยังไม่พร้อม
+- [x] สร้าง local bootstrap (`deploy/local/initdb/`) สำหรับ roles และ schema `app` แล้วรัน goose ด้วย `-table app.goose_db_version` พร้อม baseline migration เพื่อทดสอบ migrate service; พิสูจน์ว่า goose รองรับชื่อตารางแบบ schema-qualified และไม่มีตารางใดถูกสร้างใน `public`; ตารางธุรกิจเพิ่มใน milestone 3
+- [x] ตั้ง CI เริ่มต้นสำหรับ Go vet/lint/test, API image build และ Swagger checks; เพิ่ม sqlc consistency และ repository tests ใน milestone 3 โดยยังไม่มี web jobs (เขียน workflow และตรวจ syntax ด้วย actionlint แล้ว; ขั้นตอนเทียบเท่าทั้งหมดรันผ่านในเครื่องด้วย `make check` และ `make test-integration`; **CI บน GitHub จะตรวจจริงเมื่อสร้าง remote repository แล้ว** และยังไม่เคยรันบน GitHub)
+- [x] บันทึกวิธีเปิดระบบด้วย `cp .env.example .env && docker compose up --build` และวิธีดู application log
 
 **ผ่านเมื่อ:** เปิด backend stack ได้โดยไม่มี web service, migration จบก่อน API เริ่ม, health/readiness และ Swagger UI ใช้งานได้, API image build และ checks ที่ตั้งไว้ผ่าน ยังไม่อ้างว่า auth/พอร์ตใช้งานได้ใน milestone นี้
 

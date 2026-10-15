@@ -94,7 +94,7 @@ Baseline ที่เสนอจาก release/docs ทางการที่
 | Swagger UI assets | swagger-api/swagger-ui v5.33.1 |
 | Spec validator | go-swagger/go-swagger v0.34.1 |
 
-นี่คือ pins สำหรับนำไปตรวจ build จริงใน milestone 1 ยังไม่อ้างว่า dependency graph หรือ toolchain ทดสอบผ่านแล้ว dependency อื่นและ image digest ต้อง lock เมื่อเพิ่มใน milestone ที่ใช้ ไม่ใช้ `latest` ใน Docker/CI หรือคำสั่งติดตั้งที่ commit
+นี่คือ pins สำหรับนำไปตรวจ build จริงใน milestone 1 ยังไม่อ้างว่า dependency graph หรือ toolchain ทดสอบผ่านแล้ว dependency อื่นและ image digest ต้อง lock เมื่อเพิ่มใน milestone ที่ใช้ ไม่ใช้ `latest` ใน Docker/CI หรือคำสั่งติดตั้งที่ commit **ผลตรวจใน milestone 1 (2026-10-15):** ทุก pin ในหัวข้อนี้มีอยู่จริงและ build/ทดสอบผ่านในเครื่อง; ใช้ Go 1.27.2 ในเครื่อง dev ส่วน Docker/CI pin ที่ 1.27.1; image ทั้งหมดใน Dockerfile/compose/CI pin ด้วย tag@digest
 
 - Generate: `swag init -g cmd/api/main.go -d . --parseInternal -o docs/api --outputTypes go,json,yaml`
 - Serve generated JSON/YAML และ bundled UI ผ่าน Fiber handler/static middleware ของ v3.5.0 จึงไม่ต้องพึ่ง Swagger wrapper ที่อาจผูก Fiber คนละ major
@@ -191,7 +191,7 @@ Constraints/indexes เพิ่มเติม:
 
 roles/credentials bootstrap แยกจาก versioned schema migrations; local initdb สร้าง roles ตอน DB ว่าง ส่วน deploy ใช้ admin runbook provisioning ครั้งแรก ไม่แก้ managed schemas
 
-ขั้น bootstrap (local `deploy/local/initdb/` และ Supabase runbook) สร้าง roles และ `CREATE SCHEMA app AUTHORIZATION app_migrator` พร้อม `REVOKE ALL ON SCHEMA app FROM PUBLIC` ก่อน goose รันครั้งแรก เพราะตาราง version ของ goose อยู่ใน schema นี้ goose รันด้วย `-table app.goose_db_version` เสมอ จึงไม่สร้าง `public.goose_db_version` ใน schema ที่ Supabase Data API อาจ expose. Migrations สร้าง/แก้เฉพาะ objects ภายใน `app` และใส่ GRANT ที่ runtime/maintenance ต้องใช้ใน migration เดียวกับตาราง runtime/maintenance ไม่มีสิทธิ์บนตาราง goose. SQL ใน sqlc queries ระบุ `app.` ทุกตาราง ไม่พึ่ง search_path. การรองรับชื่อตาราง goose แบบ schema-qualified ต้องพิสูจน์ใน milestone 1 หากไม่รองรับให้กลับมาเสนอทางเลือกก่อนลงมือ
+ขั้น bootstrap (local `deploy/local/initdb/` และ Supabase runbook) สร้าง roles และ `CREATE SCHEMA app AUTHORIZATION app_migrator` พร้อม `REVOKE ALL ON SCHEMA app FROM PUBLIC` ก่อน goose รันครั้งแรก เพราะตาราง version ของ goose อยู่ใน schema นี้ goose รันด้วย `-table app.goose_db_version` เสมอ จึงไม่สร้าง `public.goose_db_version` ใน schema ที่ Supabase Data API อาจ expose. Migrations สร้าง/แก้เฉพาะ objects ภายใน `app` และใส่ GRANT ที่ runtime/maintenance ต้องใช้ใน migration เดียวกับตาราง runtime/maintenance ไม่มีสิทธิ์บนตาราง goose. SQL ใน sqlc queries ระบุ `app.` ทุกตาราง ไม่พึ่ง search_path. การรองรับชื่อตาราง goose แบบ schema-qualified ต้องพิสูจน์ใน milestone 1 หากไม่รองรับให้กลับมาเสนอทางเลือกก่อนลงมือ **พิสูจน์แล้วใน milestone 1:** goose v3.28.0 รองรับ `-table app.goose_db_version` บน PostgreSQL 17.11 — ตารางอยู่ใน `app` (เจ้าของ `app_migrator`), ไม่มี object ของ app roles ใน `public`, `app_runtime` อ่านตารางนี้และสร้างตารางใน `app`/`public` ไม่ได้ (integration tests)
 
 เลือก private schema + explicit grants + ownership queries ในเฟสนี้ ไม่เปิด Data API และไม่ grant anon/authenticated ไม่ใช้ `auth.uid()` เพราะ session ของเราอยู่ใน Go; RLS ต่อผู้ใช้เป็นงานแยกที่ต้องออกแบบ context propagation ก่อนเพิ่ม ไม่เปิด policy ที่แสร้งว่าป้องกันแล้ว
 
