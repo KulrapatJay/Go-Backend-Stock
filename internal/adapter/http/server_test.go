@@ -18,7 +18,7 @@ import (
 func TestHealthz(t *testing.T) {
 	app, _ := newTestServer(t, fakeReadiness{})
 
-	resp, body := doRequest(t, app, httptest.NewRequest(nethttp.MethodGet, "/healthz", nil))
+	resp, body := doRequest(t, app, httptest.NewRequestWithContext(t.Context(), nethttp.MethodGet, "/healthz", nil))
 
 	if resp.StatusCode != nethttp.StatusOK {
 		t.Fatalf("status = %d, want 200", resp.StatusCode)
@@ -38,7 +38,7 @@ func TestHealthz(t *testing.T) {
 func TestReadyzReady(t *testing.T) {
 	app, _ := newTestServer(t, fakeReadiness{})
 
-	resp, body := doRequest(t, app, httptest.NewRequest(nethttp.MethodGet, "/readyz", nil))
+	resp, body := doRequest(t, app, httptest.NewRequestWithContext(t.Context(), nethttp.MethodGet, "/readyz", nil))
 
 	var got ReadyResponse
 	if resp.StatusCode != nethttp.StatusOK || json.Unmarshal(body, &got) != nil || got.Status != "ready" {
@@ -49,7 +49,7 @@ func TestReadyzReady(t *testing.T) {
 func TestReadyzNotReadyHidesCause(t *testing.T) {
 	app, logs := newTestServer(t, fakeReadiness{err: errors.New("dial tcp 10.0.0.5:5432: connection refused")})
 
-	resp, body := doRequest(t, app, httptest.NewRequest(nethttp.MethodGet, "/readyz", nil))
+	resp, body := doRequest(t, app, httptest.NewRequestWithContext(t.Context(), nethttp.MethodGet, "/readyz", nil))
 
 	if resp.StatusCode != nethttp.StatusServiceUnavailable {
 		t.Fatalf("status = %d, want 503", resp.StatusCode)
@@ -69,7 +69,7 @@ func TestReadyzNotReadyHidesCause(t *testing.T) {
 func TestUnknownRouteReturnsEnvelope404(t *testing.T) {
 	app, _ := newTestServer(t, fakeReadiness{})
 
-	resp, body := doRequest(t, app, httptest.NewRequest(nethttp.MethodGet, "/nope", nil))
+	resp, body := doRequest(t, app, httptest.NewRequestWithContext(t.Context(), nethttp.MethodGet, "/nope", nil))
 
 	if resp.StatusCode != nethttp.StatusNotFound {
 		t.Fatalf("status = %d, want 404", resp.StatusCode)
@@ -88,7 +88,7 @@ func TestAPIErrorIsRenderedAndLoggedWithItsStatus(t *testing.T) {
 	})
 	app.Use(middleware.NotFound())
 
-	resp, body := doRequest(t, app, httptest.NewRequest(nethttp.MethodGet, "/conflict", nil))
+	resp, body := doRequest(t, app, httptest.NewRequestWithContext(t.Context(), nethttp.MethodGet, "/conflict", nil))
 
 	if resp.StatusCode != nethttp.StatusConflict || decodeError(t, body).Code != "portfolio_name_conflict" {
 		t.Fatalf("status = %d body = %s", resp.StatusCode, body)
@@ -105,7 +105,7 @@ func TestPanicReturnsGeneric500AndLogsFinalStatus(t *testing.T) {
 	app.Get("/boom", func(c fiber.Ctx) error { panic("db password=hunter2 leaked in panic") })
 	app.Use(middleware.NotFound())
 
-	resp, body := doRequest(t, app, httptest.NewRequest(nethttp.MethodGet, "/boom", nil))
+	resp, body := doRequest(t, app, httptest.NewRequestWithContext(t.Context(), nethttp.MethodGet, "/boom", nil))
 
 	if resp.StatusCode != nethttp.StatusInternalServerError {
 		t.Fatalf("status = %d, want 500", resp.StatusCode)
@@ -131,7 +131,12 @@ func TestBodyLimitReturns413Envelope(t *testing.T) {
 	app := NewServer(Options{Logger: log, Readiness: fakeReadiness{}})
 	baseURL, stop := listen(t, app)
 
-	resp, err := nethttp.Post(baseURL+"/healthz", "application/json", bytes.NewReader(make([]byte, 64*1024+1)))
+	req, err := nethttp.NewRequestWithContext(t.Context(), nethttp.MethodPost, baseURL+"/healthz", bytes.NewReader(make([]byte, 64*1024+1)))
+	if err != nil {
+		t.Fatalf("build request: %v", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := nethttp.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatalf("POST error = %v", err)
 	}
@@ -166,7 +171,7 @@ func TestBodyLimitReturns413Envelope(t *testing.T) {
 func TestHeadMirrorsGetForReadRoutes(t *testing.T) {
 	app := newDocsServer(t, enabledDocs(false))
 	for _, path := range []string{"/healthz", "/readyz", "/swagger.json", "/swagger.yaml", "/docs/", "/docs/swagger-ui.css"} {
-		resp, body := doRequest(t, app, httptest.NewRequest(nethttp.MethodHead, path, nil))
+		resp, body := doRequest(t, app, httptest.NewRequestWithContext(t.Context(), nethttp.MethodHead, path, nil))
 		if resp.StatusCode != nethttp.StatusOK {
 			t.Errorf("HEAD %s status = %d, want 200", path, resp.StatusCode)
 		}

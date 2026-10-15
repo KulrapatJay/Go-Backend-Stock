@@ -43,8 +43,14 @@ func findEntry(t *testing.T, entries []map[string]any, msg string) map[string]an
 	return nil
 }
 
+// response is the part of an HTTP response the tests inspect.
+type response struct {
+	StatusCode int
+	Header     http.Header
+}
+
 // doRequest runs the request through the app and always closes the body.
-func doRequest(t *testing.T, app *fiber.App, req *http.Request) (*http.Response, []byte) {
+func doRequest(t *testing.T, app *fiber.App, req *http.Request) (response, []byte) {
 	t.Helper()
 	resp, err := app.Test(req)
 	if err != nil {
@@ -55,7 +61,7 @@ func doRequest(t *testing.T, app *fiber.App, req *http.Request) (*http.Response,
 	if err != nil {
 		t.Fatalf("read body: %v", err)
 	}
-	return resp, body
+	return response{StatusCode: resp.StatusCode, Header: resp.Header}, body
 }
 
 // testErrorHandler stands in for the production envelope handler, which lives in a parent package.

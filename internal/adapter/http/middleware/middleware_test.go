@@ -15,7 +15,7 @@ func TestRequestIDIgnoresClientValue(t *testing.T) {
 	app := newChainApp(log)
 	app.Get("/ok", func(c fiber.Ctx) error { return c.SendString(GetRequestID(c)) })
 
-	req := httptest.NewRequest(http.MethodGet, "/ok", nil)
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/ok", nil)
 	req.Header.Set(HeaderRequestID, "client-supplied")
 	resp, body := doRequest(t, app, req)
 
@@ -37,8 +37,8 @@ func TestRequestIDIsUniquePerRequest(t *testing.T) {
 	app := newChainApp(log)
 	app.Get("/ok", func(c fiber.Ctx) error { return c.SendStatus(fiber.StatusNoContent) })
 
-	first, _ := doRequest(t, app, httptest.NewRequest(http.MethodGet, "/ok", nil))
-	second, _ := doRequest(t, app, httptest.NewRequest(http.MethodGet, "/ok", nil))
+	first, _ := doRequest(t, app, httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/ok", nil))
+	second, _ := doRequest(t, app, httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/ok", nil))
 
 	if first.Header.Get(HeaderRequestID) == second.Header.Get(HeaderRequestID) {
 		t.Fatal("two requests received the same request ID")
@@ -64,7 +64,7 @@ func TestAccessLogRecordsFinalStatus(t *testing.T) {
 			app := newChainApp(log)
 			app.Get(tt.path, tt.handler)
 
-			resp, _ := doRequest(t, app, httptest.NewRequest(http.MethodGet, tt.path, nil))
+			resp, _ := doRequest(t, app, httptest.NewRequestWithContext(t.Context(), http.MethodGet, tt.path, nil))
 
 			if resp.StatusCode != tt.wantStatus {
 				t.Fatalf("status = %d, want %d", resp.StatusCode, tt.wantStatus)
@@ -91,7 +91,7 @@ func TestRecoverLogsPanicWithRequestID(t *testing.T) {
 	app := newChainApp(log)
 	app.Get("/panic", func(c fiber.Ctx) error { panic("boom") })
 
-	resp, body := doRequest(t, app, httptest.NewRequest(http.MethodGet, "/panic", nil))
+	resp, body := doRequest(t, app, httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/panic", nil))
 
 	entry := findEntry(t, logEntries(t, buf), "panic recovered")
 	if entry["level"] != "ERROR" || entry["panic"] != "boom" {
@@ -113,7 +113,7 @@ func TestAccessLogUsesRouteTemplateAndOmitsSecrets(t *testing.T) {
 	app := newChainApp(log)
 	app.Get("/items/:id", func(c fiber.Ctx) error { return c.SendStatus(fiber.StatusOK) })
 
-	req := httptest.NewRequest(http.MethodGet, "/items/98765?token=topsecret", nil)
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/items/98765?token=topsecret", nil)
 	req.Header.Set("Cookie", "session=cookiesecret")
 	req.Header.Set("Authorization", "Bearer authsecret")
 	doRequest(t, app, req)
@@ -135,7 +135,7 @@ func TestNotFoundMarksUnmatchedRoute(t *testing.T) {
 	app := newChainApp(log)
 	app.Use(NotFound())
 
-	resp, _ := doRequest(t, app, httptest.NewRequest(http.MethodGet, "/nope/secret-path", nil))
+	resp, _ := doRequest(t, app, httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/nope/secret-path", nil))
 
 	if resp.StatusCode != fiber.StatusNotFound {
 		t.Fatalf("status = %d, want 404", resp.StatusCode)
@@ -154,7 +154,7 @@ func TestSecurityHeaders(t *testing.T) {
 	app.Use(SecurityHeaders())
 	app.Get("/ok", func(c fiber.Ctx) error { return c.SendStatus(fiber.StatusOK) })
 
-	resp, _ := doRequest(t, app, httptest.NewRequest(http.MethodGet, "/ok", nil))
+	resp, _ := doRequest(t, app, httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/ok", nil))
 
 	for header, want := range map[string]string{
 		"X-Content-Type-Options": "nosniff",

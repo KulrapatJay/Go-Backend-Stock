@@ -30,7 +30,14 @@ func newTestServer(t *testing.T, readiness ReadinessChecker) (*fiber.App, *bytes
 	return NewServer(Options{Logger: log, Readiness: readiness}), buf
 }
 
-func doRequest(t *testing.T, app *fiber.App, req *nethttp.Request) (*nethttp.Response, []byte) {
+// response is the part of an HTTP response the tests inspect.
+type response struct {
+	StatusCode int
+	Header     nethttp.Header
+}
+
+// doRequest runs the request through the app and always closes the body.
+func doRequest(t *testing.T, app *fiber.App, req *nethttp.Request) (response, []byte) {
 	t.Helper()
 	resp, err := app.Test(req)
 	if err != nil {
@@ -41,7 +48,7 @@ func doRequest(t *testing.T, app *fiber.App, req *nethttp.Request) (*nethttp.Res
 	if err != nil {
 		t.Fatalf("read body: %v", err)
 	}
-	return resp, body
+	return response{StatusCode: resp.StatusCode, Header: resp.Header}, body
 }
 
 func decodeError(t *testing.T, body []byte) ErrorBody {
@@ -72,7 +79,7 @@ func accessEntries(t *testing.T, buf *bytes.Buffer) []map[string]any {
 // listen serves app on a loopback port and returns its base URL and an idempotent stop func.
 func listen(t *testing.T, app *fiber.App) (baseURL string, stop func()) {
 	t.Helper()
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	ln, err := (&net.ListenConfig{}).Listen(t.Context(), "tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatalf("listen: %v", err)
 	}

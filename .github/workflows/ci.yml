@@ -1,0 +1,84 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:17.11-bookworm@sha256:3645570cccdfa447589da9f57dd740faa29b30938e861289a5574b6ca6b03826
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: ci_admin_password
+          POSTGRES_DB: stock
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d stock"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      ADMIN_DATABASE_URL: postgres://postgres:ci_admin_password@localhost:5432/stock?sslmode=disable
+      MIGRATION_DATABASE_URL: postgres://app_migrator:ci_migrator_password@localhost:5432/stock?sslmode=disable
+      TEST_ADMIN_DATABASE_URL: postgres://postgres:ci_admin_password@localhost:5432/stock?sslmode=disable
+      TEST_RUNTIME_DATABASE_URL: postgres://app_runtime:ci_runtime_password@localhost:5432/stock?sslmode=disable
+      REQUIRE_INTEGRATION: "1"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: go.mod is tidy
+        run: go mod tidy -diff
+
+      - name: Install pinned tools
+        run: make tools
+
+      - name: go vet
+        run: go vet ./...
+
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
+        with:
+          version: v2.14.0
+
+      - name: Swagger is regenerated, valid and committed
+        run: |
+          make swagger
+          git diff --exit-code -- docs/api
+
+      - name: Bootstrap database roles
+        run: |
+          psql "$ADMIN_DATABASE_URL" -v ON_ERROR_STOP=1 \
+            -v migrator_password=ci_migrator_password \
+            -v runtime_password=ci_runtime_password \
+            -v maintenance_password=ci_maintenance_password \
+            -f deploy/db/bootstrap.sql
+
+      - name: Migrations apply to an empty database
+        run: make migrate-up
+
+      - name: Unit, HTTP, contract and integration tests
+        run: go test -race -count=1 ./...
+
+      - name: Build API image
+        run: docker build --target runtime -t stock-portfolio-api:ci .
+
+      - name: Build migrate image
+        run: docker build --target migrate -t stock-portfolio-migrate:ci .

@@ -77,7 +77,7 @@ func TestSwaggerContractMatchesResponses(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			app, _ := newTestServer(t, fakeReadiness{err: tt.readiness})
-			resp, body := doRequest(t, app, httptest.NewRequest(nethttp.MethodGet, tt.path, nil))
+			resp, body := doRequest(t, app, httptest.NewRequestWithContext(t.Context(), nethttp.MethodGet, tt.path, nil))
 			if resp.StatusCode != tt.wantStatus {
 				t.Fatalf("status = %d, want %d", resp.StatusCode, tt.wantStatus)
 			}

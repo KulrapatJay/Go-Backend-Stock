@@ -59,3 +59,14 @@ test-integration:
 	TEST_ADMIN_DATABASE_URL="$(TEST_ADMIN_DATABASE_URL)" \
 	TEST_RUNTIME_DATABASE_URL="$(TEST_RUNTIME_DATABASE_URL)" \
 	go test -race -count=1 ./internal/adapter/postgres/...
+
+.PHONY: lint-install lint check
+
+lint-install:
+	GOBIN=$(BIN) go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$(GOLANGCI_LINT_VERSION)
+
+lint:
+	$(GOLANGCI_LINT) run ./...
+
+check: tidy-check vet lint swagger test
+	git diff --exit-code -- docs/api
