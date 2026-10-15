@@ -1,0 +1,11 @@
+.git
+.github
+.env
+bin
+tmp
+web
+docs/superpowers
+docs/adr
+docs/database
+**/*.md
+docker-compose*.yml

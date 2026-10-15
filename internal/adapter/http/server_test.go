@@ -160,3 +160,18 @@ func TestBodyLimitReturns413Envelope(t *testing.T) {
 		t.Errorf("logged request_id = %v, want %s", entries[0]["request_id"], got.RequestID)
 	}
 }
+
+// HEAD must mirror GET for every read route: probes and proxies use it. Fiber registers its
+// automatic HEAD routes at startup, after the catch-all NotFound middleware, so they never match.
+func TestHeadMirrorsGetForReadRoutes(t *testing.T) {
+	app := newDocsServer(t, enabledDocs(false))
+	for _, path := range []string{"/healthz", "/readyz", "/swagger.json", "/swagger.yaml", "/docs/", "/docs/swagger-ui.css"} {
+		resp, body := doRequest(t, app, httptest.NewRequest(nethttp.MethodHead, path, nil))
+		if resp.StatusCode != nethttp.StatusOK {
+			t.Errorf("HEAD %s status = %d, want 200", path, resp.StatusCode)
+		}
+		if len(body) != 0 {
+			t.Errorf("HEAD %s returned a %d byte body, want none", path, len(body))
+		}
+	}
+}

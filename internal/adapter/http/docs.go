@@ -32,18 +32,18 @@ func registerDocs(app *fiber.App, opts DocsOptions) {
 	if !opts.Enabled {
 		return
 	}
-	app.Get("/swagger.json", sendBytes("application/json", opts.SpecJSON))
-	app.Get("/swagger.yaml", sendBytes("application/yaml", opts.SpecYAML))
-	app.Get("/docs", func(c fiber.Ctx) error {
+	getAndHead(app, "/swagger.json", sendBytes("application/json", opts.SpecJSON))
+	getAndHead(app, "/swagger.yaml", sendBytes("application/yaml", opts.SpecYAML))
+	getAndHead(app, "/docs", func(c fiber.Ctx) error {
 		// Relative so the redirect also works behind a reverse proxy path prefix.
 		c.Set(fiber.HeaderLocation, "docs/")
 		return c.SendStatus(fiber.StatusMovedPermanently)
 	})
-	app.Get("/docs/", func(c fiber.Ctx) error {
+	getAndHead(app, "/docs/", func(c fiber.Ctx) error {
 		return sendAsset(c, "index.html", "text/html; charset=utf-8")
 	})
-	app.Get("/docs/swagger-initializer.js", sendDocsBytes("text/javascript; charset=utf-8", swaggerInitializer(opts.TryItOutEnabled)))
-	app.Get("/docs/:file", func(c fiber.Ctx) error {
+	getAndHead(app, "/docs/swagger-initializer.js", sendDocsBytes("text/javascript; charset=utf-8", swaggerInitializer(opts.TryItOutEnabled)))
+	getAndHead(app, "/docs/:file", func(c fiber.Ctx) error {
 		name := c.Params("file")
 		contentType, ok := docsAssets[name]
 		if !ok {

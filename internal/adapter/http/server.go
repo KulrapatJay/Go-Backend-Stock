@@ -97,7 +97,15 @@ func transportError(err error) error {
 
 func registerRoutes(app *fiber.App, opts Options) {
 	health := HealthHandler{readiness: opts.Readiness, log: opts.Logger, budget: readinessBudget}
-	app.Get("/healthz", health.Healthz)
-	app.Get("/readyz", health.Readyz)
+	getAndHead(app, "/healthz", health.Healthz)
+	getAndHead(app, "/readyz", health.Readyz)
 	registerDocs(app, opts.Docs)
+}
+
+// getAndHead registers handler for GET and HEAD. Fiber's automatic HEAD routes are added at
+// startup, after the catch-all NotFound middleware, so they would never match; fasthttp drops
+// the body of HEAD responses itself.
+func getAndHead(app *fiber.App, path string, handler fiber.Handler) {
+	app.Get(path, handler)
+	app.Head(path, handler)
 }
