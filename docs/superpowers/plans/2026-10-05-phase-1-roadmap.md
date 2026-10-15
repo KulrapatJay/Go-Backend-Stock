@@ -10,7 +10,7 @@
 
 **Spec:** [แบบระบบสำหรับตรวจยืนยัน](../specs/2026-10-05-phase-1-design.md) โดยยึดข้อกำหนดใน [AGENTS.md](../../../AGENTS.md)
 
-**Status:** ผู้ใช้ยืนยันให้เริ่มตามลำดับแล้ว จัดทำข้อเสนอ milestone 0 ใน spec ที่ลิงก์ด้านบนแล้ว ผู้ใช้ยืนยันข้อเสนอเดิมและเลื่อนหน้าหุ้นรายตัว/กราฟไปเฟสถัดไปแล้ว (2026-10-14) และยืนยันแบบ email verification, portfolio name uniqueness และกติการหัสผ่านแล้ว milestone 0 ผ่านการตรวจรับ; milestone 1 ลงมือครบทุก task ตามแผนย่อยแล้ว (2026-10-15) รอผู้ใช้ตรวจรับและรีวิวทั้ง branch ก่อนเริ่ม milestone 2
+**Status:** ผู้ใช้ยืนยันให้เริ่มตามลำดับแล้ว จัดทำข้อเสนอ milestone 0 ใน spec ที่ลิงก์ด้านบนแล้ว ผู้ใช้ยืนยันข้อเสนอเดิมและเลื่อนหน้าหุ้นรายตัว/กราฟไปเฟสถัดไปแล้ว (2026-10-14) และยืนยันแบบ email verification, portfolio name uniqueness และกติการหัสผ่านแล้ว milestone 0 ผ่านการตรวจรับ; milestone 1 ผ่านการตรวจรับเมื่อ 2026-10-15 (ลงมือครบทุก task, self-review ทั้ง branch ไม่พบ Critical/Important, CI บน GitHub ผ่าน) ขั้นต่อไปคือแตกแผนย่อยของ milestone 2 ยังไม่เริ่ม
 
 ## Global Constraints
 
@@ -75,6 +75,14 @@
 - [x] บันทึกวิธีเปิดระบบด้วย `cp .env.example .env && docker compose up --build` และวิธีดู application log
 
 **ผ่านเมื่อ:** เปิด backend stack ได้โดยไม่มี web service, migration จบก่อน API เริ่ม, health/readiness และ Swagger UI ใช้งานได้, API image build และ checks ที่ตั้งไว้ผ่าน ยังไม่อ้างว่า auth/พอร์ตใช้งานได้ใน milestone นี้
+
+**ตรวจรับแล้ว 2026-10-15** — ข้อที่เลื่อนไปทำใน milestone ถัดไป (ผลจาก self-review, ไม่ขวางการตรวจรับ):
+- method ไม่ตรงกับ route ที่มีอยู่ (เช่น POST /healthz) ตอบ 404 แทน 405 + `Allow` — แก้พร้อม route แบบไม่ใช่ GET ใน milestone 4
+- Swagger `basePath` ตายตัว `/` ทำให้ Try it out หลัง reverse proxy ที่มี prefix ยิง URL ผิด — แก้ใน milestone 10
+- README: เปลี่ยนรหัสผ่านใน `.env` หลังรันครั้งแรกไม่มีผลจนกว่าจะ `docker compose down -v`; Makefile อ่าน `.env` เป็นไวยากรณ์ make (ค่าที่มีเครื่องหมายคำพูด/`#`/ช่องว่างจะพัง)
+- CI ยังไม่ทดสอบ compose stack (migrate ก่อน API, migration พัง); ยังไม่มี test ของ `main.go run()` และ timeout mapping (408)
+- ความเรียบร้อยของ log: `/readyz` ล้ม 1 ครั้งเขียน 3 บรรทัด, "server started" ถูก log ก่อน bind สำเร็จ, access log แสดง method `GET` เมื่อ request อ่านไม่ได้, `Recover` log ค่า panic (ตัดที่ 512 ตัวอักษร)
+- `swaggo/swag` ถูก link เข้า binary production จาก `docs/api/docs.go` (generated ตาม AGENTS.md)
 
 ### 2. Domain + ports + กติกาข้อมูลพื้นฐาน
 

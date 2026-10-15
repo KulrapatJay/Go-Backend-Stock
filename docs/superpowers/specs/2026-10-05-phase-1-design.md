@@ -1,6 +1,6 @@
 # Phase 1 — แบบระบบ Backend สำหรับตรวจยืนยัน
 
-**สถานะ:** milestone 0 ผ่านการตรวจรับเมื่อ 2026-10-14 — ผู้ใช้ยืนยันแบบทั้งหมดรวม email verification, portfolio name uniqueness และกติการหัสผ่าน ยังไม่ใช่ implementation
+**สถานะ:** milestone 0 ผ่านการตรวจรับเมื่อ 2026-10-14 — ผู้ใช้ยืนยันแบบทั้งหมดรวม email verification, portfolio name uniqueness และกติการหัสผ่าน ยังไม่ใช่ implementation; milestone 1 (โครง Go + Docker/PostgreSQL + CI + application log + Swagger) ผ่านการตรวจรับเมื่อ 2026-10-15
 
 **ข้อกำหนดหลัก:** [AGENTS.md](../../../AGENTS.md) และ [roadmap](../plans/2026-10-05-phase-1-roadmap.md)
 
