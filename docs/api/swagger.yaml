@@ -1,0 +1,84 @@
+basePath: /
+definitions:
+  http.ErrorBody:
+    properties:
+      code:
+        example: not_found
+        type: string
+      message:
+        example: Not Found
+        type: string
+      request_id:
+        example: 0192f0c1-7a8e-7cc4-9d2b-3f6c1a2b4c5d
+        type: string
+    type: object
+  http.ErrorResponse:
+    properties:
+      error:
+        $ref: '#/definitions/http.ErrorBody'
+    type: object
+  http.HealthResponse:
+    properties:
+      status:
+        example: ok
+        type: string
+    type: object
+  http.ReadyResponse:
+    properties:
+      status:
+        example: ready
+        type: string
+    type: object
+info:
+  contact: {}
+  description: |-
+    Records US stock trades and tracks portfolio cost and P&L. It does not place real orders.
+    Milestone 1 exposes only the Health endpoints; every other endpoint is not implemented yet.
+  title: Stock Portfolio Tracker API
+  version: "1.0"
+paths:
+  /healthz:
+    get:
+      description: Returns 200 while the process is running. Does not check the database.
+      operationId: getHealthz
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          headers:
+            X-Request-ID:
+              description: Server-generated UUIDv7 for this request
+              type: string
+          schema:
+            $ref: '#/definitions/http.HealthResponse'
+      summary: Liveness probe
+      tags:
+      - Health
+  /readyz:
+    get:
+      description: Pings the database within a 1 second budget. Returns 503 not_ready
+        without connection details when it is unreachable.
+      operationId: getReadyz
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          headers:
+            X-Request-ID:
+              description: Server-generated UUIDv7 for this request
+              type: string
+          schema:
+            $ref: '#/definitions/http.ReadyResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+      summary: Readiness probe
+      tags:
+      - Health
+swagger: "2.0"
+tags:
+- description: Liveness and readiness probes
+  name: Health

@@ -19,6 +19,7 @@ import (
 
 	"github.com/gofiber/fiber/v3"
 
+	apidocs "go-backend-stock/docs/api"
 	httpadapter "go-backend-stock/internal/adapter/http"
 	"go-backend-stock/internal/adapter/postgres"
 	"go-backend-stock/internal/config"
@@ -55,6 +56,12 @@ func run() error {
 	app := httpadapter.NewServer(httpadapter.Options{
 		Logger:    log,
 		Readiness: pool,
+		Docs: httpadapter.DocsOptions{
+			Enabled:         cfg.DocsEnabled,
+			TryItOutEnabled: cfg.DocsTryItOutEnabled,
+			SpecJSON:        apidocs.SwaggerJSON,
+			SpecYAML:        apidocs.SwaggerYAML,
+		},
 	})
 
 	listenErr := make(chan error, 1)

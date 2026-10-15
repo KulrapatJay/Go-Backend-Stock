@@ -24,6 +24,7 @@ const (
 type Options struct {
 	Logger    *slog.Logger
 	Readiness ReadinessChecker
+	Docs      DocsOptions
 }
 
 // NewServer builds the Fiber app with the full middleware chain and every route.
@@ -98,4 +99,5 @@ func registerRoutes(app *fiber.App, opts Options) {
 	health := HealthHandler{readiness: opts.Readiness, log: opts.Logger, budget: readinessBudget}
 	app.Get("/healthz", health.Healthz)
 	app.Get("/readyz", health.Readyz)
+	registerDocs(app, opts.Docs)
 }
