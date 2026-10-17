@@ -11,10 +11,13 @@ import (
 type UserRepository interface {
 	ByID(ctx context.Context, id domain.ID) (domain.User, error)
 	ByEmail(ctx context.Context, email domain.Email) (domain.User, error)
+	// CredentialsByEmail is the only read of password_hash, for login, register and password reset.
+	// Every other query leaves the hash out. PasswordHash is "" for Google-only accounts.
+	CredentialsByEmail(ctx context.Context, email domain.Email) (domain.UserCredentials, error)
 	// Lock reads the user with a row lock; transaction-bound instances only.
 	Lock(ctx context.Context, id domain.ID) (domain.User, error)
 	Insert(ctx context.Context, user domain.User) error
-	SetPassword(ctx context.Context, id domain.ID, passwordHash string, at time.Time) error
+	SetPassword(ctx context.Context, id domain.ID, passwordHash domain.PasswordHash, at time.Time) error
 	// MarkEmailVerified is a no-op when the email is already verified.
 	MarkEmailVerified(ctx context.Context, id domain.ID, at time.Time) error
 }

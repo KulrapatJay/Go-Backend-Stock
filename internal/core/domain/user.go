@@ -17,6 +17,29 @@ type User struct {
 	UpdatedAt       time.Time
 }
 
+// PasswordHash is a stored password hash (an Argon2id PHC string). It prints, formats and
+// marshals as [REDACTED] so it cannot leak through logs; string(h) returns the real value for
+// verification and storage only.
+type PasswordHash string
+
+const redacted = "[REDACTED]"
+
+func (PasswordHash) String() string   { return redacted }
+func (PasswordHash) GoString() string { return redacted }
+
+// MarshalJSON keeps the hash out of JSON logs and responses.
+func (PasswordHash) MarshalJSON() ([]byte, error) { return []byte(`"` + redacted + `"`), nil }
+
+// UserCredentials is the only value that carries a user's password hash. It is returned solely by
+// UserRepository.CredentialsByEmail for login, register and password reset.
+type UserCredentials struct {
+	User         User
+	PasswordHash PasswordHash // "" for accounts that sign in only with Google
+}
+
+// HasPassword reports whether the account can sign in with a password.
+func (c UserCredentials) HasPassword() bool { return c.PasswordHash != "" }
+
 // RevokeReason records why a session was revoked (sessions.revoke_reason CHECK).
 type RevokeReason string
 
