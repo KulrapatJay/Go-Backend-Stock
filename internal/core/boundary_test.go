@@ -1,9 +1,11 @@
 package core_test
 
 import (
+	"fmt"
 	"go/parser"
 	"go/token"
 	"io/fs"
+	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -17,7 +19,50 @@ var allowedThirdParty = map[string]bool{
 	"github.com/google/uuid":        true,
 }
 
-const corePrefix = "go-backend-stock/internal/core/"
+// modulePath is read from go.mod so the rule survives a module rename.
+var (
+	modulePath = mustModulePath(filepath.Join("..", "..", "go.mod"))
+	corePrefix = modulePath + "/internal/core/"
+)
+
+func mustModulePath(goMod string) string {
+	data, err := os.ReadFile(goMod)
+	if err != nil {
+		panic(fmt.Sprintf("read %s: %v", goMod, err))
+	}
+	for _, line := range strings.Split(string(data), "\n") {
+		if rest, ok := strings.CutPrefix(strings.TrimSpace(line), "module "); ok {
+			return strings.Trim(strings.TrimSpace(rest), `"`)
+		}
+	}
+	panic("no module directive in " + goMod)
+}
+
+// TestAllowedImportPaths pins the classification itself. The module path has no dot, so a rule
+// of "no dot in the first element means standard library" would wrongly admit our own adapters.
+func TestAllowedImportPaths(t *testing.T) {
+	cases := map[string]bool{
+		"fmt":                                         true,
+		"net/http":                                    true,
+		"github.com/shopspring/decimal":               true,
+		"github.com/google/uuid":                      true,
+		"go-backend-stock/internal/core/domain":       true,
+		"go-backend-stock/internal/core/port":         true,
+		"go-backend-stock/internal/adapter/postgres":  false,
+		"go-backend-stock/internal/adapter/http":      false,
+		"go-backend-stock/internal/config":            false,
+		"go-backend-stock/docs/api":                   false,
+		"go-backend-stock":                            false,
+		"github.com/gofiber/fiber/v3":                 false,
+		"github.com/jackc/pgx/v5":                     false,
+		"go-backend-stock/internal/core-extra/domain": false,
+	}
+	for path, want := range cases {
+		if got := allowed(path); got != want {
+			t.Errorf("allowed(%q) = %v, want %v", path, got, want)
+		}
+	}
+}
 
 // TestCoreImportsOnlyAllowedPackages parses every .go file under internal/core, tests included,
 // and fails on any import outside the standard library, the allowlist and the core itself.
@@ -55,6 +100,11 @@ func TestCoreImportsOnlyAllowedPackages(t *testing.T) {
 func allowed(p string) bool {
 	if allowedThirdParty[p] || strings.HasPrefix(p, corePrefix) {
 		return true
+	}
+	// Inside this module only the core is allowed. Checked before the standard-library rule
+	// because the module path has no dot and would otherwise look like the standard library.
+	if p == modulePath || strings.HasPrefix(p, modulePath+"/") {
+		return false
 	}
 	// Standard library paths have no dot in their first element (e.g. "net/http", not "github.com/x").
 	first, _, _ := strings.Cut(p, "/")
