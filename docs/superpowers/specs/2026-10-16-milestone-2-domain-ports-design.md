@@ -1,6 +1,6 @@
 # Milestone 2 — Domain, ports และกติกาข้อมูลพื้นฐาน (design)
 
-- **สถานะ:** ผู้ใช้ยืนยันแล้ว 2026-10-16; implement ตาม [แผน](../plans/2026-10-16-milestone-2-domain-ports.md)
+- **สถานะ:** ผ่านการตรวจรับ 2026-10-17; implement ตาม [แผน](../plans/2026-10-16-milestone-2-domain-ports.md) และแก้ตามรีวิวทั้ง branch แล้ว
 - **อ้างอิง:** [AGENTS.md](../../../AGENTS.md), [phase 1 spec](2026-10-05-phase-1-design.md) หัวข้อ 3, 7, 8, 11, 12 และ [roadmap](../plans/2026-10-05-phase-1-roadmap.md) milestone 2
 - **ADR:** [ADR-0013](../../adr/0013-domain-value-types.md)
 
