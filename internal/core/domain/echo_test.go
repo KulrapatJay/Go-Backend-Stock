@@ -3,6 +3,7 @@ package domain_test
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"go-backend-stock/internal/core/domain"
 )
@@ -19,6 +20,14 @@ func TestErrorsNeverEchoInput(t *testing.T) {
 		"ParseQuantity": func(s string) error { _, err := domain.ParseQuantity(s); return err },
 		"ParsePrice":    func(s string) error { _, err := domain.ParsePrice(s); return err },
 		"ParseFee":      func(s string) error { _, err := domain.ParseFee(s); return err },
+		"ParseSymbol":   func(s string) error { _, err := domain.ParseSymbol("1" + s); return err },
+		"ParseEmail":    func(s string) error { _, err := domain.ParseEmail(s + " x"); return err },
+		"ParseExecutedAt": func(s string) error {
+			_, err := domain.ParseExecutedAt(s, time.Now())
+			return err
+		},
+		"ParsePortfolioName":        func(s string) error { _, err := domain.ParsePortfolioName(s + "\x01x"); return err },
+		"ParsePortfolioDescription": func(s string) error { _, err := domain.ParsePortfolioDescription(s + "\x01x"); return err },
 	}
 	for name, parse := range parsers {
 		for _, in := range []string{echoMarker, "1" + echoMarker, echoMarker + "@", strings.Repeat(echoMarker, 300)} {
