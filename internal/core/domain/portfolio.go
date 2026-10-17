@@ -2,6 +2,7 @@ package domain
 
 import (
 	"strings"
+	"time"
 	"unicode/utf8"
 )
 
@@ -55,3 +56,31 @@ func ParsePortfolioDescription(s string) (PortfolioDescription, error) {
 }
 
 func (d PortfolioDescription) String() string { return d.value }
+
+// Currency is the portfolio currency. Phase 1 supports only USD (portfolios.currency CHECK).
+type Currency string
+
+const CurrencyUSD Currency = "USD"
+
+// ParseCurrency accepts exactly "USD".
+func ParseCurrency(s string) (Currency, error) {
+	return parseEnum("currency", s, CurrencyUSD)
+}
+
+// Portfolio belongs to one user. Its Version covers name and description only.
+type Portfolio struct {
+	ID          ID
+	UserID      ID
+	Name        PortfolioName
+	Description PortfolioDescription
+	Currency    Currency
+	Version     Version
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
+}
+
+// PortfolioPage is one page of a user's portfolios, newest first. NextCursor is "" on the last page.
+type PortfolioPage struct {
+	Items      []Portfolio
+	NextCursor string
+}

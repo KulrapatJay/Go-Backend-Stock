@@ -19,3 +19,9 @@ func isASCII(s string) bool {
 	}
 	return true
 }
+
+// isText reports whether s is valid UTF-8 of min..max runes without control characters.
+func isText(s string, minRunes, maxRunes int) bool {
+	n := utf8.RuneCountInString(s)
+	return utf8.ValidString(s) && n >= minRunes && n <= maxRunes && !hasControl(s)
+}
