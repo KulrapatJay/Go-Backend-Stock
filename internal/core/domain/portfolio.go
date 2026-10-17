@@ -29,6 +29,12 @@ func ParsePortfolioName(s string) (PortfolioName, error) {
 	if hasControl(v) {
 		return PortfolioName{}, invalidInput("name", "must not contain control characters")
 	}
+	if hasHidden(v) {
+		return PortfolioName{}, invalidInput("name", "must not contain invisible or direction-changing characters")
+	}
+	if !hasVisible(v) {
+		return PortfolioName{}, invalidInput("name", "must contain a visible character")
+	}
 	return PortfolioName{value: v}, nil
 }
 
@@ -40,8 +46,9 @@ func (n PortfolioName) IsZero() bool { return n.value == "" }
 // PortfolioDescription is optional text of at most 1000 characters; the zero value is "".
 type PortfolioDescription struct{ value string }
 
-// ParsePortfolioDescription keeps s as written (no trimming) and rejects control characters,
-// including line breaks.
+// ParsePortfolioDescription keeps s as written (no trimming). Line breaks ("\n" or "\r\n") are
+// allowed so descriptions can span several lines; other control characters, a lone "\r", and
+// invisible or direction-changing characters are rejected.
 func ParsePortfolioDescription(s string) (PortfolioDescription, error) {
 	if !utf8.ValidString(s) {
 		return PortfolioDescription{}, invalidInput("description", "must be valid UTF-8")
@@ -49,8 +56,11 @@ func ParsePortfolioDescription(s string) (PortfolioDescription, error) {
 	if utf8.RuneCountInString(s) > maxPortfolioDescriptionRunes {
 		return PortfolioDescription{}, invalidInput("description", "must be at most 1000 characters")
 	}
-	if hasControl(s) {
-		return PortfolioDescription{}, invalidInput("description", "must not contain control characters")
+	if hasControlExceptLineBreaks(s) {
+		return PortfolioDescription{}, invalidInput("description", "must not contain control characters other than line breaks")
+	}
+	if hasHidden(s) {
+		return PortfolioDescription{}, invalidInput("description", "must not contain invisible or direction-changing characters")
 	}
 	return PortfolioDescription{value: s}, nil
 }

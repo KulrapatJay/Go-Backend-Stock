@@ -107,14 +107,45 @@ func TestParsePortfolioName(t *testing.T) {
 
 func TestParsePortfolioDescription(t *testing.T) {
 	thai1000 := strings.Repeat("ข", 1000)
-	for _, in := range []string{"", "  kept as written  ", thai1000} {
+	for _, in := range []string{
+		"", "  kept as written  ", thai1000,
+		"line\nbreak", "windows\r\nline", "ถือยาว 10 ปี\nเน้นปันผล\n", // line breaks are allowed (user decision 2026-10-17)
+	} {
 		d, err := domain.ParsePortfolioDescription(in)
 		if err != nil || d.String() != in {
 			t.Errorf("ParsePortfolioDescription(%q) = %q, %v; want unchanged", in, d, err)
 		}
 	}
-	for _, in := range []string{thai1000 + "ข", "line\nbreak", "bell\a", "\xff"} {
+	for _, in := range []string{
+		thai1000 + "ข", "bell\a", "\xff", "tab\there", "lone\rcarriage", "ends with\r",
+		"rtl\u202eoverride", "line\u2028separator", "para\u2029separator", "zero\u200bwidth", "bom\ufeff",
+	} {
 		_, err := domain.ParsePortfolioDescription(in)
 		requireInvalidInput(t, err, "description")
+	}
+}
+
+// TestPortfolioNameRejectsInvisibleAndDirectionChanges keeps names visibly distinct: invisible or
+// direction-changing characters would let "Long term" and "Long term\u200b" look identical while
+// passing the case-insensitive uniqueness check, or make a name that looks empty.
+func TestPortfolioNameRejectsInvisibleAndDirectionChanges(t *testing.T) {
+	for _, in := range []string{
+		"\u200b", "\ufeff", "\u2060\u2060", "\u180e", "\u00ad", // invisible-only names
+		"\u3164", "\u115f", "\uffa0", // Hangul fillers render as blanks
+		"Long term\u200b", "Long\u00adterm", "Long\u3164term",
+		"\u202eevil", "a\u061cb", "a\u200eb", "a\u2066b\u2069", // bidi controls
+		"a\u2028b", "a\u2029b", // line and paragraph separators
+	} {
+		_, err := domain.ParsePortfolioName(in)
+		requireInvalidInput(t, err, "name")
+	}
+	for _, in := range []string{
+		"Long term", "ระยะยาว", "👨\u200d👩\u200d👧 family", // zero-width joiner inside emoji
+		"می\u200cخواهم", // zero-width non-joiner is needed by Persian
+		"📈", "株式",
+	} {
+		if _, err := domain.ParsePortfolioName(in); err != nil {
+			t.Errorf("ParsePortfolioName(%q) error = %v", in, err)
+		}
 	}
 }
