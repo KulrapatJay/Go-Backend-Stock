@@ -61,8 +61,8 @@ func NewIdempotencyRecord(r IdempotencyRecord) (IdempotencyRecord, error) {
 		err = invariant("idempotency.operation", "must be transactions.create")
 	case !isVisibleASCII(r.Key, maxIdempotencyKeyBytes):
 		err = invariant("idempotency.key", "must be 1-128 visible ASCII characters")
-	case len(r.Result) > MaxIdempotencyResultBytes || !json.Valid(r.Result):
-		err = invariant("idempotency.result", "must be valid JSON of at most 16 KiB")
+	case len(r.Result) > MaxIdempotencyResultBytes || !isStorableJSON(r.Result):
+		err = invariant("idempotency.result", "must be JSON of at most 16 KiB that PostgreSQL jsonb can store")
 	}
 	if err != nil {
 		return IdempotencyRecord{}, err

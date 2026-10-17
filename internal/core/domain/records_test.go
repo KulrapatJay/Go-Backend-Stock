@@ -159,3 +159,40 @@ func TestNewRateLimitRule(t *testing.T) {
 		})
 	}
 }
+
+// PostgreSQL jsonb rejects the \u0000 escape and invalid UTF-8 even though encoding/json accepts
+// them. An audit event jsonb cannot store would roll back the change it records, or lose a
+// failed-login audit that AGENTS.md requires to persist.
+var jsonbRejects = map[string]json.RawMessage{
+	"NUL escape in value": json.RawMessage(`{"user_agent":"curl\u0000"}`),
+	"NUL escape in key":   json.RawMessage(`{"a\u0000b":"x"}`),
+	"NUL in nested array": json.RawMessage(`{"a":[{"b":"\u0000"}]}`),
+	"invalid UTF-8":       json.RawMessage("{\"a\":\"\xff\"}"),
+}
+
+func TestNewAuditEventRejectsJSONThatJSONBCannotStore(t *testing.T) {
+	for name, metadata := range jsonbRejects {
+		t.Run(name, func(t *testing.T) {
+			e := validAudit(t)
+			e.Metadata = metadata
+			_, err := domain.NewAuditEvent(e)
+			requireCode(t, err, domain.CodeInternal)
+		})
+	}
+	ok := validAudit(t)
+	ok.Metadata = json.RawMessage(`{"literal":"\\u0000 is just text here"}`) // escaped backslash, no NUL
+	if _, err := domain.NewAuditEvent(ok); err != nil {
+		t.Errorf("escaped backslash rejected: %v", err)
+	}
+}
+
+func TestNewIdempotencyRecordRejectsJSONThatJSONBCannotStore(t *testing.T) {
+	for name, result := range jsonbRejects {
+		t.Run(name, func(t *testing.T) {
+			r := validRecord(t)
+			r.Result = result
+			_, err := domain.NewIdempotencyRecord(r)
+			requireCode(t, err, domain.CodeInternal)
+		})
+	}
+}

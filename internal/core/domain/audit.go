@@ -3,7 +3,9 @@ package domain
 import (
 	"bytes"
 	"encoding/json"
+	"strings"
 	"time"
+	"unicode/utf8"
 )
 
 const (
@@ -100,7 +102,7 @@ func NewAuditEvent(e AuditEvent) (AuditEvent, error) {
 	case e.ReasonCode != "" && !isText(e.ReasonCode, 1, maxAuditReasonCodeRunes):
 		err = invariant("audit.reason_code", "must be at most 80 printable characters")
 	case len(e.Metadata) > MaxAuditMetadataBytes || !isJSONObject(e.Metadata):
-		err = invariant("audit.metadata", "must be a JSON object of at most 8 KiB")
+		err = invariant("audit.metadata", "must be a JSON object of at most 8 KiB that PostgreSQL jsonb can store")
 	}
 	if err != nil {
 		return AuditEvent{}, err
@@ -110,5 +112,41 @@ func NewAuditEvent(e AuditEvent) (AuditEvent, error) {
 
 func isJSONObject(b json.RawMessage) bool {
 	t := bytes.TrimSpace(b)
-	return len(t) > 0 && t[0] == '{' && json.Valid(t)
+	return len(t) > 0 && t[0] == '{' && isStorableJSON(t)
+}
+
+// isStorableJSON reports whether b is JSON that PostgreSQL jsonb accepts: valid JSON, valid UTF-8
+// (encoding/json would silently replace bad bytes) and no NUL character in any string or key
+// (jsonb rejects the \u0000 escape).
+func isStorableJSON(b []byte) bool {
+	if !utf8.Valid(b) || !json.Valid(b) {
+		return false
+	}
+	dec := json.NewDecoder(bytes.NewReader(b))
+	dec.UseNumber()
+	var v any
+	if err := dec.Decode(&v); err != nil {
+		return false
+	}
+	return !containsNUL(v)
+}
+
+func containsNUL(v any) bool {
+	switch x := v.(type) {
+	case string:
+		return strings.IndexByte(x, 0) >= 0
+	case []any:
+		for _, item := range x {
+			if containsNUL(item) {
+				return true
+			}
+		}
+	case map[string]any:
+		for k, item := range x {
+			if strings.IndexByte(k, 0) >= 0 || containsNUL(item) {
+				return true
+			}
+		}
+	}
+	return false
 }
