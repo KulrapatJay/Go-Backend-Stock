@@ -1,8 +1,8 @@
 # Milestone 2 — Domain, ports และกติกาข้อมูลพื้นฐาน (design)
 
-- **สถานะ:** รอผู้ใช้รีวิว (design ทั้ง 4 ส่วนได้รับการยืนยันในบทสนทนา 2026-10-16)
+- **สถานะ:** ผู้ใช้ยืนยันแล้ว 2026-10-16; implement ตาม [แผน](../plans/2026-10-16-milestone-2-domain-ports.md)
 - **อ้างอิง:** [AGENTS.md](../../../AGENTS.md), [phase 1 spec](2026-10-05-phase-1-design.md) หัวข้อ 3, 7, 8, 11, 12 และ [roadmap](../plans/2026-10-05-phase-1-roadmap.md) milestone 2
-- **ADR ที่จะเพิ่ม:** ADR-0013 domain value types แบบ parse, don't validate
+- **ADR:** [ADR-0013](../../adr/0013-domain-value-types.md)
 
 ## 1. เป้าหมายและเกณฑ์ผ่าน
 

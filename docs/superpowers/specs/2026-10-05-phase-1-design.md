@@ -201,7 +201,7 @@ Direct connection หรือ session pooler ตามเครือข่า�
 
 ## 8. Ports และชนิดข้อมูล
 
-Signatures นี้เป็นข้อเสนอ interface ใน core ไม่ใช่ไฟล์โค้ดที่สร้างแล้ว ทุกชนิด `domain.*` เป็น plain Go value ไม่มี Fiber/pgx/sqlc/SDK types
+ทุกชนิด `domain.*` เป็น plain Go value ไม่มี Fiber/pgx/sqlc/SDK types. **Milestone 2 (2026-10-16):** สร้าง repository ports, `UnitOfWork`/`TxRepositories` และ `Clock` แล้วใน `internal/core/port` ตาม [milestone 2 design](2026-10-16-milestone-2-domain-ports-design.md) ส่วน service ports และ provider ports ด้านล่างยังเป็นข้อเสนอ และสร้างใน milestone ที่ใช้จริง; 4 พารามิเตอร์เปลี่ยนเป็นชนิดที่ตรวจแล้วตาม [ADR-0013](../../adr/0013-domain-value-types.md)
 
 ชนิดร่วม: `domain.ID` เป็น UUID string ที่ผ่าน validation, `domain.Principal` มี UserID/SessionID, `domain.RequestMeta` มี RequestID/MaskedIP/UserAgent; ไม่รับ actor ที่ client กำหนด `domain.Page` มี Limit/Cursor; Page result มี Items/NextCursor; `domain.Version` เป็น int32 ที่มากกว่าศูนย์
 
@@ -251,7 +251,7 @@ type InstrumentProvider interface { // external lookup: Alpaca Assets API หร
     Lookup(context.Context, string) (domain.Instrument, error) // ErrUnknownSymbol / ErrDependencyUnavailable
 }
 type InstrumentRepository interface {
-    BySymbol(context.Context, string) (domain.Instrument, error)
+    BySymbol(context.Context, domain.Symbol) (domain.Instrument, error)
     Upsert(context.Context, domain.Instrument) (domain.Instrument, error) // คืนแถวจริงรวม ID; ชน symbol จาก request พร้อมกันให้คืนแถวที่มีอยู่
 }
 type IdentityProvider interface {
@@ -280,7 +280,7 @@ type TxRepositories interface {
 }
 type UserRepository interface {
     ByID(context.Context, domain.ID) (domain.User, error)
-    ByEmail(context.Context, string) (domain.User, error)
+    ByEmail(context.Context, domain.Email) (domain.User, error)
     Lock(context.Context, domain.ID) (domain.User, error)
     Insert(context.Context, domain.User) error
     SetPassword(context.Context, domain.ID, string, time.Time) error
@@ -289,11 +289,11 @@ type UserRepository interface {
 type SessionRepository interface {
     ByTokenHash(context.Context, []byte) (domain.Session, error)
     Insert(context.Context, domain.Session) error
-    Revoke(context.Context, domain.ID, time.Time, string) (bool, error)
-    RevokeAll(context.Context, domain.ID, time.Time, string) (int64, error)
+    Revoke(context.Context, domain.ID, time.Time, domain.RevokeReason) (bool, error)
+    RevokeAll(context.Context, domain.ID, time.Time, domain.RevokeReason) (int64, error)
 }
 type IdentityRepository interface {
-    BySubject(context.Context, string, string) (domain.AuthProvider, error)
+    BySubject(context.Context, domain.IdentityProviderName, string) (domain.AuthProvider, error)
     Insert(context.Context, domain.AuthProvider) error
 }
 type OIDCFlowRepository interface {

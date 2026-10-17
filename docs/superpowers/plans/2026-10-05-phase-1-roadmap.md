@@ -10,7 +10,7 @@
 
 **Spec:** [แบบระบบสำหรับตรวจยืนยัน](../specs/2026-10-05-phase-1-design.md) โดยยึดข้อกำหนดใน [AGENTS.md](../../../AGENTS.md)
 
-**Status:** ผู้ใช้ยืนยันให้เริ่มตามลำดับแล้ว จัดทำข้อเสนอ milestone 0 ใน spec ที่ลิงก์ด้านบนแล้ว ผู้ใช้ยืนยันข้อเสนอเดิมและเลื่อนหน้าหุ้นรายตัว/กราฟไปเฟสถัดไปแล้ว (2026-10-14) และยืนยันแบบ email verification, portfolio name uniqueness และกติการหัสผ่านแล้ว milestone 0 ผ่านการตรวจรับ; milestone 1 ผ่านการตรวจรับเมื่อ 2026-10-15 (ลงมือครบทุก task, self-review ทั้ง branch ไม่พบ Critical/Important, CI บน GitHub ผ่าน) ขั้นต่อไปคือแตกแผนย่อยของ milestone 2 ยังไม่เริ่ม
+**Status:** ผู้ใช้ยืนยันให้เริ่มตามลำดับแล้ว จัดทำข้อเสนอ milestone 0 ใน spec ที่ลิงก์ด้านบนแล้ว ผู้ใช้ยืนยันข้อเสนอเดิมและเลื่อนหน้าหุ้นรายตัว/กราฟไปเฟสถัดไปแล้ว (2026-10-14) และยืนยันแบบ email verification, portfolio name uniqueness และกติการหัสผ่านแล้ว milestone 0 ผ่านการตรวจรับ; milestone 1 ผ่านการตรวจรับเมื่อ 2026-10-15 (ลงมือครบทุก task, self-review ทั้ง branch ไม่พบ Critical/Important, CI บน GitHub ผ่าน) milestone 2 ลงมือครบทุก task แล้ว (2026-10-16) รอผู้ใช้ตรวจรับ
 
 ## Global Constraints
 
@@ -86,11 +86,13 @@
 
 ### 2. Domain + ports + กติกาข้อมูลพื้นฐาน
 
-**ไฟล์หลัก:** `internal/core/domain/{user,session,portfolio,transaction,money,price,audit,errors}.go`, `internal/core/port/` ตามรายชื่อและ signatures ที่ยืนยันใน milestone 0
+**แผนลงมือ:** [2026-10-16-milestone-2-domain-ports.md](2026-10-16-milestone-2-domain-ports.md)
 
-- [ ] สร้าง entities/value types และ validation สำหรับ quantity/price/fee, symbol, เวลา และ decimal strings
-- [ ] สร้าง service/repository/provider ports, Clock และขอบเขต atomic operations ตามแบบที่ยืนยัน
-- [ ] เพิ่ม unit tests สำหรับ precision/scale, ค่าติดลบ/ศูนย์ และค่าที่เกินช่วง โดยไม่ต้องใช้ DB หรือ Fiber
+**ไฟล์หลัก:** `internal/core/domain/` (value types, entities, errors), `internal/core/port/` (repository ports, UnitOfWork, Clock), `internal/core/boundary_test.go`
+
+- [x] สร้าง entities/value types และ validation สำหรับ quantity/price/fee, symbol, เวลา และ decimal strings
+- [x] สร้าง service/repository/provider ports, Clock และขอบเขต atomic operations ตามแบบที่ยืนยัน (สร้างเฉพาะ repository ports, UnitOfWork และ Clock ที่ milestone 3 ใช้; service/provider ports สร้างใน milestone ที่ใช้จริง ตามที่ผู้ใช้ยืนยัน 2026-10-16)
+- [x] เพิ่ม unit tests สำหรับ precision/scale, ค่าติดลบ/ศูนย์ และค่าที่เกินช่วง โดยไม่ต้องใช้ DB หรือ Fiber
 
 **ผ่านเมื่อ:** core compile/test ได้เองและไม่มี import ของ Fiber, pgx, sqlc-generated code หรือ provider SDK
 
