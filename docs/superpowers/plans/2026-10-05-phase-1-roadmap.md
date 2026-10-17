@@ -96,6 +96,15 @@
 
 **ผ่านเมื่อ:** core compile/test ได้เองและไม่มี import ของ Fiber, pgx, sqlc-generated code หรือ provider SDK
 
+**ข้อที่ส่งต่อให้ milestone 3** (จากรีวิวทั้ง branch 2026-10-17 ระดับ Minor):
+- ทำ helper แปลง error จาก `Parse*` ของข้อมูลที่อ่านจาก DB ให้เป็น `internal` (ไม่ให้ข้อมูลเสียใน DB กลายเป็น 400) และให้ `ID` map กับ pgx ได้โดยไม่ต้องผ่าน string
+- เขียน contract ของ ports ให้ครบใน comment และ repository tests: unique violation → `ErrPortfolioNameConflict`/`ErrIdentityConflict`, not-found ของทุก method, `TransactionRepository.Update` ต้องกรองด้วย portfolio_id และห้ามแก้ portfolio_id, tie-break ของการเรียง list, พฤติกรรม `IdempotencyRepository.Save` เมื่อชน
+- DB CHECK ขนาด audit metadata ต้องนับแบบเดียวกับ Go (raw bytes ≤ 8 KiB) เพราะ `jsonb::text` เพิ่มช่องว่าง; email ต้องเก็บ/ค้นด้วยค่าที่ Go normalize แล้ว ไม่พึ่ง `lower()` ใน SQL
+- `NewTransactionFilter` ยังรับ `Symbol{}`/`Side("")` ที่ว่าง; entity ที่ไม่มี constructor (Transaction/Portfolio/User) ยังส่ง zero value ถึง repository ได้ (DB CHECK/FK จับเป็น internal)
+- `ParseExecutedAt` รับทศนิยม 7 หลักที่หลักท้ายเป็น 0 และ `,` แทน `.` (ไม่ปัดค่า แต่ไม่ตรง design §3); comment ของ sentinel errors ขัดกับ comment ใน ports; `errors.Is(err, (*domain.Error)(nil))` panic
+- อีเมลรับอักขระพิเศษของ mail syntax (`,;<>`) และ format characters: Mailer adapter (milestone 4) ต้อง validate ด้วย `net/mail` ก่อนใส่ header
+- เอกสาร: spec หัวข้อ 8 ยังเขียนว่า `domain.ID` เป็น UUID string และ design §3 เขียน `ParseID(s)` (โค้ดจริงคือ `ParseID(field, s)`)
+
 ### 3. Schema + goose + sqlc + repositories + audit persistence
 
 **ไฟล์หลัก:** `migrations/`, `sqlc.yaml`, `internal/adapter/postgres/queries/`, `internal/adapter/postgres/sqlc/`, `internal/adapter/postgres/` สำหรับ repository implementations/tests

@@ -281,9 +281,10 @@ type TxRepositories interface {
 type UserRepository interface {
     ByID(context.Context, domain.ID) (domain.User, error)
     ByEmail(context.Context, domain.Email) (domain.User, error)
+    CredentialsByEmail(context.Context, domain.Email) (domain.UserCredentials, error) // query เดียวที่อ่าน password_hash: login/register/reset
     Lock(context.Context, domain.ID) (domain.User, error)
     Insert(context.Context, domain.User) error
-    SetPassword(context.Context, domain.ID, string, time.Time) error
+    SetPassword(context.Context, domain.ID, domain.PasswordHash, time.Time) error
     MarkEmailVerified(context.Context, domain.ID, time.Time) error // no-op ถ้ายืนยันแล้ว
 }
 type SessionRepository interface {

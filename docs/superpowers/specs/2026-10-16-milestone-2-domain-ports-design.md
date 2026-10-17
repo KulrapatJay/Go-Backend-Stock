@@ -31,7 +31,7 @@
 | `time.go` | `ParseExecutedAt(s, now)` | RFC3339 ที่มี timezone เท่านั้น, แปลงเป็น UTC, ทศนิยมวินาทีเกิน 6 หลักปฏิเสธ (ไม่ปัด), ต้อง ≥ `1970-01-01T00:00:00Z` และไม่อยู่หลัง `now` (เท่ากับ `now` ผ่าน) |
 | `version.go` | `Version`, `ParseVersion(n)` | int32 > 0 |
 | `email.go` | `Email`, `ParseEmail(s)` | trim + lowercase, 1–254 ตัวอักษร, มี `@` ตัวเดียวและทั้งสองฝั่งไม่ว่าง, ไม่มีช่องว่าง/อักขระควบคุม; ไม่ตัดจุดหรือ `+suffix`; ไม่ใช้ regex RFC 5322 เพราะยืนยันจริงด้วย OTP ทางอีเมล |
-| `portfolio.go` | `PortfolioName`, `PortfolioDescription` | ชื่อ trim แล้ว 1–100 ตัวอักษร; คำอธิบายไม่บังคับ (ค่าเริ่มต้น `""`) ≤ 1000 ตัวอักษร; นับเป็นตัวอักษร (rune) ไม่ใช่ byte ให้ตรงกับ `varchar(n)`; ห้ามอักขระควบคุมทั้งสอง field |
+| `portfolio.go` | `PortfolioName`, `PortfolioDescription` | ชื่อ trim แล้ว 1–100 ตัวอักษร; คำอธิบายไม่บังคับ (ค่าเริ่มต้น `""`) ≤ 1000 ตัวอักษร; นับเป็นตัวอักษร (rune) ไม่ใช่ byte ให้ตรงกับ `varchar(n)`; ห้ามอักขระควบคุม ยกเว้นคำอธิบายขึ้นบรรทัดใหม่ได้ด้วย `\n` หรือ `\r\n` (ผู้ใช้ตัดสินใจ 2026-10-17); ทั้งสอง field ห้ามอักขระล่องหนหรือเปลี่ยนทิศ (Unicode Cf ยกเว้น ZWJ/ZWNJ, Zl, Zp, Hangul filler) และชื่อต้องมีอักขระที่มองเห็นอย่างน้อยหนึ่งตัว เพื่อไม่ให้ชื่อสองชื่อดูเหมือนกันแต่ผ่านกฎห้ามชื่อซ้ำ (แก้หลังรีวิว 2026-10-17) |
 | `page.go` | `Page`, `ParsePage(limit, cursor)` | limit ค่าเริ่มต้น 20 ช่วง 1–100; cursor ≤ 1 KiB; การถอด/ผูก cursor กับ filters เป็นงานของ adapter |
 
 ## 4. Entities, enums และ errors
@@ -42,7 +42,7 @@ struct ธรรมดาที่ field export ได้แต่ใช้ช�
 
 | ไฟล์ | ชนิด |
 | --- | --- |
-| `user.go` | `User` (ไม่มี field password hash ตาม phase 1 spec หัวข้อ 7), `Session`, `AuthProvider`, `OIDCFlow`, `RevokeReason` (`logout`, `password_reset`), `IdentityProviderName` (`google`) |
+| `user.go` | `User` (ไม่มี field password hash ตาม phase 1 spec หัวข้อ 7), `Session`, `AuthProvider`, `OIDCFlow`, `RevokeReason` (`logout`, `password_reset`), `IdentityProviderName` (`google`), `PasswordHash` (พิมพ์/marshal เป็น `[REDACTED]` เสมอ), `UserCredentials{User, PasswordHash}` ซึ่งเป็นค่าเดียวที่มี hash (เพิ่มหลังรีวิว 2026-10-17) |
 | `otp.go` | `OTPChallenge`, `OTPPurpose` |
 | `portfolio.go` | `Portfolio`, `PortfolioPage` |
 | `transaction.go` | `Transaction`, `Side`, `TransactionFilter` (From ≤ To), `TransactionPage` |
@@ -89,8 +89,9 @@ Signature ยึดตาม phase 1 spec หัวข้อ 8 ยกเว้�
 | `InstrumentRepository.BySymbol` | `string` | `domain.Symbol` |
 | `SessionRepository.Revoke`, `RevokeAll` (reason) | `string` | `domain.RevokeReason` |
 | `IdentityRepository.BySubject` (provider) | `string` | `domain.IdentityProviderName` |
+| `UserRepository.SetPassword` (hash) | `string` | `domain.PasswordHash` (เพิ่มหลังรีวิว 2026-10-17) |
 
-`UserRepository.SetPassword` รับ password hash เป็น `string` ตามเดิม เพราะ service เป็นผู้สร้าง ไม่ใช่ input ของผู้ใช้
+เพิ่มหลังรีวิว (ผู้ใช้เลือก 2026-10-17): `UserRepository.CredentialsByEmail(ctx, domain.Email) (domain.UserCredentials, error)` เป็น query เดียวที่อ่าน `password_hash` สำหรับ login, register และ reset; `ByEmail` และ query อื่นยังไม่อ่าน hash; register ใช้ `Insert` + `SetPassword` ใน transaction เดียว
 
 `Clock` มีเฉพาะ interface; ตัวจริง (`time.Now().UTC()`) และตัวปลอมสำหรับ tests มาพร้อม service ตัวแรกที่ใช้ tests ใน milestone นี้ส่ง `now` เป็นพารามิเตอร์ตรง
 
