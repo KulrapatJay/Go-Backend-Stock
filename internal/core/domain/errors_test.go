@@ -55,3 +55,11 @@ func TestErrorCodesMatchAPIContract(t *testing.T) {
 		}
 	}
 }
+
+func TestErrorIsWithNilTargetDoesNotPanic(t *testing.T) {
+	var nilErr *domain.Error
+	err := fmt.Errorf("load: %w", domain.ErrNotFound)
+	if errors.Is(err, nilErr) {
+		t.Error("errors.Is(not_found, (*domain.Error)(nil)) = true, want false")
+	}
+}

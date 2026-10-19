@@ -55,10 +55,11 @@ func (e *Error) Error() string { return string(e.Code) + ": " + e.Message }
 // matches whatever the message says.
 func (e *Error) Is(target error) bool {
 	t, ok := target.(*Error)
-	return ok && t.Code == e.Code
+	return ok && t != nil && t.Code == e.Code
 }
 
-// Sentinels for errors.Is. Compare by code; do not return these to share their messages.
+// Sentinels for errors.Is. Adapters may return them as-is (e.g. a repository returns ErrNotFound);
+// callers compare with errors.Is, which matches by code. Never modify a sentinel.
 var (
 	ErrInvalidInput          = NewError(CodeInvalidInput, "invalid input")
 	ErrNotFound              = NewError(CodeNotFound, "resource not found")
