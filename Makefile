@@ -18,23 +18,30 @@ SWAG_VERSION := v1.16.6
 GO_SWAGGER_VERSION := v0.34.1
 GOOSE_VERSION := v3.28.0
 GOLANGCI_LINT_VERSION := v2.14.0
+SQLC_VERSION := v1.31.1
 GOOSE_TAGS := no_clickhouse no_duckdb no_libsql no_mssql no_mysql no_sqlite3 no_vertica no_ydb
 
 SWAG := $(BIN)/swag
 SWAGGER := $(BIN)/swagger
 GOOSE := $(BIN)/goose
 GOLANGCI_LINT := $(BIN)/golangci-lint
+SQLC := $(BIN)/sqlc
 
-.PHONY: tools swagger
+.PHONY: tools swagger sqlc
 
 tools:
 	GOBIN=$(BIN) go install github.com/swaggo/swag/cmd/swag@$(SWAG_VERSION)
 	GOBIN=$(BIN) go install github.com/go-swagger/go-swagger/cmd/swagger@$(GO_SWAGGER_VERSION)
 	CGO_ENABLED=0 GOBIN=$(BIN) go install -tags '$(GOOSE_TAGS)' github.com/pressly/goose/v3/cmd/goose@$(GOOSE_VERSION)
+	# sqlc parses SQL with a C library, so it needs cgo (a C compiler) to build.
+	CGO_ENABLED=1 GOBIN=$(BIN) go install github.com/sqlc-dev/sqlc/cmd/sqlc@$(SQLC_VERSION)
 
 swagger:
 	$(SWAG) init -g cmd/api/main.go -d . --parseInternal -o docs/api --outputTypes go,json,yaml
 	$(SWAGGER) validate docs/api/swagger.yaml
+
+sqlc:
+	$(SQLC) generate
 
 POSTGRES_HOST_PORT ?= 55432
 LOCAL_DB_HOST := 127.0.0.1:$(POSTGRES_HOST_PORT)
@@ -70,5 +77,5 @@ lint-install:
 lint:
 	$(GOLANGCI_LINT) run ./...
 
-check: tidy-check vet lint swagger test
-	git diff --exit-code -- docs/api
+check: tidy-check vet lint swagger sqlc test
+	git diff --exit-code -- docs/api internal/adapter/postgres/sqlc

@@ -64,6 +64,11 @@ jobs:
           make swagger
           git diff --exit-code -- docs/api
 
+      - name: sqlc code is regenerated and committed
+        run: |
+          make sqlc
+          git diff --exit-code -- internal/adapter/postgres/sqlc
+
       - name: Bootstrap database roles
         run: |
           psql "$ADMIN_DATABASE_URL" -v ON_ERROR_STOP=1 \
