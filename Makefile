@@ -41,10 +41,11 @@ LOCAL_DB_HOST := 127.0.0.1:$(POSTGRES_HOST_PORT)
 MIGRATION_DATABASE_URL ?= postgres://app_migrator:$(APP_MIGRATOR_PASSWORD)@$(LOCAL_DB_HOST)/$(POSTGRES_DB)?sslmode=disable
 TEST_ADMIN_DATABASE_URL ?= postgres://$(POSTGRES_ADMIN_USER):$(POSTGRES_ADMIN_PASSWORD)@$(LOCAL_DB_HOST)/$(POSTGRES_DB)?sslmode=disable
 TEST_RUNTIME_DATABASE_URL ?= postgres://app_runtime:$(APP_RUNTIME_PASSWORD)@$(LOCAL_DB_HOST)/$(POSTGRES_DB)?sslmode=disable
+TEST_MAINTENANCE_DATABASE_URL ?= postgres://app_maintenance:$(APP_MAINTENANCE_PASSWORD)@$(LOCAL_DB_HOST)/$(POSTGRES_DB)?sslmode=disable
 
 # `export` above would leak these into every recipe, so a plain `make test` would try to reach a
 # database instead of skipping integration tests. test-integration passes them explicitly.
-unexport TEST_ADMIN_DATABASE_URL TEST_RUNTIME_DATABASE_URL MIGRATION_DATABASE_URL
+unexport TEST_ADMIN_DATABASE_URL TEST_RUNTIME_DATABASE_URL TEST_MAINTENANCE_DATABASE_URL MIGRATION_DATABASE_URL
 
 .PHONY: migrate-up migrate-status test-integration
 
@@ -58,6 +59,7 @@ test-integration:
 	REQUIRE_INTEGRATION=1 \
 	TEST_ADMIN_DATABASE_URL="$(TEST_ADMIN_DATABASE_URL)" \
 	TEST_RUNTIME_DATABASE_URL="$(TEST_RUNTIME_DATABASE_URL)" \
+	TEST_MAINTENANCE_DATABASE_URL="$(TEST_MAINTENANCE_DATABASE_URL)" \
 	go test -race -count=1 ./internal/adapter/postgres/...
 
 .PHONY: lint-install lint check
