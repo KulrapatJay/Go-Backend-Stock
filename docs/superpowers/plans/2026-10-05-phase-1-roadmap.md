@@ -10,7 +10,7 @@
 
 **Spec:** [แบบระบบสำหรับตรวจยืนยัน](../specs/2026-10-05-phase-1-design.md) โดยยึดข้อกำหนดใน [AGENTS.md](../../../AGENTS.md)
 
-**Status:** ผู้ใช้ยืนยันให้เริ่มตามลำดับแล้ว จัดทำข้อเสนอ milestone 0 ใน spec ที่ลิงก์ด้านบนแล้ว ผู้ใช้ยืนยันข้อเสนอเดิมและเลื่อนหน้าหุ้นรายตัว/กราฟไปเฟสถัดไปแล้ว (2026-10-14) และยืนยันแบบ email verification, portfolio name uniqueness และกติการหัสผ่านแล้ว milestone 0 ผ่านการตรวจรับ; milestone 1 ผ่านการตรวจรับเมื่อ 2026-10-15 (ลงมือครบทุก task, self-review ทั้ง branch ไม่พบ Critical/Important, CI บน GitHub ผ่าน) milestone 2 ผ่านการตรวจรับเมื่อ 2026-10-17 (ลงมือครบทุก task, รีวิวทั้ง branch ด้วย subagent แก้ Important ครบ 4 ข้อ) ขั้นต่อไปคือแตกแผนย่อยของ milestone 3 ยังไม่เริ่ม
+**Status:** ผู้ใช้ยืนยันให้เริ่มตามลำดับแล้ว จัดทำข้อเสนอ milestone 0 ใน spec ที่ลิงก์ด้านบนแล้ว ผู้ใช้ยืนยันข้อเสนอเดิมและเลื่อนหน้าหุ้นรายตัว/กราฟไปเฟสถัดไปแล้ว (2026-10-14) และยืนยันแบบ email verification, portfolio name uniqueness และกติการหัสผ่านแล้ว milestone 0 ผ่านการตรวจรับ; milestone 1 ผ่านการตรวจรับเมื่อ 2026-10-15 (ลงมือครบทุก task, self-review ทั้ง branch ไม่พบ Critical/Important, CI บน GitHub ผ่าน) milestone 2 ผ่านการตรวจรับเมื่อ 2026-10-17 (ลงมือครบทุก task, รีวิวทั้ง branch ด้วย subagent แก้ Important ครบ 4 ข้อ) milestone 3 แผน 3a ลงมือครบแล้ว รอผู้ใช้ตรวจรับ จากนั้นแผน 3b
 
 ## Global Constraints
 
@@ -107,13 +107,15 @@
 
 ### 3. Schema + goose + sqlc + repositories + audit persistence
 
+**แผนลงมือ:** [design](../specs/2026-10-17-milestone-3-persistence-design.md) — [3a](2026-10-17-milestone-3a-schema-sqlc-audit.md) (schema, roles, sqlc, audit), 3b (repositories ฝั่ง auth), 3c (repositories ฝั่งพอร์ต)
+
 **ไฟล์หลัก:** `migrations/`, `sqlc.yaml`, `internal/adapter/postgres/queries/`, `internal/adapter/postgres/sqlc/`, `internal/adapter/postgres/` สำหรับ repository implementations/tests
 
-- [ ] เพิ่มตาราง constraints/indexes และ DB role permissions ตามแบบ รวม instruments (surrogate key) และ version columns; ไม่แก้ managed schema ของ Supabase; migration ใช้เลขลำดับต่อเนื่องและไม่แก้ไฟล์ที่รันแล้ว
-- [ ] เขียน SQL queries, generate sqlc, map numeric/domain types และทดสอบ repository กับ PostgreSQL จริง
-- [ ] สร้าง transaction coordination และ audit append/read พร้อม failure injection ที่พิสูจน์ว่า audit/data rollback ด้วยกัน
-- [ ] ทดสอบ runtime role แก้/ลบ audit ไม่ได้, maintenance cleanup จำกัดเฉพาะสิทธิ์ที่จำเป็น และ audit ไม่ถูก cascade ลบตามข้อมูลต้นทาง
-- [ ] เปิด CI ตรวจ goose บน DB ว่าง, repository integration tests และ `sqlc generate` ตามด้วย `git diff --exit-code`
+- [x] เพิ่มตาราง constraints/indexes และ DB role permissions ตามแบบ รวม instruments (surrogate key) และ version columns; ไม่แก้ managed schema ของ Supabase; migration ใช้เลขลำดับต่อเนื่องและไม่แก้ไฟล์ที่รันแล้ว
+- [ ] เขียน SQL queries, generate sqlc, map numeric/domain types และทดสอบ repository กับ PostgreSQL จริง (3a ทำแล้ว: sqlc + mapper + `AuditRepository`; ยังเหลือ repositories ฝั่ง auth ใน 3b และฝั่งพอร์ตใน 3c)
+- [ ] สร้าง transaction coordination และ audit append/read พร้อม failure injection ที่พิสูจน์ว่า audit/data rollback ด้วยกัน (3a ทำแล้ว: `withinTx` + failure injection ด้วย audit; ยังเหลือการทำซ้ำกับพอร์ตจริงและ `UnitOfWork` ครบใน 3c)
+- [x] ทดสอบ runtime role แก้/ลบ audit ไม่ได้, maintenance cleanup จำกัดเฉพาะสิทธิ์ที่จำเป็น และ audit ไม่ถูก cascade ลบตามข้อมูลต้นทาง
+- [x] เปิด CI ตรวจ goose บน DB ว่าง, repository integration tests และ `sqlc generate` ตามด้วย `git diff --exit-code`
 
 **ผ่านเมื่อ:** schema สร้างจากศูนย์ได้, generated code ไม่มี diff, role permissions ถูกต้อง และ integration tests ผ่านโดยไม่ใช้ Supabase จริง
 

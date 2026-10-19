@@ -203,7 +203,7 @@ Direct connection หรือ session pooler ตามเครือข่า�
 
 ทุกชนิด `domain.*` เป็น plain Go value ไม่มี Fiber/pgx/sqlc/SDK types. **Milestone 2 (2026-10-16):** สร้าง repository ports, `UnitOfWork`/`TxRepositories` และ `Clock` แล้วใน `internal/core/port` ตาม [milestone 2 design](2026-10-16-milestone-2-domain-ports-design.md) ส่วน service ports และ provider ports ด้านล่างยังเป็นข้อเสนอ และสร้างใน milestone ที่ใช้จริง; 4 พารามิเตอร์เปลี่ยนเป็นชนิดที่ตรวจแล้วตาม [ADR-0013](../../adr/0013-domain-value-types.md)
 
-ชนิดร่วม: `domain.ID` เป็น UUID string ที่ผ่าน validation, `domain.Principal` มี UserID/SessionID, `domain.RequestMeta` มี RequestID/MaskedIP/UserAgent; ไม่รับ actor ที่ client กำหนด `domain.Page` มี Limit/Cursor; Page result มี Items/NextCursor; `domain.Version` เป็น int32 ที่มากกว่าศูนย์
+ชนิดร่วม: `domain.ID` ห่อ UUID ที่ผ่าน validation (สร้างด้วย `NewID()` หรือ `ParseID(field, s)`; `String()` คืนรูปมาตรฐานตัวพิมพ์เล็ก), `domain.Principal` มี UserID/SessionID, `domain.RequestMeta` มี RequestID/MaskedIP/UserAgent; ไม่รับ actor ที่ client กำหนด `domain.Page` มี Limit/Cursor; Page result มี Items/NextCursor; `domain.Version` เป็น int32 ที่มากกว่าศูนย์
 
 Commands/results อ้าง field contract ในหัวข้อ API: RegisterInput/LoginInput, ResetPasswordInput, PortfolioInput, TransactionInput; domain.Transaction เพิ่ม ID/PortfolioID/InstrumentID/Symbol/Sequence/Version/CreatedAt/UpdatedAt; domain.Portfolio มี Version; domain.Instrument มี ID/Symbol/ProviderAssetID/Name/Exchange/AssetClass/Status/Source/VerifiedAt; SessionGrant มี User, raw Token, ExpiresAt สำหรับ HTTP adapter ตั้ง cookie เท่านั้น ไม่ serialize/log raw Token
 

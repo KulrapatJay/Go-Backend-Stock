@@ -25,7 +25,7 @@
 
 | ไฟล์ | ชนิด/ฟังก์ชัน | กติกา |
 | --- | --- | --- |
-| `id.go` | `ID`, `NewID()`, `ParseID(s)` | `NewID` สร้าง UUIDv7; `ParseID` รับเฉพาะ UUID ที่ถูกรูปแบบ; ใช้ `github.com/google/uuid` ที่มีใน go.mod อยู่แล้ว |
+| `id.go` | `ID`, `NewID()`, `ParseID(field, s)` | `NewID` สร้าง UUIDv7; `ParseID` รับเฉพาะ UUID ที่ถูกรูปแบบ; ใช้ `github.com/google/uuid` ที่มีใน go.mod อยู่แล้ว |
 | `decimal.go` | `Quantity`, `Price`, `Fee`, `ParseQuantity/ParsePrice/ParseFee(s)` | รับเฉพาะ `^[0-9]+(\.[0-9]+)?$` (ไม่มีเครื่องหมาย, exponent, ช่องว่าง, NaN/Infinity); ≤ 18 หลักก่อนจุดและ ≤ 10 หลักหลังจุด ไม่ปัด; quantity และ price > 0, fee ≥ 0; มี `.Decimal()` และ `.String()` ที่คืนรูปมาตรฐาน (`"0.50"` → `"0.5"`, `"007"` → `"7"`) ใช้เป็น canonical string ของ idempotency hash ภายหลัง |
 | `symbol.go` | `Symbol`, `ParseSymbol(s)` | trim + uppercase แล้วตรวจ `^[A-Z][A-Z0-9.-]{0,14}$` |
 | `time.go` | `ParseExecutedAt(s, now)` | RFC3339 ที่มี timezone เท่านั้น, แปลงเป็น UTC, ทศนิยมวินาทีเกิน 6 หลักปฏิเสธ (ไม่ปัด), ต้อง ≥ `1970-01-01T00:00:00Z` และไม่อยู่หลัง `now` (เท่ากับ `now` ผ่าน) |

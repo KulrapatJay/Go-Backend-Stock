@@ -1,6 +1,6 @@
 # Milestone 3 — Schema, sqlc, repositories และ audit persistence (design)
 
-- **สถานะ:** รอผู้ใช้รีวิว (design ทั้ง 4 ส่วนได้รับการยืนยันในบทสนทนา 2026-10-17)
+- **สถานะ:** ผู้ใช้ยืนยันแล้ว 2026-10-17; แผน 3a: [2026-10-17-milestone-3a-schema-sqlc-audit.md](../plans/2026-10-17-milestone-3a-schema-sqlc-audit.md)
 - **อ้างอิง:** [AGENTS.md](../../../AGENTS.md), [phase 1 spec](2026-10-05-phase-1-design.md) หัวข้อ 4, 7, 8, 9, 11, [milestone 2 design](2026-10-16-milestone-2-domain-ports-design.md), [ADR-0013](../../adr/0013-domain-value-types.md), [roadmap](../plans/2026-10-05-phase-1-roadmap.md) milestone 3 รวม "ข้อที่ส่งต่อให้ milestone 3" ใต้ milestone 2
 
 ## 1. เป้าหมาย การแบ่งงาน และเกณฑ์ผ่าน
@@ -45,7 +45,7 @@ goose แบบเลขต่อเนื่อง (`goose create -s`), ห้�
 - **email:** UNIQUE บน `users.email` ตรงๆ โดยค่าที่เก็บคือค่าที่ Go `ParseEmail` normalize แล้ว; ไม่มี CHECK หรือ index บน `lower(email)` และ query ห้ามใช้ `lower()` กับ email เพื่อไม่ให้ต่างจาก `strings.ToLower` ของ Go กับอักษรนอก ASCII
 - **ชื่อพอร์ต:** UNIQUE INDEX `(user_id, lower(name))` ตาม spec (ชื่อผ่าน `ParsePortfolioName` แล้ว จึงไม่มีอักขระล่องหน)
 - **FK:** ทุก FK เป็น `ON DELETE RESTRICT`; `audit_events` ไม่มี FK ไปตารางใด จึงลบข้อมูลต้นทางได้โดย audit ยังอยู่
-- **ชื่อ constraint/index** ตั้งชื่อชัดเจนทุกตัว (เช่น `portfolios_user_lower_name_key`) เพราะการแปลง unique violation เป็น domain error อ้างชื่อ constraint
+- **ชื่อ constraint/index** ตั้งชื่อชัดเจนทุกตัว (เช่น `portfolios_user_name_unique`) เพราะการแปลง unique violation เป็น domain error อ้างชื่อ constraint
 
 ### 3.3 สิทธิ์ของแต่ละ role
 
@@ -75,7 +75,7 @@ goose แบบเลขต่อเนื่อง (`goose create -s`), ห้�
 ### 4.1 sqlc
 
 - sqlc `v1.31.1` (phase 1 spec หัวข้อ 4) ติดตั้งผ่าน `make tools`; ต้องมี C compiler (cgo) ซึ่งเครื่อง dev และ runner Ubuntu มีอยู่แล้ว — ยืนยันตอน prototype ของแผน 3a
-- `sqlc.yaml` อ่าน schema จาก `migrations/` โดยตรง (sqlc ข้ามส่วน goose Down) จึงไม่มี schema ซ้ำสองที่; queries อยู่ที่ `internal/adapter/postgres/queries/*.sql` แยกไฟล์ตาม feature; generate ลง `internal/adapter/postgres/sqlc/` (ห้ามแก้มือ) ด้วย `sql_package: pgx/v5`
+- `sqlc.yaml` อ่าน schema จาก `migrations/` โดยตรง (sqlc ข้ามส่วน goose Down) จึงไม่มี schema ซ้ำสองที่; queries อยู่ที่ `internal/adapter/postgres/queries/*.sql` แยกไฟล์ตาม feature; generate ลง `internal/adapter/postgres/sqlc/` (ห้ามแก้มือ) ด้วย `sql_package: pgx/v5`ร่วมกับ `internal/adapter/postgres/sqlc_schema_app.sql` ที่มีเพียง `CREATE SCHEMA app;` ให้ sqlc อ่านก่อน migrations เพราะ schema นี้สร้างโดย bootstrap ไม่ใช่ goose
 - ทุก query ระบุ `app.` หน้าชื่อตาราง ไม่พึ่ง search_path
 - เพิ่ม `make sqlc` และ CI step `make sqlc` + `git diff --exit-code`; golangci-lint ไม่ตรวจโฟลเดอร์ generated
 
@@ -90,7 +90,7 @@ goose แบบเลขต่อเนื่อง (`goose create -s`), ห้�
 | จาก DB | domain error |
 | --- | --- |
 | ไม่พบแถว (`pgx.ErrNoRows`) | `ErrNotFound` |
-| unique violation `portfolios_user_lower_name_key` | `ErrPortfolioNameConflict` |
+| unique violation `portfolios_user_name_unique` | `ErrPortfolioNameConflict` |
 | unique violation ของ `auth_providers` (provider+subject หรือ user+provider) | `ErrIdentityConflict` |
 | unique violation `users_email_key` (สมัครพร้อมกัน) | `ErrIdentityConflict`; service ของ milestone 4 ตอบ 202 แบบเดียวกับกรณีอื่นตาม phase 1 spec |
 | unique violation ของ `idempotency_keys` PK | `ErrIdempotencyConflict` |
@@ -104,10 +104,11 @@ goose แบบเลขต่อเนื่อง (`goose create -s`), ห้�
 - fn คืน nil → commit; คืน error → rollback แล้วคืน error เดิม; panic → rollback แล้ว panic ต่อ
 - repositories สำหรับอ่านนอก transaction สร้างจาก pool; `Lock*` บน instance ที่ไม่ได้อยู่ใน transaction คืน error `internal` ทันที (phase 1 spec หัวข้อ 8)
 - ไม่รองรับ nested transaction
+- **ลำดับการสร้าง:** แผน 3a สร้าง `Store` กับ `withinTx` ภายใน adapter และ `txRepositories` ที่มีเฉพาะ `Audit()`; แผน 3b/3c เพิ่ม accessor ทีละ repository และ `Store` implement `port.UnitOfWork` เมื่อครบในแผน 3c (Go ต้องการ method ครบทุกตัวของ `port.TxRepositories` จึงยังใช้ port ตรงไม่ได้)
 
 ### 4.5 Failure injection ของ audit
 
-ใช้ DB จริง ไม่ mock: ใน `WithinTransaction` เดียว insert พอร์ต แล้ว `Audit().Append` event ที่ละเมิด CHECK ของ DB (สร้าง struct ตรงๆ ข้าม `NewAuditEvent`) → ต้องได้ error และพอร์ตต้องไม่อยู่ใน DB หลัง transaction จบ
+ใช้ DB จริง ไม่ mock: ใน `WithinTransaction` เดียว insert พอร์ต แล้ว `Audit().Append` event ที่ละเมิด CHECK ของ DB (สร้าง struct ตรงๆ ข้าม `NewAuditEvent`) → ต้องได้ error และพอร์ตต้องไม่อยู่ใน DB หลัง transaction จบแผน 3a ทดสอบด้วย audit สองรายการในหนึ่ง transaction (รายการที่สองละเมิด CHECK) เพราะยังไม่มี `PortfolioRepository`; แผน 3c ทำซ้ำตามข้อความข้างต้นด้วยพอร์ตจริง
 
 ### 4.6 Integration tests (ทุกแผน)
 
