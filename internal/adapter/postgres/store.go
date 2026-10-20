@@ -10,6 +10,7 @@ import (
 
 	"go-backend-stock/internal/adapter/postgres/sqlc"
 	"go-backend-stock/internal/core/domain"
+	"go-backend-stock/internal/core/port"
 )
 
 // Store owns the connection pool and builds repositories. It becomes the port.UnitOfWork once
@@ -23,14 +24,27 @@ func NewStore(pool *pgxpool.Pool) *Store {
 	return &Store{pool: pool}
 }
 
-// txRepositories are the repositories bound to one database transaction. Later plans add one
-// accessor per repository until it satisfies port.TxRepositories.
+// errLockOutsideTx is returned by Lock* on a repository that is not bound to a transaction: a row
+// lock outside a transaction is released at once and protects nothing (phase 1 spec section 8).
+var errLockOutsideTx = domain.NewError(domain.CodeInternal, "row lock requires a transaction")
+
+// Repositories that read outside a transaction. They use the pool, so each call is its own
+// statement; Lock* methods refuse to run on them.
+
+// Users returns the user repository over the pool.
+func (s *Store) Users() port.UserRepository { return &UserRepository{q: sqlc.New(s.pool)} }
+
+// txRepositories are the repositories bound to one database transaction. Plan 3c adds the
+// portfolio-side accessors until it satisfies port.TxRepositories.
 type txRepositories struct {
 	q *sqlc.Queries
 }
 
+// Users returns the user repository bound to this transaction.
+func (r *txRepositories) Users() port.UserRepository { return &UserRepository{q: r.q, inTx: true} }
+
 // Audit returns the audit repository bound to this transaction.
-func (r *txRepositories) Audit() *AuditRepository {
+func (r *txRepositories) Audit() port.AuditRepository {
 	return &AuditRepository{q: r.q}
 }
 

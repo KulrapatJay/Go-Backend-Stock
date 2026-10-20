@@ -18,6 +18,8 @@ type UserRepository interface {
 	Lock(ctx context.Context, id domain.ID) (domain.User, error)
 	// Insert returns domain.ErrIdentityConflict when the email is already registered.
 	Insert(ctx context.Context, user domain.User) error
+	// SetPassword returns an internal error for an empty hash: Google-only accounts never gain a
+	// password this way.
 	SetPassword(ctx context.Context, id domain.ID, passwordHash domain.PasswordHash, at time.Time) error
 	// MarkEmailVerified is a no-op when the email is already verified.
 	MarkEmailVerified(ctx context.Context, id domain.ID, at time.Time) error
