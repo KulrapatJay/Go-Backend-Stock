@@ -57,8 +57,10 @@ type InstrumentRepository interface {
 type IdempotencyRepository interface {
 	Get(ctx context.Context, scope domain.IdempotencyScope, key string) (domain.IdempotencyRecord, error)
 	DeleteExpired(ctx context.Context, scope domain.IdempotencyScope, key string, now time.Time) error
-	// Save returns domain.ErrIdempotencyConflict when the scope already has the key (a concurrent
-	// retry won); the caller then reads the stored record.
+	// Save returns domain.ErrIdempotencyConflict when the scope already has the key. Callers hold
+	// the portfolio row lock (LockOwned) and call Get first, so a concurrent Save cannot win. If a
+	// conflict is returned anyway, the surrounding transaction is aborted (see UnitOfWork): the
+	// caller must read the stored record in a new transaction, not in the same callback.
 	Save(ctx context.Context, record domain.IdempotencyRecord) error
 	DeleteForPortfolio(ctx context.Context, ownerID, portfolioID domain.ID) error
 }

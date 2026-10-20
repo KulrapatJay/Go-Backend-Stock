@@ -3,6 +3,8 @@ package postgres
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -196,5 +198,41 @@ func TestAuditSurvivesDeletionOfItsTarget(t *testing.T) {
 	}
 	if !auditExists(t, e.ID) {
 		t.Fatal("deleting the target removed its audit event")
+	}
+}
+
+// TestAuditMetadataSizeIsCountedDifferentlyInGoAndDatabase documents why the database CHECK
+// (octet_length(metadata::text) <= 9216) is only a backstop, not the same limit as Go's 8 KiB:
+// jsonb::text adds a space after every ',' and ':', so some metadata Go accepts (<= 8192 raw bytes)
+// is rejected by the database. Such an event rolls back as internal; metadata built by the
+// server from an allowlist, with decimals as strings, stays far below both limits.
+func TestAuditMetadataSizeIsCountedDifferentlyInGoAndDatabase(t *testing.T) {
+	store := newRuntimeStore(t)
+	// 900 members of about 9 bytes each: about 8.1 KB raw, within Go's 8 KiB, but jsonb::text
+	// re-serializes each ":" and "," with a following space, about 9.9 KB in total.
+	var b strings.Builder
+	b.WriteString("{")
+	for i := 0; i < 900; i++ {
+		if i > 0 {
+			b.WriteString(",")
+		}
+		fmt.Fprintf(&b, `"k%03d":1`, i)
+	}
+	b.WriteString("}")
+	metadata := b.String()
+	if len(metadata) > domain.MaxAuditMetadataBytes {
+		t.Fatalf("test metadata is %d bytes, want <= %d so that Go accepts it", len(metadata), domain.MaxAuditMetadataBytes)
+	}
+	e := auditEvent(t, metadata) // NewAuditEvent accepts it: raw size is within 8 KiB
+
+	err := store.withinTx(t.Context(), func(r *txRepositories) error {
+		return r.Audit().Append(t.Context(), e)
+	})
+
+	if !errors.Is(err, domain.ErrInternal) {
+		t.Fatalf("error = %v, want internal from audit_events_metadata_size", err)
+	}
+	if auditExists(t, e.ID) {
+		t.Fatal("event was stored although the database CHECK rejects it")
 	}
 }

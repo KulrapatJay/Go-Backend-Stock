@@ -41,7 +41,7 @@ goose แบบเลขต่อเนื่อง (`goose create -s`), ห้�
 
 ### 3.2 รายละเอียดที่เพิ่มจาก phase 1 spec
 
-- **ขนาด audit metadata:** CHECK `octet_length(metadata::text) <= 9216` เผื่อช่องว่างที่ `jsonb::text` เพิ่มเมื่อแปลงกลับ ส่วนเพดานจริงยังเป็น 8 KiB (raw bytes) ที่ `domain.NewAuditEvent` ตรวจ; idempotency result ใช้หลักเดียวกัน 16 KiB → `octet_length(result::text) <= 17408`
+- **ขนาด audit metadata:** เพดานจริงคือ 8 KiB (raw bytes) ที่ `domain.NewAuditEvent` ตรวจ ส่วน CHECK `octet_length(metadata::text) <= 9216` ใน DB เป็น**ตัวกันสำรองที่นับต่างวิธี ไม่ใช่เพดานเดียวกัน** เพราะ `jsonb::text` เพิ่มช่องว่างหลังทุก `,` และ `:` (วัดจริง: 8101 ไบต์กลายเป็น 9900) จึงมี metadata ที่ Go ยอมรับแต่ DB ปฏิเสธและ rollback เป็น `internal` (ทดสอบแล้ว `TestAuditMetadataSizeIsCountedDifferentlyInGoAndDatabase`); metadata ที่ระบบสร้างเองเล็กและเก็บตัวเลขเป็น string จึงไม่เกิดจริง (ผู้ใช้เลือกคงไว้แบบนี้ 2026-10-20); idempotency result ใช้หลักเดียวกัน 16 KiB → `octet_length(result::text) <= 17408`
 - **email:** UNIQUE บน `users.email` ตรงๆ โดยค่าที่เก็บคือค่าที่ Go `ParseEmail` normalize แล้ว; ไม่มี CHECK หรือ index บน `lower(email)` และ query ห้ามใช้ `lower()` กับ email เพื่อไม่ให้ต่างจาก `strings.ToLower` ของ Go กับอักษรนอก ASCII
 - **ชื่อพอร์ต:** UNIQUE INDEX `(user_id, lower(name))` ตาม spec (ชื่อผ่าน `ParsePortfolioName` แล้ว จึงไม่มีอักขระล่องหน)
 - **FK:** ทุก FK เป็น `ON DELETE RESTRICT`; `audit_events` ไม่มี FK ไปตารางใด จึงลบข้อมูลต้นทางได้โดย audit ยังอยู่
@@ -53,15 +53,21 @@ goose แบบเลขต่อเนื่อง (`goose create -s`), ห้�
 
 | ตาราง | `app_runtime` | `app_maintenance` |
 | --- | --- | --- |
-| users, auth_providers, portfolios, instruments | SELECT, INSERT, UPDATE ตามที่ query ใช้ (portfolios เพิ่ม DELETE) | ไม่มี |
-| sessions, otp_challenges, oauth_flows, idempotency_keys | SELECT, INSERT, UPDATE, DELETE ตามที่ query ใช้ | SELECT เฉพาะคอลัมน์ที่ใช้หาแถวหมดอายุ + DELETE |
-| transactions | SELECT, INSERT, UPDATE, DELETE | ไม่มี |
+| users | SELECT, INSERT, UPDATE | ไม่มี |
+| auth_providers | SELECT, INSERT | ไม่มี |
+| instruments | SELECT, INSERT (ไม่มี UPDATE: ดูข้อสังเกตด้านล่าง) | ไม่มี |
+| portfolios, transactions | SELECT, INSERT, UPDATE, DELETE | ไม่มี |
+| sessions, otp_challenges, oauth_flows | SELECT, INSERT, UPDATE (ไม่มี DELETE) | SELECT `(id, expires_at)` + DELETE |
+| idempotency_keys | SELECT, INSERT, DELETE (ไม่มี UPDATE) | SELECT `(portfolio_id, user_id, operation, key, expires_at)` + DELETE |
 | audit_events | **INSERT เท่านั้น** (ไม่มี SELECT/UPDATE/DELETE) | SELECT `(id, occurred_at)` + DELETE |
-| rate_limit_keys, rate_limit_events | SELECT, INSERT, UPDATE, DELETE | SELECT คอลัมน์เวลาที่ใช้ + DELETE |
-| sequences ของ identity columns | USAGE ตามที่ INSERT ต้องใช้ | ไม่มี |
+| rate_limit_keys | SELECT, INSERT, UPDATE | SELECT `(key_hash, expires_at)` + DELETE |
+| rate_limit_events | SELECT, INSERT (ไม่มี UPDATE/DELETE) | SELECT `(id, key_hash, occurred_at)` + DELETE |
+| sequences ของ identity columns | ไม่ต้องให้สิทธิ์: INSERT ลงตารางที่มี identity ได้เลย (ผู้รีวิวยืนยันกับ `transactions.sequence`) | ไม่มี |
 
 - `app_runtime` ไม่มี SELECT บน `audit_events` เพราะไม่มี API อ่าน audit ใน phase 1 (phase 1 spec หัวข้อ 11: ตรวจผ่าน integration tests/authorized SQL) จึงลดความเสียหายหากมี SQL injection; tests อ่าน audit ด้วย admin
 - `app_maintenance` ไม่มี INSERT/UPDATE และไม่มี DDL; คำสั่ง cleanup จริง (`cmd/maintenance`) อยู่ใน milestone 9 milestone นี้พิสูจน์เฉพาะสิทธิ์
+- สิทธิ์แคบกว่าที่ร่างไว้เดิมโดยตั้งใจ (รีวิว 2026-10-20 ยืนยันว่าพอสำหรับทุก method ของทุก port): ไม่มี DELETE บน sessions/otp/oauth/rate limit เพราะ cleanup เป็นหน้าที่ของ maintenance role
+- **ข้อสังเกตสำหรับ 3c:** `app_runtime` ไม่มี UPDATE บน `instruments` ดังนั้น symbol ที่ provider เปลี่ยนชื่อ (เช่น FB → META โดย asset id เดิม) จะ insert ซ้ำไม่ได้ (ชน `instruments_provider_asset_unique`) ต้องตัดสินใจในแผน 3c ว่าจะให้สิทธิ์ `UPDATE` เฉพาะคอลัมน์ที่เปลี่ยนได้ หรือบันทึกเป็นข้อจำกัดของ phase 1
 
 ### 3.4 Tests ของแผน 3a
 

@@ -119,6 +119,13 @@
 
 **ผ่านเมื่อ:** schema สร้างจากศูนย์ได้, generated code ไม่มี diff, role permissions ถูกต้อง และ integration tests ผ่านโดยไม่ใช้ Supabase จริง
 
+**ข้อที่ส่งต่อให้แผน 3b/3c** (จากรีวิว 3a 2026-10-20; ต้องตัดสินใจในแผนก่อนเขียน repository):
+- **conflict ทำให้ transaction จบ:** unique violation ที่แปลงเป็น `ErrPortfolioNameConflict`/`ErrIdentityConflict`/`ErrIdempotencyConflict` ไม่ทำให้ transaction กลับมาใช้ได้ (PostgreSQL abort แล้ว) แต่ละ repository ต้องเลือก `INSERT ... ON CONFLICT DO NOTHING` + ตรวจจำนวนแถว (ใช้กับ index บน `lower(name)` ได้) หรือ savepoint และ service ที่ต้องบันทึก audit หลัง conflict ต้องทำใน transaction ใหม่
+- **instrument ที่ provider เปลี่ยน symbol** (FB → META โดย asset id เดิม): `Upsert` จะชน `instruments_provider_asset_unique` และ runtime ไม่มีสิทธิ์ UPDATE ต้องเลือกระหว่างให้ `UPDATE` เฉพาะคอลัมน์ที่เปลี่ยนได้ หรือบันทึกเป็นข้อจำกัด
+- **`transactions_portfolio_id_fkey` แปลงเป็น `ErrPortfolioNotEmpty` ทั้งสองทิศ:** ย้ายการแปลงนี้ไปที่ `DeleteOwnedEmpty` แทนการแปลงทั่วไป (INSERT ลงพอร์ตที่ไม่มีอยู่จะได้ 409 ผิดความหมาย)
+- **OTP ขอพร้อมกัน:** `otp_challenges_one_open_idx` ชนแล้วเป็น `internal` ให้ lock แถว user ก่อน `InvalidateOpen` + `Insert` ตาม phase 1 spec หัวข้อ 9
+- **เล็กน้อย:** rollback ใน `withinTx` ยังไม่มี timeout; request ที่ client ยกเลิกถูกจัดเป็น `internal` (log เป็น 500); test identity ครอบเฉพาะ `rate_limit_events` ควรเพิ่ม `transactions.sequence`; integration tests ทิ้งแถว audit ใน DB dev (runtime ลบไม่ได้ ล้างด้วย `docker compose down -v`); `numeric(28,10)` ปัดเงียบถ้าข้าม `Parse*` ทุก repository test ต้องส่งค่าผ่าน `Parse*` เสมอ
+
 ### 4. Auth + email verification + sessions + Google login + HTTP handlers
 
 **ไฟล์หลัก:** `internal/core/service/auth*.go`, `internal/core/service/otp*.go`, `internal/core/service/email_verification*.go`, `internal/adapter/http/auth*.go`, `internal/adapter/http/middleware/`, `internal/adapter/identity/`, `internal/adapter/mail/`

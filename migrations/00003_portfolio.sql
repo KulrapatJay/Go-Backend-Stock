@@ -87,8 +87,8 @@ CREATE TABLE app.idempotency_keys (
     CONSTRAINT idempotency_keys_key_length CHECK (char_length(key) >= 1),
     CONSTRAINT idempotency_keys_hash_length CHECK (octet_length(request_hash) = 32),
     CONSTRAINT idempotency_keys_expiry_valid CHECK (expires_at > created_at),
-    -- Go limits the raw result to 16 KiB; jsonb::text re-serializes with extra spaces, so the
-    -- database ceiling leaves 1 KiB of headroom for the same value.
+    -- Backstop, not the same limit: Go caps the raw result at 16 KiB, but jsonb::text re-serializes
+    -- with extra spaces, so the two counts differ (see audit_events_metadata_size).
     CONSTRAINT idempotency_keys_result_size CHECK (octet_length(result::text) <= 17408)
 );
 CREATE INDEX idempotency_keys_expires_idx ON app.idempotency_keys (expires_at);

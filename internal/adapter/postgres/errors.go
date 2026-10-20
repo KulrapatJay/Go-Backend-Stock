@@ -29,6 +29,10 @@ var uniqueConflicts = map[string]*domain.Error{
 // mapError converts a database error into a domain error. Anything unexpected becomes internal
 // while keeping the original error in the chain for server-side logs; the domain message never
 // contains SQL or row values.
+//
+// Mapping a unique violation to a domain conflict does not recover the transaction: PostgreSQL
+// has already aborted it, so the caller must return the error and let withinTx roll back (see
+// port.UnitOfWork). Repositories that expect a conflict use ON CONFLICT DO NOTHING instead.
 func mapError(err error) error {
 	if err == nil {
 		return nil

@@ -17,7 +17,9 @@ CREATE TABLE app.audit_events (
     CONSTRAINT audit_events_target_type_length CHECK (char_length(target_type) >= 1),
     CONSTRAINT audit_events_outcome_allowed CHECK (outcome IN ('success', 'failure', 'denied')),
     CONSTRAINT audit_events_metadata_object CHECK (jsonb_typeof(metadata) = 'object'),
-    -- Go limits raw metadata to 8 KiB; jsonb::text adds spaces, so leave 1 KiB of headroom.
+    -- Backstop, not the same limit: Go caps the raw JSON at 8 KiB, but jsonb::text re-serializes with
+    -- a space after every ',' and ':' (8101 raw bytes became 9900), so some events Go accepts exceed
+    -- this and roll back as internal. Server-built metadata is tiny, so this only stops huge rows.
     CONSTRAINT audit_events_metadata_size CHECK (octet_length(metadata::text) <= 9216)
 );
 CREATE INDEX audit_events_actor_occurred_idx ON app.audit_events (actor_user_id, occurred_at);

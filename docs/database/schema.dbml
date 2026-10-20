@@ -268,7 +268,7 @@
       `char_length(key) >= 1` [name: 'idempotency_keys_key_length']
       `octet_length(request_hash) = 32` [name: 'idempotency_keys_hash_length']
       `expires_at > created_at` [name: 'idempotency_keys_expiry_valid']
-      `octet_length(result::text) <= 17408` [name: 'idempotency_keys_result_size', note: 'Go limits the raw result to 16 KiB; jsonb::text adds spaces, so 1 KiB headroom.']
+      `octet_length(result::text) <= 17408` [name: 'idempotency_keys_result_size', note: 'Backstop, not the same limit as Go (16 KiB raw): jsonb::text adds spaces, so the counts differ.']
     }
 
     Note: 'Commit with transaction mutation and audit. Same key/payload returns the original result; different payload conflicts. Check portfolio ownership in the same transaction.'
@@ -298,7 +298,7 @@
       `char_length(target_type) >= 1` [name: 'audit_events_target_type_length']
       `outcome IN ('success', 'failure', 'denied')` [name: 'audit_events_outcome_allowed']
       `jsonb_typeof(metadata) = 'object'` [name: 'audit_events_metadata_object']
-      `octet_length(metadata::text) <= 9216` [name: 'audit_events_metadata_size', note: 'Go limits raw metadata to 8 KiB; jsonb::text adds spaces, so 1 KiB headroom.']
+      `octet_length(metadata::text) <= 9216` [name: 'audit_events_metadata_size', note: 'Backstop, not the same limit as Go (8 KiB raw): jsonb::text adds a space after every comma and colon (8101 raw bytes became 9900), so some metadata Go accepts is rejected here and rolls back as internal.']
     }
 
     Note: 'Runtime role has INSERT only (no SELECT, UPDATE or DELETE). No foreign keys to users, sessions or targets; no cascading deletion. Retain 90 days; cleanup uses the maintenance role (SELECT id, occurred_at + DELETE).'
