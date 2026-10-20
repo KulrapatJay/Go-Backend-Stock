@@ -1,6 +1,6 @@
 # Milestone 3 — Schema, sqlc, repositories และ audit persistence (design)
 
-- **สถานะ:** ผู้ใช้ยืนยันแล้ว 2026-10-17; แผน 3a: [2026-10-17-milestone-3a-schema-sqlc-audit.md](../plans/2026-10-17-milestone-3a-schema-sqlc-audit.md)
+- **สถานะ:** ผู้ใช้ยืนยันแล้ว 2026-10-17; แผน 3a ผ่านการตรวจรับ 2026-10-20: [2026-10-17-milestone-3a-schema-sqlc-audit.md](../plans/2026-10-17-milestone-3a-schema-sqlc-audit.md)
 - **อ้างอิง:** [AGENTS.md](../../../AGENTS.md), [phase 1 spec](2026-10-05-phase-1-design.md) หัวข้อ 4, 7, 8, 9, 11, [milestone 2 design](2026-10-16-milestone-2-domain-ports-design.md), [ADR-0013](../../adr/0013-domain-value-types.md), [roadmap](../plans/2026-10-05-phase-1-roadmap.md) milestone 3 รวม "ข้อที่ส่งต่อให้ milestone 3" ใต้ milestone 2
 
 ## 1. เป้าหมาย การแบ่งงาน และเกณฑ์ผ่าน
@@ -67,7 +67,7 @@ goose แบบเลขต่อเนื่อง (`goose create -s`), ห้�
 - `app_runtime` ไม่มี SELECT บน `audit_events` เพราะไม่มี API อ่าน audit ใน phase 1 (phase 1 spec หัวข้อ 11: ตรวจผ่าน integration tests/authorized SQL) จึงลดความเสียหายหากมี SQL injection; tests อ่าน audit ด้วย admin
 - `app_maintenance` ไม่มี INSERT/UPDATE และไม่มี DDL; คำสั่ง cleanup จริง (`cmd/maintenance`) อยู่ใน milestone 9 milestone นี้พิสูจน์เฉพาะสิทธิ์
 - สิทธิ์แคบกว่าที่ร่างไว้เดิมโดยตั้งใจ (รีวิว 2026-10-20 ยืนยันว่าพอสำหรับทุก method ของทุก port): ไม่มี DELETE บน sessions/otp/oauth/rate limit เพราะ cleanup เป็นหน้าที่ของ maintenance role
-- **ข้อสังเกตสำหรับ 3c:** `app_runtime` ไม่มี UPDATE บน `instruments` ดังนั้น symbol ที่ provider เปลี่ยนชื่อ (เช่น FB → META โดย asset id เดิม) จะ insert ซ้ำไม่ได้ (ชน `instruments_provider_asset_unique`) ต้องตัดสินใจในแผน 3c ว่าจะให้สิทธิ์ `UPDATE` เฉพาะคอลัมน์ที่เปลี่ยนได้ หรือบันทึกเป็นข้อจำกัดของ phase 1
+- **instrument ที่ provider เปลี่ยน symbol (ผู้ใช้ตัดสินใจ 2026-10-20):** `app_runtime` ไม่มี UPDATE บน `instruments` และ phase 1 ไม่รองรับการเปลี่ยน symbol ตาม AGENTS.md (ไม่รวม symbol changes) ดังนั้น symbol ใหม่ที่ provider ส่ง asset id เดิมมา (เช่น FB → META) จะ insert ไม่ได้เพราะชน `instruments_provider_asset_unique`; แผน 3c ต้องแปลงกรณีนี้เป็น error ที่อ่านเข้าใจแทน 500 และระบุข้อจำกัดใน README/UI; การรองรับจริงทำพร้อม corporate actions ในเฟสถัดไป
 
 ### 3.4 Tests ของแผน 3a
 

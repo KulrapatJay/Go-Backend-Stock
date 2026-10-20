@@ -10,7 +10,7 @@
 
 **Spec:** [แบบระบบสำหรับตรวจยืนยัน](../specs/2026-10-05-phase-1-design.md) โดยยึดข้อกำหนดใน [AGENTS.md](../../../AGENTS.md)
 
-**Status:** ผู้ใช้ยืนยันให้เริ่มตามลำดับแล้ว จัดทำข้อเสนอ milestone 0 ใน spec ที่ลิงก์ด้านบนแล้ว ผู้ใช้ยืนยันข้อเสนอเดิมและเลื่อนหน้าหุ้นรายตัว/กราฟไปเฟสถัดไปแล้ว (2026-10-14) และยืนยันแบบ email verification, portfolio name uniqueness และกติการหัสผ่านแล้ว milestone 0 ผ่านการตรวจรับ; milestone 1 ผ่านการตรวจรับเมื่อ 2026-10-15 (ลงมือครบทุก task, self-review ทั้ง branch ไม่พบ Critical/Important, CI บน GitHub ผ่าน) milestone 2 ผ่านการตรวจรับเมื่อ 2026-10-17 (ลงมือครบทุก task, รีวิวทั้ง branch ด้วย subagent แก้ Important ครบ 4 ข้อ) milestone 3 แผน 3a ลงมือครบแล้ว รอผู้ใช้ตรวจรับ จากนั้นแผน 3b
+**Status:** ผู้ใช้ยืนยันให้เริ่มตามลำดับแล้ว จัดทำข้อเสนอ milestone 0 ใน spec ที่ลิงก์ด้านบนแล้ว ผู้ใช้ยืนยันข้อเสนอเดิมและเลื่อนหน้าหุ้นรายตัว/กราฟไปเฟสถัดไปแล้ว (2026-10-14) และยืนยันแบบ email verification, portfolio name uniqueness และกติการหัสผ่านแล้ว milestone 0 ผ่านการตรวจรับ; milestone 1 ผ่านการตรวจรับเมื่อ 2026-10-15 (ลงมือครบทุก task, self-review ทั้ง branch ไม่พบ Critical/Important, CI บน GitHub ผ่าน) milestone 2 ผ่านการตรวจรับเมื่อ 2026-10-17 (ลงมือครบทุก task, รีวิวทั้ง branch ด้วย subagent แก้ Important ครบ 4 ข้อ) milestone 3 แผน 3a ผ่านการตรวจรับเมื่อ 2026-10-20 (รีวิวทั้ง branch ด้วย subagent แก้ Important ครบ 4 ข้อ, CI บน GitHub ผ่าน) ขั้นต่อไปคือแผน 3b
 
 ## Global Constraints
 
@@ -121,7 +121,7 @@
 
 **ข้อที่ส่งต่อให้แผน 3b/3c** (จากรีวิว 3a 2026-10-20; ต้องตัดสินใจในแผนก่อนเขียน repository):
 - **conflict ทำให้ transaction จบ:** unique violation ที่แปลงเป็น `ErrPortfolioNameConflict`/`ErrIdentityConflict`/`ErrIdempotencyConflict` ไม่ทำให้ transaction กลับมาใช้ได้ (PostgreSQL abort แล้ว) แต่ละ repository ต้องเลือก `INSERT ... ON CONFLICT DO NOTHING` + ตรวจจำนวนแถว (ใช้กับ index บน `lower(name)` ได้) หรือ savepoint และ service ที่ต้องบันทึก audit หลัง conflict ต้องทำใน transaction ใหม่
-- **instrument ที่ provider เปลี่ยน symbol** (FB → META โดย asset id เดิม): `Upsert` จะชน `instruments_provider_asset_unique` และ runtime ไม่มีสิทธิ์ UPDATE ต้องเลือกระหว่างให้ `UPDATE` เฉพาะคอลัมน์ที่เปลี่ยนได้ หรือบันทึกเป็นข้อจำกัด
+- **instrument ที่ provider เปลี่ยน symbol** (FB → META โดย asset id เดิม): **ผู้ใช้เลือก (2026-10-20) บันทึกเป็นข้อจำกัดของ phase 1** ตาม AGENTS.md ที่ไม่รวม symbol changes — runtime ยังไม่มีสิทธิ์ UPDATE `instruments`; แผน 3c ต้องแปลงการชน `instruments_provider_asset_unique` เป็น error ที่อ่านเข้าใจ (ไม่ใช่ 500) และระบุข้อจำกัดใน README/UI
 - **`transactions_portfolio_id_fkey` แปลงเป็น `ErrPortfolioNotEmpty` ทั้งสองทิศ:** ย้ายการแปลงนี้ไปที่ `DeleteOwnedEmpty` แทนการแปลงทั่วไป (INSERT ลงพอร์ตที่ไม่มีอยู่จะได้ 409 ผิดความหมาย)
 - **OTP ขอพร้อมกัน:** `otp_challenges_one_open_idx` ชนแล้วเป็น `internal` ให้ lock แถว user ก่อน `InvalidateOpen` + `Insert` ตาม phase 1 spec หัวข้อ 9
 - **เล็กน้อย:** rollback ใน `withinTx` ยังไม่มี timeout; request ที่ client ยกเลิกถูกจัดเป็น `internal` (log เป็น 500); test identity ครอบเฉพาะ `rate_limit_events` ควรเพิ่ม `transactions.sequence`; integration tests ทิ้งแถว audit ใน DB dev (runtime ลบไม่ได้ ล้างด้วย `docker compose down -v`); `numeric(28,10)` ปัดเงียบถ้าข้าม `Parse*` ทุก repository test ต้องส่งค่าผ่าน `Parse*` เสมอ
