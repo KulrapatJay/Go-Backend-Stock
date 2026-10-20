@@ -53,6 +53,9 @@ func (s *Store) OIDCFlows() port.OIDCFlowRepository {
 	return &OIDCFlowRepository{q: sqlc.New(s.pool)}
 }
 
+// RateLimits returns the rate-limit repository. Admit runs its own transaction.
+func (s *Store) RateLimits() port.RateLimitRepository { return &RateLimitRepository{store: s} }
+
 // txRepositories are the repositories bound to one database transaction. Plan 3c adds the
 // portfolio-side accessors until it satisfies port.TxRepositories.
 type txRepositories struct {
