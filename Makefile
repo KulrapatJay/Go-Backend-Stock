@@ -27,7 +27,7 @@ GOOSE := $(BIN)/goose
 GOLANGCI_LINT := $(BIN)/golangci-lint
 SQLC := $(BIN)/sqlc
 
-.PHONY: tools swagger sqlc
+.PHONY: tools swagger sqlc sqlc-clean
 
 tools:
 	GOBIN=$(BIN) go install github.com/swaggo/swag/cmd/swag@$(SWAG_VERSION)
@@ -42,6 +42,12 @@ swagger:
 
 sqlc:
 	$(SQLC) generate
+
+# Fails when generated code differs from what is committed, including NEW generated files that
+# git diff ignores because they are untracked (a query was added but its code was not committed).
+sqlc-clean:
+	@test -z "$$(git status --porcelain -- internal/adapter/postgres/sqlc)" || { \
+		echo 'sqlc output is not committed:'; git status --short -- internal/adapter/postgres/sqlc; exit 1; }
 
 POSTGRES_HOST_PORT ?= 55432
 LOCAL_DB_HOST := 127.0.0.1:$(POSTGRES_HOST_PORT)
@@ -78,4 +84,5 @@ lint:
 	$(GOLANGCI_LINT) run ./...
 
 check: tidy-check vet lint swagger sqlc test
-	git diff --exit-code -- docs/api internal/adapter/postgres/sqlc
+	git diff --exit-code -- docs/api
+	$(MAKE) --no-print-directory sqlc-clean
