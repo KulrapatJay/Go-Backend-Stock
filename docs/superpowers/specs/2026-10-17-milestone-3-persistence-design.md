@@ -1,6 +1,6 @@
 # Milestone 3 — Schema, sqlc, repositories และ audit persistence (design)
 
-- **สถานะ:** ผู้ใช้ยืนยันแล้ว 2026-10-17; แผน 3a ผ่านการตรวจรับ 2026-10-20: [2026-10-17-milestone-3a-schema-sqlc-audit.md](../plans/2026-10-17-milestone-3a-schema-sqlc-audit.md)
+- **สถานะ:** ผู้ใช้ยืนยันแล้ว 2026-10-17; แผน 3a ผ่านการตรวจรับ 2026-10-20: [2026-10-17-milestone-3a-schema-sqlc-audit.md](../plans/2026-10-17-milestone-3a-schema-sqlc-audit.md); แผน 3b: [2026-10-20-milestone-3b-auth-repositories.md](../plans/2026-10-20-milestone-3b-auth-repositories.md)
 - **อ้างอิง:** [AGENTS.md](../../../AGENTS.md), [phase 1 spec](2026-10-05-phase-1-design.md) หัวข้อ 4, 7, 8, 9, 11, [milestone 2 design](2026-10-16-milestone-2-domain-ports-design.md), [ADR-0013](../../adr/0013-domain-value-types.md), [roadmap](../plans/2026-10-05-phase-1-roadmap.md) milestone 3 รวม "ข้อที่ส่งต่อให้ milestone 3" ใต้ milestone 2
 
 ## 1. เป้าหมาย การแบ่งงาน และเกณฑ์ผ่าน
@@ -133,14 +133,22 @@ goose แบบเลขต่อเนื่อง (`goose create -s`), ห้�
 | `OTPChallengeRepository` | ทุก query ระบุ purpose; `Lock` ใช้ `FOR UPDATE`; `InvalidateOpen` ปิดแถวที่ยังเปิดรวมที่หมดอายุ; `RecordFailure` เพิ่ม `failed_attempts` แบบ atomic; `Consume` สำเร็จครั้งเดียว ครั้งต่อไป → `ErrNotFound` |
 | `RateLimitRepository` | `Admit` ดูหัวข้อ 5.1 |
 
+รายละเอียดที่ตัดสินในแผน 3b (2026-10-20):
+
+- **conflict ไม่ทำให้ transaction จบ** (ข้อส่งต่อจากรีวิว 3a): `UserRepository.Insert` และ `IdentityRepository.Insert` ใช้ `INSERT ... ON CONFLICT DO NOTHING` แล้วตรวจจำนวนแถว ศูนย์แถว → `ErrIdentityConflict` โดย transaction ยังเขียนต่อได้ (service บันทึก audit ใน callback เดิมได้); การแปลง `users_email_key`/`auth_providers_*` ใน `mapError` คงไว้เป็นทางสำรอง
+- **OTP `Consume` ต้องยังไม่หมดอายุ** (`expires_at > at`) เหมือน OIDC `Consume`; comment ของ port อัปเดตให้ตรง
+- `Revoke` ของ session ที่ไม่มีอยู่คืน `false`; `SetPassword` ที่ hash ว่าง → `internal`; `Admit` ที่ไม่มี rule หรือ key เดียวใช้กับสอง scope → `internal`
+- `Lock*` บน repository จาก pool คืน `internal` (`errLockOutsideTx`) ก่อนส่ง query
+- **ลำดับ lock ตอนออก OTP ใหม่:** service ต้อง `Users().Lock` ก่อน `InvalidateOpen` + `Insert` ในทุก flow (ข้อส่งต่อจากรีวิว 3a); ไม่เช่นนั้นคำขอพร้อมกันชน `otp_challenges_one_open_idx`
+
 ### 5.1 `RateLimitRepository.Admit`
 
 ทำใน transaction ของตัวเอง (ไม่อยู่ใน `TxRepositories` ตาม phase 1 spec):
 
 1. upsert `rate_limit_keys` ของทุก key แล้ว lock เรียงตาม `key_hash` เสมอ เพื่อกัน deadlock เมื่อคำขอพร้อมกันใช้หลาย key; `expires_at` = now + window ที่ยาวที่สุดของ key นั้น
-2. นับ `rate_limit_events` ในช่วง window ของแต่ละ rule; หลาย rule ใช้ key เดียวกันได้ (cooldown 60 วินาที + 5 ครั้ง/ชั่วโมงของ `*_request_email`)
+2. นับ `rate_limit_events` ที่ `occurred_at > now − window` ของแต่ละ rule; หลาย rule ใช้ key เดียวกันได้ (cooldown 60 วินาที + 5 ครั้ง/ชั่วโมงของ `*_request_email`)
 3. ผ่านทุก rule → insert event หนึ่งแถวต่อ key (ไม่ซ้ำแม้หลาย rule ใช้ key เดียวกัน) แล้วคืน `Allowed = true`
-4. ไม่ผ่าน → ไม่ insert event; `RetryAfter` = เวลาที่เร็วที่สุดที่ทุก rule ที่ปฏิเสธจะผ่าน; `RecordDenialAudit = true` เฉพาะเมื่อ UPDATE `last_denial_audit_at` (ค่าเดิมเป็น NULL หรือเก่ากว่า 1 นาที) สำเร็จ ตาม phase 1 spec หัวข้อ 9
+4. ไม่ผ่าน → ไม่ insert event; `RetryAfter` = เวลาที่เร็วที่สุดที่ทุก rule ที่ปฏิเสธจะผ่าน (ของแต่ละ rule คือเวลาที่ event ลำดับที่ count − limit + 1 นับจากเก่าสุดออกจาก window); `RecordDenialAudit = true` เฉพาะเมื่อ UPDATE `last_denial_audit_at` (ค่าเดิมเป็น NULL หรือเก่ากว่า 1 นาที) สำเร็จ ตาม phase 1 spec หัวข้อ 9
 5. ใช้ `now` ที่ service ส่งมาจาก `Clock` ไม่ใช้ `now()` ของ DB
 
 คำขอที่ถูกปฏิเสธไม่นับเป็น event (admission limit): ผู้โจมตีได้เพียงอัตราตาม limit และผู้ใช้จริงที่พิมพ์ผิดไม่ถูกล็อกยาวขึ้นเรื่อยๆ; การลบ event/key ที่หมดอายุเป็นงานของ `cmd/maintenance` ใน milestone 9
@@ -151,6 +159,7 @@ goose แบบเลขต่อเนื่อง (`goose create -s`), ห้�
 - `OTPChallengeRepository.Consume` challenge เดียวกันพร้อมกัน → สำเร็จครั้งเดียว
 - `RateLimitRepository.Admit` limit 5 จาก 20 goroutine → ผ่านพอดี 5
 - `SessionRepository.Revoke` สองครั้ง → `true` แล้ว `false`
+- ออก OTP ใหม่ของผู้ใช้เดียวกันจาก 10 goroutine โดย `Users().Lock` ก่อน `InvalidateOpen` + `Insert` → สำเร็จทั้ง 10 และเหลือ challenge ที่เปิดอยู่หนึ่งรายการ
 
 ## 6. Repositories ฝั่งพอร์ต (แผน 3c)
 

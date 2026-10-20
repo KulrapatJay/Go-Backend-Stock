@@ -10,7 +10,7 @@
 
 **Spec:** [แบบระบบสำหรับตรวจยืนยัน](../specs/2026-10-05-phase-1-design.md) โดยยึดข้อกำหนดใน [AGENTS.md](../../../AGENTS.md)
 
-**Status:** ผู้ใช้ยืนยันให้เริ่มตามลำดับแล้ว จัดทำข้อเสนอ milestone 0 ใน spec ที่ลิงก์ด้านบนแล้ว ผู้ใช้ยืนยันข้อเสนอเดิมและเลื่อนหน้าหุ้นรายตัว/กราฟไปเฟสถัดไปแล้ว (2026-10-14) และยืนยันแบบ email verification, portfolio name uniqueness และกติการหัสผ่านแล้ว milestone 0 ผ่านการตรวจรับ; milestone 1 ผ่านการตรวจรับเมื่อ 2026-10-15 (ลงมือครบทุก task, self-review ทั้ง branch ไม่พบ Critical/Important, CI บน GitHub ผ่าน) milestone 2 ผ่านการตรวจรับเมื่อ 2026-10-17 (ลงมือครบทุก task, รีวิวทั้ง branch ด้วย subagent แก้ Important ครบ 4 ข้อ) milestone 3 แผน 3a ผ่านการตรวจรับเมื่อ 2026-10-20 (รีวิวทั้ง branch ด้วย subagent แก้ Important ครบ 4 ข้อ, CI บน GitHub ผ่าน) ขั้นต่อไปคือแผน 3b
+**Status:** ผู้ใช้ยืนยันให้เริ่มตามลำดับแล้ว จัดทำข้อเสนอ milestone 0 ใน spec ที่ลิงก์ด้านบนแล้ว ผู้ใช้ยืนยันข้อเสนอเดิมและเลื่อนหน้าหุ้นรายตัว/กราฟไปเฟสถัดไปแล้ว (2026-10-14) และยืนยันแบบ email verification, portfolio name uniqueness และกติการหัสผ่านแล้ว milestone 0 ผ่านการตรวจรับ; milestone 1 ผ่านการตรวจรับเมื่อ 2026-10-15 (ลงมือครบทุก task, self-review ทั้ง branch ไม่พบ Critical/Important, CI บน GitHub ผ่าน) milestone 2 ผ่านการตรวจรับเมื่อ 2026-10-17 (ลงมือครบทุก task, รีวิวทั้ง branch ด้วย subagent แก้ Important ครบ 4 ข้อ) milestone 3 แผน 3a ผ่านการตรวจรับเมื่อ 2026-10-20 (รีวิวทั้ง branch ด้วย subagent แก้ Important ครบ 4 ข้อ, CI บน GitHub ผ่าน) แผน 3b ลงมือครบแล้ว รอผู้ใช้ตรวจรับ จากนั้นแผน 3c
 
 ## Global Constraints
 
@@ -107,12 +107,12 @@
 
 ### 3. Schema + goose + sqlc + repositories + audit persistence
 
-**แผนลงมือ:** [design](../specs/2026-10-17-milestone-3-persistence-design.md) — [3a](2026-10-17-milestone-3a-schema-sqlc-audit.md) (schema, roles, sqlc, audit), 3b (repositories ฝั่ง auth), 3c (repositories ฝั่งพอร์ต)
+**แผนลงมือ:** [design](../specs/2026-10-17-milestone-3-persistence-design.md) — [3a](2026-10-17-milestone-3a-schema-sqlc-audit.md) (schema, roles, sqlc, audit), [3b](2026-10-20-milestone-3b-auth-repositories.md) (repositories ฝั่ง auth), 3c (repositories ฝั่งพอร์ต)
 
 **ไฟล์หลัก:** `migrations/`, `sqlc.yaml`, `internal/adapter/postgres/queries/`, `internal/adapter/postgres/sqlc/`, `internal/adapter/postgres/` สำหรับ repository implementations/tests
 
 - [x] เพิ่มตาราง constraints/indexes และ DB role permissions ตามแบบ รวม instruments (surrogate key) และ version columns; ไม่แก้ managed schema ของ Supabase; migration ใช้เลขลำดับต่อเนื่องและไม่แก้ไฟล์ที่รันแล้ว
-- [ ] เขียน SQL queries, generate sqlc, map numeric/domain types และทดสอบ repository กับ PostgreSQL จริง (3a ทำแล้ว: sqlc + mapper + `AuditRepository`; ยังเหลือ repositories ฝั่ง auth ใน 3b และฝั่งพอร์ตใน 3c)
+- [ ] เขียน SQL queries, generate sqlc, map numeric/domain types และทดสอบ repository กับ PostgreSQL จริง (3a ทำแล้ว: sqlc + mapper + `AuditRepository`; 3b ทำแล้ว: repositories ฝั่ง auth ทั้ง 6 ตัว; ยังเหลือฝั่งพอร์ตใน 3c)
 - [ ] สร้าง transaction coordination และ audit append/read พร้อม failure injection ที่พิสูจน์ว่า audit/data rollback ด้วยกัน (3a ทำแล้ว: `withinTx` + failure injection ด้วย audit; ยังเหลือการทำซ้ำกับพอร์ตจริงและ `UnitOfWork` ครบใน 3c)
 - [x] ทดสอบ runtime role แก้/ลบ audit ไม่ได้, maintenance cleanup จำกัดเฉพาะสิทธิ์ที่จำเป็น และ audit ไม่ถูก cascade ลบตามข้อมูลต้นทาง
 - [x] เปิด CI ตรวจ goose บน DB ว่าง, repository integration tests และ `sqlc generate` ตามด้วย `git diff --exit-code`
@@ -120,10 +120,10 @@
 **ผ่านเมื่อ:** schema สร้างจากศูนย์ได้, generated code ไม่มี diff, role permissions ถูกต้อง และ integration tests ผ่านโดยไม่ใช้ Supabase จริง
 
 **ข้อที่ส่งต่อให้แผน 3b/3c** (จากรีวิว 3a 2026-10-20; ต้องตัดสินใจในแผนก่อนเขียน repository):
-- **conflict ทำให้ transaction จบ:** unique violation ที่แปลงเป็น `ErrPortfolioNameConflict`/`ErrIdentityConflict`/`ErrIdempotencyConflict` ไม่ทำให้ transaction กลับมาใช้ได้ (PostgreSQL abort แล้ว) แต่ละ repository ต้องเลือก `INSERT ... ON CONFLICT DO NOTHING` + ตรวจจำนวนแถว (ใช้กับ index บน `lower(name)` ได้) หรือ savepoint และ service ที่ต้องบันทึก audit หลัง conflict ต้องทำใน transaction ใหม่
+- **conflict ทำให้ transaction จบ:** unique violation ที่แปลงเป็น `ErrPortfolioNameConflict`/`ErrIdentityConflict`/`ErrIdempotencyConflict` ไม่ทำให้ transaction กลับมาใช้ได้ (PostgreSQL abort แล้ว) แต่ละ repository ต้องเลือก `INSERT ... ON CONFLICT DO NOTHING` + ตรวจจำนวนแถว (ใช้กับ index บน `lower(name)` ได้) หรือ savepoint และ service ที่ต้องบันทึก audit หลัง conflict ต้องทำใน transaction ใหม่ — **3b:** users/auth_providers ใช้ `ON CONFLICT DO NOTHING` แล้ว; 3c ยังต้องตัดสินกับ portfolios และ idempotency_keys
 - **instrument ที่ provider เปลี่ยน symbol** (FB → META โดย asset id เดิม): **ผู้ใช้เลือก (2026-10-20) บันทึกเป็นข้อจำกัดของ phase 1** ตาม AGENTS.md ที่ไม่รวม symbol changes — runtime ยังไม่มีสิทธิ์ UPDATE `instruments`; แผน 3c ต้องแปลงการชน `instruments_provider_asset_unique` เป็น error ที่อ่านเข้าใจ (ไม่ใช่ 500) และระบุข้อจำกัดใน README/UI
 - **`transactions_portfolio_id_fkey` แปลงเป็น `ErrPortfolioNotEmpty` ทั้งสองทิศ:** ย้ายการแปลงนี้ไปที่ `DeleteOwnedEmpty` แทนการแปลงทั่วไป (INSERT ลงพอร์ตที่ไม่มีอยู่จะได้ 409 ผิดความหมาย)
-- **OTP ขอพร้อมกัน:** `otp_challenges_one_open_idx` ชนแล้วเป็น `internal` ให้ lock แถว user ก่อน `InvalidateOpen` + `Insert` ตาม phase 1 spec หัวข้อ 9
+- **OTP ขอพร้อมกัน:** `otp_challenges_one_open_idx` ชนแล้วเป็น `internal` ให้ lock แถว user ก่อน `InvalidateOpen` + `Insert` ตาม phase 1 spec หัวข้อ 9 — **3b:** `TestOTPChallengeConcurrentReissueUnderUserLock` พิสูจน์ลำดับ lock นี้ที่ระดับ repository แล้ว; service ของ milestone 5 ต้องทำตาม
 - **เล็กน้อย:** rollback ใน `withinTx` ยังไม่มี timeout; request ที่ client ยกเลิกถูกจัดเป็น `internal` (log เป็น 500); test identity ครอบเฉพาะ `rate_limit_events` ควรเพิ่ม `transactions.sequence`; integration tests ทิ้งแถว audit ใน DB dev (runtime ลบไม่ได้ ล้างด้วย `docker compose down -v`); `numeric(28,10)` ปัดเงียบถ้าข้าม `Parse*` ทุก repository test ต้องส่งค่าผ่าน `Parse*` เสมอ
 
 ### 4. Auth + email verification + sessions + Google login + HTTP handlers
