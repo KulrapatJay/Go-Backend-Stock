@@ -127,10 +127,10 @@ goose แบบเลขต่อเนื่อง (`goose create -s`), ห้�
 | Repository | พฤติกรรม |
 | --- | --- |
 | `UserRepository` | `ByID`/`ByEmail` ไม่ SELECT `password_hash`; `CredentialsByEmail` เป็น query เดียวที่อ่าน hash (NULL → `""`); `Lock` ใช้ `FOR UPDATE`; `SetPassword` เขียน hash และ `updated_at`; `MarkEmailVerified` ไม่เขียนทับเมื่อยืนยันแล้ว |
-| `SessionRepository` | `ByTokenHash` คืนแถวแม้หมดอายุหรือถูก revoke (service ตัดสิน); `Revoke` คืน `false` เมื่อ revoke ไปแล้ว; `RevokeAll` revoke เฉพาะแถวที่ยังไม่ถูก revoke และคืนจำนวน |
+| `SessionRepository` | `ByTokenHash` คืนแถวแม้หมดอายุหรือถูก revoke (service ตัดสิน); `Revoke` คืน `false` เมื่อ revoke ไปแล้ว; `RevokeAll` revoke เฉพาะแถวที่ยังใช้งานได้ ณ `at` (ยังไม่ถูก revoke และยังไม่หมดอายุ) และคืนจำนวน |
 | `IdentityRepository` | ค้นด้วย (provider, subject); ซ้ำ → `ErrIdentityConflict` |
 | `OIDCFlowRepository` | `Consume` เป็น UPDATE เดียว: ตรงทั้ง state hash และ browser binding hash, `consumed_at IS NULL`, `expires_at > at` แล้ว RETURNING; ไม่ผ่าน → `ErrNotFound` |
-| `OTPChallengeRepository` | ทุก query ระบุ purpose; `Lock` ใช้ `FOR UPDATE`; `InvalidateOpen` ปิดแถวที่ยังเปิดรวมที่หมดอายุ; `RecordFailure` เพิ่ม `failed_attempts` แบบ atomic; `Consume` สำเร็จครั้งเดียว ครั้งต่อไป → `ErrNotFound` |
+| `OTPChallengeRepository` | ทุก query ระบุ purpose; `Lock` ใช้ `FOR UPDATE`; `InvalidateOpen` ปิดแถวที่ยังเปิดรวมที่หมดอายุ; `RecordFailure` เพิ่ม `failed_attempts` แบบ atomic และหยุดที่ 20 (เพดานของ CHECK) เพื่อไม่ให้ transaction พัง; `Consume` สำเร็จครั้งเดียว ครั้งต่อไป → `ErrNotFound` |
 | `RateLimitRepository` | `Admit` ดูหัวข้อ 5.1 |
 
 รายละเอียดที่ตัดสินในแผน 3b (2026-10-20):
@@ -145,10 +145,10 @@ goose แบบเลขต่อเนื่อง (`goose create -s`), ห้�
 
 ทำใน transaction ของตัวเอง (ไม่อยู่ใน `TxRepositories` ตาม phase 1 spec):
 
-1. upsert `rate_limit_keys` ของทุก key แล้ว lock เรียงตาม `key_hash` เสมอ เพื่อกัน deadlock เมื่อคำขอพร้อมกันใช้หลาย key; `expires_at` = now + window ที่ยาวที่สุดของ key นั้น
+1. เรียง key เป็นลำดับเดียวกันทุกคำขอ: key ของ client IP (scope ลงท้าย `_ip`) ก่อน แล้วจึงเรียงตาม `key_hash` เพื่อกัน deadlock เมื่อคำขอพร้อมกันใช้หลาย key; แต่ละ key ถูก upsert (ซึ่ง lock แถว) แล้วตรวจทันทีก่อนไปยัง key ถัดไป; `expires_at` = now + window ที่ยาวที่สุดของ key นั้น
 2. นับ `rate_limit_events` ที่ `occurred_at > now − window` ของแต่ละ rule; หลาย rule ใช้ key เดียวกันได้ (cooldown 60 วินาที + 5 ครั้ง/ชั่วโมงของ `*_request_email`)
-3. ผ่านทุก rule → insert event หนึ่งแถวต่อ key (ไม่ซ้ำแม้หลาย rule ใช้ key เดียวกัน) แล้วคืน `Allowed = true`
-4. ไม่ผ่าน → ไม่ insert event; `RetryAfter` = เวลาที่เร็วที่สุดที่ทุก rule ที่ปฏิเสธจะผ่าน (ของแต่ละ rule คือเวลาที่ event ลำดับที่ count − limit + 1 นับจากเก่าสุดออกจาก window); `RecordDenialAudit = true` เฉพาะเมื่อ UPDATE `last_denial_audit_at` (ค่าเดิมเป็น NULL หรือเก่ากว่า 1 นาที) สำเร็จ ตาม phase 1 spec หัวข้อ 9
+3. ผ่านทุก key → insert event หนึ่งแถวต่อ key (ไม่ซ้ำแม้หลาย rule ใช้ key เดียวกัน) แล้วคืน `Allowed = true`
+4. key ใดไม่ผ่าน → หยุดทันที ไม่ insert event และ**ไม่สร้าง key ที่เหลือ** (ตอบข้อกำหนดของ phase 1 spec หัวข้อ 10: ตรวจ IP quota ก่อนสร้าง key ของอีเมลใดๆ เพื่อลด storage abuse ซึ่งตัดสินแบบนี้เมื่อ 2026-10-20 หลังรีวิว 3b); `RetryAfter` = ค่าที่มากที่สุดในบรรดา rule ของ key นั้นที่ปฏิเสธ (ของแต่ละ rule คือเวลาที่ event ลำดับที่ count − limit + 1 นับจากเก่าสุดออกจาก window) จึงครอบคลุมเฉพาะ key ที่ตรวจถึงจุดนั้น — key ที่ยังไม่ได้ตรวจอาจเต็มด้วย แล้วครั้งถัดไป client จะได้ `RetryAfter` ใหม่; `RecordDenialAudit = true` เฉพาะเมื่อ UPDATE `last_denial_audit_at` (ค่าเดิมเป็น NULL หรือเก่ากว่า 1 นาที) สำเร็จ ตาม phase 1 spec หัวข้อ 9
 5. ใช้ `now` ที่ service ส่งมาจาก `Clock` ไม่ใช้ `now()` ของ DB
 
 คำขอที่ถูกปฏิเสธไม่นับเป็น event (admission limit): ผู้โจมตีได้เพียงอัตราตาม limit และผู้ใช้จริงที่พิมพ์ผิดไม่ถูกล็อกยาวขึ้นเรื่อยๆ; การลบ event/key ที่หมดอายุเป็นงานของ `cmd/maintenance` ใน milestone 9

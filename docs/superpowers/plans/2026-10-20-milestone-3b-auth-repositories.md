@@ -513,7 +513,7 @@ func (r *txRepositories) Audit() port.AuditRepository {
 - [ ] **Step 5: รัน tests และ lint ให้ผ่าน**
 
 Run: `gofmt -l internal && make test-integration && make lint`
-Expected: `gofmt` ไม่พิมพ์อะไร, `ok  	go-backend-stock/internal/adapter/postgres` โดยไม่มี `SKIP` (ตรวจด้วย `go test -v` ว่า PASS 28 รายการ รวม tests เดิมของ 3a) และ `0 issues.`
+Expected: `gofmt` ไม่พิมพ์อะไร, `ok  	go-backend-stock/internal/adapter/postgres` โดยไม่มี `SKIP` (ตรวจด้วย `GOFLAGS=-v make test-integration` ว่า PASS 28 รายการ รวม tests เดิมของ 3a) และ `0 issues.`
 
 - [ ] **Step 6: พิสูจน์ว่า test จับการเขียนผิดได้**
 
@@ -534,7 +534,7 @@ ON CONFLICT (email) DO NOTHING;
 VALUES ($1, $2, $3, $4, $5);
 ```
 
-Run: `make sqlc && go test -count=1 -run TestUserInsertDuplicateEmailKeepsTransactionUsable ./internal/adapter/postgres/`
+Run: `make sqlc && make test-integration` (ดูผลของ `TestUserInsertDuplicateEmailKeepsTransactionUsable`)
 Expected: FAIL ด้วย `transaction after a conflict: ... current transaction is aborted ... (SQLSTATE 25P02)`
 
 จากนั้นคืนไฟล์: `git checkout -- internal/adapter/postgres/queries/users.sql && make sqlc && git status --short` ต้องไม่แสดงไฟล์ที่ยังไม่ได้ stage (ไม่มี diff เทียบกับ Step 4)
@@ -1037,7 +1037,7 @@ func (r *txRepositories) Identities() port.IdentityRepository { return &Identity
 - [ ] **Step 5: รัน tests และ lint ให้ผ่าน**
 
 Run: `gofmt -l internal && make test-integration && make lint`
-Expected: `gofmt` ไม่พิมพ์อะไร, `ok  	go-backend-stock/internal/adapter/postgres` โดยไม่มี `SKIP` (ตรวจด้วย `go test -v` ว่า PASS 33 รายการ รวม tests เดิมของ 3a) และ `0 issues.`
+Expected: `gofmt` ไม่พิมพ์อะไร, `ok  	go-backend-stock/internal/adapter/postgres` โดยไม่มี `SKIP` (ตรวจด้วย `GOFLAGS=-v make test-integration` ว่า PASS 33 รายการ รวม tests เดิมของ 3a) และ `0 issues.`
 
 - [ ] **Step 6: พิสูจน์ว่า test จับการเขียนผิดได้**
 
@@ -1057,7 +1057,7 @@ WHERE id = $1 AND revoked_at IS NULL;
 WHERE id = $1;
 ```
 
-Run: `make sqlc && go test -count=1 -run TestSessionRevokeReportsOnlyTheFirstRevoke ./internal/adapter/postgres/`
+Run: `make sqlc && make test-integration` (ดูผลของ `TestSessionRevokeReportsOnlyTheFirstRevoke`)
 Expected: FAIL ด้วย `second Revoke = true, <nil>; want false so logout audits once`
 
 จากนั้นคืนไฟล์: `git checkout -- internal/adapter/postgres/queries/sessions.sql && make sqlc && git status --short` ต้องไม่แสดงไฟล์ที่ยังไม่ได้ stage (ไม่มี diff เทียบกับ Step 4)
@@ -1748,7 +1748,7 @@ func (r *txRepositories) OTPChallenges() port.OTPChallengeRepository {
 - [ ] **Step 5: รัน tests และ lint ให้ผ่าน**
 
 Run: `gofmt -l internal && make test-integration && make lint`
-Expected: `gofmt` ไม่พิมพ์อะไร, `ok  	go-backend-stock/internal/adapter/postgres` โดยไม่มี `SKIP` (ตรวจด้วย `go test -v` ว่า PASS 44 รายการ รวม tests เดิมของ 3a) และ `0 issues.`
+Expected: `gofmt` ไม่พิมพ์อะไร, `ok  	go-backend-stock/internal/adapter/postgres` โดยไม่มี `SKIP` (ตรวจด้วย `GOFLAGS=-v make test-integration` ว่า PASS 44 รายการ รวม tests เดิมของ 3a) และ `0 issues.`
 
 - [ ] **Step 6: พิสูจน์ว่า test จับการเขียนผิดได้**
 
@@ -1768,7 +1768,7 @@ WHERE id = @id AND purpose = @purpose AND consumed_at IS NULL AND invalidated_at
 WHERE id = @id AND purpose = @purpose AND invalidated_at IS NULL AND expires_at > @at;
 ```
 
-Run: `make sqlc && go test -count=1 -run TestOTPChallengeConcurrentConsumeSucceedsOnce ./internal/adapter/postgres/`
+Run: `make sqlc && make test-integration` (ดูผลของ `TestOTPChallengeConcurrentConsumeSucceedsOnce`)
 Expected: FAIL ด้วย `10 concurrent consumes succeeded, want exactly 1`
 
 จากนั้นคืนไฟล์: `git checkout -- internal/adapter/postgres/queries/otp.sql && make sqlc && git status --short` ต้องไม่แสดงไฟล์ที่ยังไม่ได้ stage (ไม่มี diff เทียบกับ Step 4)
@@ -2170,7 +2170,7 @@ func (s *Store) RateLimits() port.RateLimitRepository { return &RateLimitReposit
 - [ ] **Step 5: รัน tests และ lint ให้ผ่าน**
 
 Run: `gofmt -l internal && make test-integration && make lint`
-Expected: `gofmt` ไม่พิมพ์อะไร, `ok  	go-backend-stock/internal/adapter/postgres` โดยไม่มี `SKIP` (ตรวจด้วย `go test -v` ว่า PASS 51 รายการ รวม tests เดิมของ 3a) และ `0 issues.`
+Expected: `gofmt` ไม่พิมพ์อะไร, `ok  	go-backend-stock/internal/adapter/postgres` โดยไม่มี `SKIP` (ตรวจด้วย `GOFLAGS=-v make test-integration` ว่า PASS 51 รายการ รวม tests เดิมของ 3a) และ `0 issues.`
 
 - [ ] **Step 6: พิสูจน์ว่า test จับการเขียนผิดได้**
 
@@ -2190,7 +2190,7 @@ ON CONFLICT (key_hash) DO UPDATE SET expires_at = GREATEST(app.rate_limit_keys.e
 ON CONFLICT (key_hash) DO NOTHING;
 ```
 
-Run: `make sqlc && go test -count=1 -run TestRateLimitConcurrentAdmissionsRespectTheLimit ./internal/adapter/postgres/`
+Run: `make sqlc && make test-integration` (ดูผลของ `TestRateLimitConcurrentAdmissionsRespectTheLimit`)
 Expected: FAIL ด้วย `... of 20 concurrent requests allowed, want exactly 5`
 
 จากนั้นคืนไฟล์: `git checkout -- internal/adapter/postgres/queries/ratelimit.sql && make sqlc && git status --short` ต้องไม่แสดงไฟล์ที่ยังไม่ได้ stage (ไม่มี diff เทียบกับ Step 4)
@@ -2361,3 +2361,17 @@ Expected: ผ่านทั้งคู่ (`0 issues.`, swagger valid, `ok` �
 git add docs
 git commit -m "docs: record milestone 3b auth repositories"
 ```
+
+
+---
+
+## ภาคผนวก: แก้หลังรีวิวทั้ง branch (2026-10-20)
+
+โค้ดในบล็อกของ Task 3–4 ข้างบนคือสิ่งที่ลงมือตามแผน; รีวิวทั้ง branch ด้วย subagent พบ Important 2 ข้อและ Minor 8 ข้อ ผู้ใช้ตัดสินให้แก้ดังนี้ (commit `c7f2bfe`, `ab9f40a` และเอกสารใน commit ถัดไป) ดังนั้นไฟล์จริงต่างจากบล็อกข้างบนใน 4 ไฟล์:
+
+- `ratelimit.go`: `Admit` เรียง key ตาม (client IP ก่อน, แล้ว hash), upsert + ตรวจทีละ key และหยุดที่ key แรกที่ปฏิเสธโดยไม่สร้าง key ที่เหลือ; เพิ่ม `scopeRank`; เพิ่ม tests 6 ตัวใน `ratelimit_test.go` (ไม่สร้าง key หลัง IP ถูกปฏิเสธ, `scopeRank`, ไม่ deadlock เมื่อสลับลำดับ key, `RetryAfter` ยาวสุด, ไม่ record event เมื่อปฏิเสธ)
+- `queries/otp.sql`: `RecordOTPFailure` ใช้ `LEAST(failed_attempts + 1, 20)` + test `TestOTPChallengeRecordFailureSaturatesAndKeepsTransactionUsable`
+- `queries/sessions.sql`: `RevokeUserSessions` เพิ่ม `AND expires_at > $2` + test `TestSessionRevokeAllSkipsExpiredSessions`
+- comment ของ `port/audit.go`, `port/auth.go`, `domain/ratelimit.go`
+
+Minor ที่เลื่อน (ข้อ 6–9 ของรายงานรีวิว) บันทึกไว้ใน roadmap; คำสั่ง Step 6 ด้านบนแก้เป็น `make test-integration` แล้วเพราะ `go test` เปล่าๆ จะ SKIP โดยไม่มี env ของ `make`
