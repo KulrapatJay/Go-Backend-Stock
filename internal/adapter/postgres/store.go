@@ -34,6 +34,14 @@ var errLockOutsideTx = domain.NewError(domain.CodeInternal, "row lock requires a
 // Users returns the user repository over the pool.
 func (s *Store) Users() port.UserRepository { return &UserRepository{q: sqlc.New(s.pool)} }
 
+// Sessions returns the session repository over the pool.
+func (s *Store) Sessions() port.SessionRepository { return &SessionRepository{q: sqlc.New(s.pool)} }
+
+// Identities returns the identity repository over the pool.
+func (s *Store) Identities() port.IdentityRepository {
+	return &IdentityRepository{q: sqlc.New(s.pool)}
+}
+
 // txRepositories are the repositories bound to one database transaction. Plan 3c adds the
 // portfolio-side accessors until it satisfies port.TxRepositories.
 type txRepositories struct {
@@ -42,6 +50,12 @@ type txRepositories struct {
 
 // Users returns the user repository bound to this transaction.
 func (r *txRepositories) Users() port.UserRepository { return &UserRepository{q: r.q, inTx: true} }
+
+// Sessions returns the session repository bound to this transaction.
+func (r *txRepositories) Sessions() port.SessionRepository { return &SessionRepository{q: r.q} }
+
+// Identities returns the identity repository bound to this transaction.
+func (r *txRepositories) Identities() port.IdentityRepository { return &IdentityRepository{q: r.q} }
 
 // Audit returns the audit repository bound to this transaction.
 func (r *txRepositories) Audit() port.AuditRepository {

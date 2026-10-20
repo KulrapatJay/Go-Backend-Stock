@@ -30,7 +30,8 @@ type UserRepository interface {
 type SessionRepository interface {
 	ByTokenHash(ctx context.Context, tokenHash []byte) (domain.Session, error)
 	Insert(ctx context.Context, session domain.Session) error
-	// Revoke reports false when the session was already revoked, so logout audits only once.
+	// Revoke reports false when the session was already revoked or does not exist, so logout
+	// audits only once.
 	Revoke(ctx context.Context, id domain.ID, at time.Time, reason domain.RevokeReason) (bool, error)
 	// RevokeAll revokes every active session of userID and returns how many it revoked.
 	RevokeAll(ctx context.Context, userID domain.ID, at time.Time, reason domain.RevokeReason) (int64, error)

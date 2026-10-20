@@ -1,6 +1,7 @@
 package postgres
 
 import (
+	"crypto/rand"
 	"testing"
 	"time"
 
@@ -11,6 +12,15 @@ import (
 // values read back compare equal.
 func now() time.Time {
 	return time.Now().UTC().Truncate(time.Microsecond)
+}
+
+func randomHash(t *testing.T) []byte {
+	t.Helper()
+	h := make([]byte, domain.HashSize)
+	if _, err := rand.Read(h); err != nil {
+		t.Fatal(err)
+	}
+	return h
 }
 
 // uniqueEmail returns an address no other test uses, already normalized.
