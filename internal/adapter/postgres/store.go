@@ -42,6 +42,17 @@ func (s *Store) Identities() port.IdentityRepository {
 	return &IdentityRepository{q: sqlc.New(s.pool)}
 }
 
+// OTPChallenges returns the OTP challenge repository over the pool.
+func (s *Store) OTPChallenges() port.OTPChallengeRepository {
+	return &OTPChallengeRepository{q: sqlc.New(s.pool)}
+}
+
+// OIDCFlows returns the OIDC flow repository. Its Consume is a single statement, so it needs no
+// surrounding transaction.
+func (s *Store) OIDCFlows() port.OIDCFlowRepository {
+	return &OIDCFlowRepository{q: sqlc.New(s.pool)}
+}
+
 // txRepositories are the repositories bound to one database transaction. Plan 3c adds the
 // portfolio-side accessors until it satisfies port.TxRepositories.
 type txRepositories struct {
@@ -56,6 +67,11 @@ func (r *txRepositories) Sessions() port.SessionRepository { return &SessionRepo
 
 // Identities returns the identity repository bound to this transaction.
 func (r *txRepositories) Identities() port.IdentityRepository { return &IdentityRepository{q: r.q} }
+
+// OTPChallenges returns the OTP challenge repository bound to this transaction.
+func (r *txRepositories) OTPChallenges() port.OTPChallengeRepository {
+	return &OTPChallengeRepository{q: r.q, inTx: true}
+}
 
 // Audit returns the audit repository bound to this transaction.
 func (r *txRepositories) Audit() port.AuditRepository {

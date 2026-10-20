@@ -43,3 +43,24 @@ func insertUser(t *testing.T, store *Store) domain.User {
 	}
 	return u
 }
+
+// runConcurrently starts n goroutines at once and returns how many calls succeeded.
+func runConcurrently(n int, call func() error) (succeeded int, errs []error) {
+	start := make(chan struct{})
+	results := make(chan error, n)
+	for range n {
+		go func() {
+			<-start
+			results <- call()
+		}()
+	}
+	close(start)
+	for range n {
+		if err := <-results; err != nil {
+			errs = append(errs, err)
+		} else {
+			succeeded++
+		}
+	}
+	return succeeded, errs
+}

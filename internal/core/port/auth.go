@@ -56,7 +56,7 @@ type OIDCFlowRepository interface {
 // OTPChallengeRepository stores OTP challenges. Every method takes the purpose so a challenge
 // ID from one flow can never be used in the other. ByID, Lock, RecordFailure and Consume return
 // domain.ErrNotFound for an unknown or other-purpose challenge; Consume also does so for a
-// challenge that is no longer open.
+// challenge that is consumed, invalidated or expired at `at`.
 type OTPChallengeRepository interface {
 	ByID(ctx context.Context, purpose domain.OTPPurpose, id domain.ID) (domain.OTPChallenge, error)
 	Lock(ctx context.Context, purpose domain.OTPPurpose, id domain.ID) (domain.OTPChallenge, error)
