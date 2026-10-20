@@ -10,6 +10,7 @@ VALUES ($1, $2, $3, $4, $5);
 UPDATE app.sessions SET revoked_at = $2, revoke_reason = $3
 WHERE id = $1 AND revoked_at IS NULL;
 
+-- Only sessions that could still authenticate: not revoked and not expired at $2.
 -- name: RevokeUserSessions :execrows
 UPDATE app.sessions SET revoked_at = $2, revoke_reason = $3
-WHERE user_id = $1 AND revoked_at IS NULL;
+WHERE user_id = $1 AND revoked_at IS NULL AND expires_at > $2;

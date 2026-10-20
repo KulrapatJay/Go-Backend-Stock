@@ -132,7 +132,7 @@ func (q *Queries) LockOTPChallenge(ctx context.Context, arg LockOTPChallengePara
 }
 
 const recordOTPFailure = `-- name: RecordOTPFailure :execrows
-UPDATE app.otp_challenges SET failed_attempts = failed_attempts + 1
+UPDATE app.otp_challenges SET failed_attempts = LEAST(failed_attempts + 1, 20)
 WHERE id = $1 AND purpose = $2
 `
 
@@ -141,6 +141,8 @@ type RecordOTPFailureParams struct {
 	Purpose string
 }
 
+// Saturates at 20, the ceiling of otp_challenges_attempts_valid, so counting one failure too many
+// cannot break the caller's transaction.
 func (q *Queries) RecordOTPFailure(ctx context.Context, arg RecordOTPFailureParams) (int64, error) {
 	result, err := q.db.Exec(ctx, recordOTPFailure, arg.ID, arg.Purpose)
 	if err != nil {

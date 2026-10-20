@@ -18,8 +18,8 @@ type UserRepository interface {
 	Lock(ctx context.Context, id domain.ID) (domain.User, error)
 	// Insert returns domain.ErrIdentityConflict when the email is already registered.
 	Insert(ctx context.Context, user domain.User) error
-	// SetPassword returns an internal error for an empty hash: Google-only accounts never gain a
-	// password this way.
+	// SetPassword returns an internal error for an empty hash. It does not check whether the
+	// account is Google-only: callers must not add a password to one (phase 1 spec section 10).
 	SetPassword(ctx context.Context, id domain.ID, passwordHash domain.PasswordHash, at time.Time) error
 	// MarkEmailVerified is a no-op when the email is already verified.
 	MarkEmailVerified(ctx context.Context, id domain.ID, at time.Time) error
@@ -33,7 +33,8 @@ type SessionRepository interface {
 	// Revoke reports false when the session was already revoked or does not exist, so logout
 	// audits only once.
 	Revoke(ctx context.Context, id domain.ID, at time.Time, reason domain.RevokeReason) (bool, error)
-	// RevokeAll revokes every active session of userID and returns how many it revoked.
+	// RevokeAll revokes every session of userID that is neither revoked nor expired at `at` and
+	// returns how many it revoked.
 	RevokeAll(ctx context.Context, userID domain.ID, at time.Time, reason domain.RevokeReason) (int64, error)
 }
 
@@ -63,6 +64,8 @@ type OTPChallengeRepository interface {
 	// InvalidateOpen invalidates userID's open challenges of this purpose, expired ones included.
 	InvalidateOpen(ctx context.Context, userID domain.ID, purpose domain.OTPPurpose, at time.Time) error
 	Insert(ctx context.Context, challenge domain.OTPChallenge) error
+	// RecordFailure counts one wrong code and saturates at 20, the database ceiling; services
+	// compare against their configured maximum (at most 20).
 	RecordFailure(ctx context.Context, purpose domain.OTPPurpose, id domain.ID) error
 	Consume(ctx context.Context, purpose domain.OTPPurpose, id domain.ID, at time.Time) error
 }

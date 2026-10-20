@@ -211,3 +211,32 @@ func TestOTPChallengeConcurrentReissueUnderUserLock(t *testing.T) {
 		t.Errorf("%d challenges left open, want exactly 1", open)
 	}
 }
+
+// TestOTPChallengeRecordFailureSaturatesAndKeepsTransactionUsable: the database allows at most 20
+// failed attempts; counting past that must not break the transaction, or the failure audit that
+// follows would be lost.
+func TestOTPChallengeRecordFailureSaturatesAndKeepsTransactionUsable(t *testing.T) {
+	store := newRuntimeStore(t)
+	c := insertChallenge(t, store, insertUser(t, store).ID, domain.OTPPurposePasswordReset)
+	e := auditEvent(t, `{}`)
+
+	err := store.withinTx(t.Context(), func(r *txRepositories) error {
+		for range 21 {
+			if err := r.OTPChallenges().RecordFailure(t.Context(), c.Purpose, c.ID); err != nil {
+				return err
+			}
+		}
+		return r.Audit().Append(t.Context(), e)
+	})
+
+	if err != nil {
+		t.Fatalf("21 failures then an audit in one transaction: %v", err)
+	}
+	got, _ := store.OTPChallenges().ByID(t.Context(), c.Purpose, c.ID)
+	if got.FailedAttempts != 20 {
+		t.Errorf("failed_attempts = %d, want 20 (saturated)", got.FailedAttempts)
+	}
+	if !auditExists(t, e.ID) {
+		t.Error("audit written after the failures was not committed")
+	}
+}

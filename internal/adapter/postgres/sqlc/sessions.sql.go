@@ -76,7 +76,7 @@ func (q *Queries) RevokeSession(ctx context.Context, arg RevokeSessionParams) (i
 
 const revokeUserSessions = `-- name: RevokeUserSessions :execrows
 UPDATE app.sessions SET revoked_at = $2, revoke_reason = $3
-WHERE user_id = $1 AND revoked_at IS NULL
+WHERE user_id = $1 AND revoked_at IS NULL AND expires_at > $2
 `
 
 type RevokeUserSessionsParams struct {
@@ -85,6 +85,7 @@ type RevokeUserSessionsParams struct {
 	RevokeReason pgtype.Text
 }
 
+// Only sessions that could still authenticate: not revoked and not expired at $2.
 func (q *Queries) RevokeUserSessions(ctx context.Context, arg RevokeUserSessionsParams) (int64, error) {
 	result, err := q.db.Exec(ctx, revokeUserSessions, arg.UserID, arg.RevokedAt, arg.RevokeReason)
 	if err != nil {

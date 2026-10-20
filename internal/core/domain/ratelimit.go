@@ -59,5 +59,5 @@ func NewRateLimitRule(r RateLimitRule) (RateLimitRule, error) {
 type RateLimitDecision struct {
 	Allowed           bool
 	RetryAfter        time.Duration
-	RecordDenialAudit bool // true at most once per key per window, so attacks cannot flood audit
+	RecordDenialAudit bool // true at most once per key per minute, so attacks cannot flood audit
 }

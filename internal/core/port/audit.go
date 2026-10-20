@@ -15,6 +15,8 @@ type AuditRepository interface {
 
 // RateLimitRepository counts attempts in PostgreSQL so a restart cannot reset quotas.
 type RateLimitRepository interface {
-	// Admit atomically records one attempt against every rule and reports whether all allow it.
+	// Admit checks every rule in one transaction. When all allow, it records one event per key.
+	// When any denies, it records nothing and creates no key after the first denying one
+	// (client-IP keys are checked first, so an IP over its quota cannot create email keys).
 	Admit(ctx context.Context, rules []domain.RateLimitRule, now time.Time) (domain.RateLimitDecision, error)
 }

@@ -89,3 +89,31 @@ func TestSessionRevokeAllRevokesOnlyTheUsersActiveSessions(t *testing.T) {
 		t.Error("RevokeAll revoked another user's session")
 	}
 }
+
+// TestSessionRevokeAllSkipsExpiredSessions: only sessions that could still authenticate are
+// revoked and counted, so auth.sessions_revoked does not overstate what was cut off.
+func TestSessionRevokeAllSkipsExpiredSessions(t *testing.T) {
+	store := newRuntimeStore(t)
+	user := insertUser(t, store)
+	active := insertSession(t, store, user.ID)
+	past := now().Add(-2 * time.Hour)
+	expired, err := domain.NewSession(domain.Session{ID: newID(t), UserID: user.ID, TokenHash: randomHash(t), CreatedAt: past, ExpiresAt: past.Add(time.Hour)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Sessions().Insert(t.Context(), expired); err != nil {
+		t.Fatal(err)
+	}
+
+	n, err := store.Sessions().RevokeAll(t.Context(), user.ID, now(), domain.RevokeReasonPasswordReset)
+
+	if err != nil || n != 1 {
+		t.Fatalf("RevokeAll = %d, %v; want 1 (the active session only)", n, err)
+	}
+	if got, _ := store.Sessions().ByTokenHash(t.Context(), expired.TokenHash); got.RevokedAt != nil {
+		t.Error("RevokeAll revoked an already expired session")
+	}
+	if got, _ := store.Sessions().ByTokenHash(t.Context(), active.TokenHash); got.RevokedAt == nil {
+		t.Error("RevokeAll left the active session valid")
+	}
+}
