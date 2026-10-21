@@ -56,6 +56,11 @@ func (s *Store) OIDCFlows() port.OIDCFlowRepository {
 // RateLimits returns the rate-limit repository. Admit runs its own transaction.
 func (s *Store) RateLimits() port.RateLimitRepository { return &RateLimitRepository{store: s} }
 
+// Portfolios returns the portfolio repository over the pool.
+func (s *Store) Portfolios() port.PortfolioRepository {
+	return &PortfolioRepository{q: sqlc.New(s.pool)}
+}
+
 // Instruments returns the instrument repository over the pool.
 func (s *Store) Instruments() port.InstrumentRepository {
 	return &InstrumentRepository{q: sqlc.New(s.pool)}
@@ -79,6 +84,11 @@ func (r *txRepositories) Identities() port.IdentityRepository { return &Identity
 // OTPChallenges returns the OTP challenge repository bound to this transaction.
 func (r *txRepositories) OTPChallenges() port.OTPChallengeRepository {
 	return &OTPChallengeRepository{q: r.q, inTx: true}
+}
+
+// Portfolios returns the portfolio repository bound to this transaction.
+func (r *txRepositories) Portfolios() port.PortfolioRepository {
+	return &PortfolioRepository{q: r.q, inTx: true}
 }
 
 // Instruments returns the instrument repository bound to this transaction.
