@@ -42,10 +42,17 @@ type TransactionFilter struct {
 	To     *time.Time
 }
 
-// NewTransactionFilter checks the filter a client asked for: From must not be after To.
+// NewTransactionFilter checks the filter a client asked for: From must not be after To. An absent
+// filter is nil; a pointer to the zero Symbol or to a side other than buy/sell is a caller bug.
 func NewTransactionFilter(page Page, symbol *Symbol, side *Side, from, to *time.Time) (TransactionFilter, error) {
 	if page.IsZero() {
 		return TransactionFilter{}, invariant("filter.page", "is required")
+	}
+	if symbol != nil && symbol.IsZero() {
+		return TransactionFilter{}, invariant("filter.symbol", "must be nil or a parsed symbol")
+	}
+	if side != nil && !isOneOf(*side, SideBuy, SideSell) {
+		return TransactionFilter{}, invariant("filter.side", "must be nil, buy or sell")
 	}
 	if from != nil && to != nil && from.After(*to) {
 		return TransactionFilter{}, invalidInput("from", "must not be after to")

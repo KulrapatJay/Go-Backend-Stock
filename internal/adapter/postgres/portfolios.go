@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 
+	"github.com/jackc/pgx/v5/pgconn"
+
 	"go-backend-stock/internal/adapter/postgres/sqlc"
 	"go-backend-stock/internal/core/domain"
 	"go-backend-stock/internal/core/port"
@@ -121,6 +123,11 @@ func (r *PortfolioRepository) UpdateOwned(ctx context.Context, p domain.Portfoli
 func (r *PortfolioRepository) DeleteOwnedEmpty(ctx context.Context, ownerID, portfolioID domain.ID) error {
 	n, err := r.q.DeleteOwnedEmptyPortfolio(ctx, sqlc.DeleteOwnedEmptyPortfolioParams{ID: pgUUID(portfolioID), UserID: pgUUID(ownerID)})
 	if err != nil {
+		// A transaction inserted concurrently by a caller that skipped the portfolio lock.
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == sqlStateForeignKeyViolation && pgErr.ConstraintName == "transactions_portfolio_id_fkey" {
+			return domain.ErrPortfolioNotEmpty
+		}
 		return mapError(err)
 	}
 	if n == 1 {

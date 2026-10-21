@@ -98,3 +98,21 @@ func TestNewTransactionFilter(t *testing.T) {
 	_, err = domain.NewTransactionFilter(domain.Page{}, nil, nil, nil, nil)
 	requireCode(t, err, domain.CodeInternal)
 }
+
+// TestNewTransactionFilterRejectsEmptyFilterValues: an absent filter is nil. A pointer to the zero
+// Symbol or an empty Side is a bug in the caller, not a filter that matches everything or nothing.
+func TestNewTransactionFilterRejectsEmptyFilterValues(t *testing.T) {
+	page, err := domain.ParsePage("", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var noSymbol domain.Symbol
+	_, err = domain.NewTransactionFilter(page, &noSymbol, nil, nil, nil)
+	requireCode(t, err, domain.CodeInternal)
+	noSide := domain.Side("")
+	_, err = domain.NewTransactionFilter(page, nil, &noSide, nil, nil)
+	requireCode(t, err, domain.CodeInternal)
+	short := domain.Side("short")
+	_, err = domain.NewTransactionFilter(page, nil, &short, nil, nil)
+	requireCode(t, err, domain.CodeInternal)
+}

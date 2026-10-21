@@ -61,6 +61,11 @@ func (s *Store) Portfolios() port.PortfolioRepository {
 	return &PortfolioRepository{q: sqlc.New(s.pool)}
 }
 
+// Transactions returns the transaction repository over the pool.
+func (s *Store) Transactions() port.TransactionRepository {
+	return &TransactionRepository{q: sqlc.New(s.pool)}
+}
+
 // Instruments returns the instrument repository over the pool.
 func (s *Store) Instruments() port.InstrumentRepository {
 	return &InstrumentRepository{q: sqlc.New(s.pool)}
@@ -89,6 +94,11 @@ func (r *txRepositories) OTPChallenges() port.OTPChallengeRepository {
 // Portfolios returns the portfolio repository bound to this transaction.
 func (r *txRepositories) Portfolios() port.PortfolioRepository {
 	return &PortfolioRepository{q: r.q, inTx: true}
+}
+
+// Transactions returns the transaction repository bound to this transaction.
+func (r *txRepositories) Transactions() port.TransactionRepository {
+	return &TransactionRepository{q: r.q}
 }
 
 // Instruments returns the instrument repository bound to this transaction.

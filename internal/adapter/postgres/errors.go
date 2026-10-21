@@ -11,7 +11,10 @@ import (
 )
 
 const (
-	sqlStateUniqueViolation     = "23505"
+	sqlStateUniqueViolation = "23505"
+	// sqlStateForeignKeyViolation is mapped only where its meaning is known: deleting a portfolio
+	// that still has trades (PortfolioRepository.DeleteOwnedEmpty). Elsewhere it is internal; an
+	// insert into a missing portfolio, for example, is not "portfolio not empty".
 	sqlStateForeignKeyViolation = "23503"
 )
 
@@ -46,10 +49,6 @@ func mapError(err error) error {
 		case sqlStateUniqueViolation:
 			if de, ok := uniqueConflicts[pgErr.ConstraintName]; ok {
 				return de
-			}
-		case sqlStateForeignKeyViolation:
-			if pgErr.ConstraintName == "transactions_portfolio_id_fkey" {
-				return domain.ErrPortfolioNotEmpty
 			}
 		}
 	}

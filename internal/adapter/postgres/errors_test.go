@@ -38,7 +38,8 @@ func TestMapError(t *testing.T) {
 		{"one google per user", unique("auth_providers_user_provider_key"), domain.ErrIdentityConflict},
 		{"email race", unique("users_email_key"), domain.ErrIdentityConflict},
 		{"idempotency key race", unique("idempotency_keys_pkey"), domain.ErrIdempotencyConflict},
-		{"portfolio still has trades", &pgconn.PgError{Code: "23503", ConstraintName: "transactions_portfolio_id_fkey"}, domain.ErrPortfolioNotEmpty},
+		// Only DeleteOwnedEmpty knows a transactions FK violation means "not empty".
+		{"transactions foreign key", &pgconn.PgError{Code: "23503", ConstraintName: "transactions_portfolio_id_fkey"}, domain.ErrInternal},
 		{"other unique", unique("sessions_token_hash_key"), domain.ErrInternal},
 		{"other foreign key", &pgconn.PgError{Code: "23503", ConstraintName: "idempotency_keys_portfolio_id_fkey"}, domain.ErrInternal},
 		{"check violation", &pgconn.PgError{Code: "23514", ConstraintName: "audit_events_metadata_object"}, domain.ErrInternal},
