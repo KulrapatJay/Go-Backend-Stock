@@ -2,7 +2,9 @@ package postgres
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"time"
 
@@ -10,9 +12,9 @@ import (
 )
 
 // Keyset cursors (milestone 3 spec section 6.1). A cursor is the base64url JSON of the last row's
-// sort key plus the list kind and a fingerprint of its filters, so a cursor only continues the
-// list it came from. Cursors come from clients: anything that does not decode exactly is
-// invalid_input.
+// sort key plus the list kind and a fingerprint of what the list is scoped to (the owner for
+// portfolios, the portfolio and filters for transactions), so a cursor only continues the list it
+// came from. Cursors come from clients: anything that does not decode exactly is invalid_input.
 
 const (
 	cursorKindPortfolios   = "portfolios"
@@ -54,4 +56,14 @@ func decodeCursor(raw, kind, filter string) (cursorPosition, error) {
 		return cursorPosition{}, errInvalidCursor
 	}
 	return p, nil
+}
+
+// fingerprint identifies what a list is scoped to: the first 8 bytes of the SHA-256 of the parts.
+func fingerprint(parts ...string) string {
+	h := sha256.New()
+	for _, p := range parts {
+		h.Write([]byte(p))
+		h.Write([]byte{0})
+	}
+	return hex.EncodeToString(h.Sum(nil)[:8])
 }

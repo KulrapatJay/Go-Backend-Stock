@@ -2,8 +2,6 @@ package postgres
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"errors"
 	"time"
 
@@ -70,7 +68,7 @@ func (r *TransactionRepository) List(ctx context.Context, ownerID, portfolioID d
 	if f.Page.IsZero() {
 		return domain.TransactionPage{}, domain.NewError(domain.CodeInternal, "transaction list needs a page")
 	}
-	fingerprint := transactionFilterFingerprint(f)
+	fingerprint := transactionListFingerprint(portfolioID, f)
 	params := sqlc.ListOwnedTransactionsParams{
 		OwnerID:     pgUUID(ownerID),
 		PortfolioID: pgUUID(portfolioID),
@@ -298,21 +296,20 @@ func storedDecimal[T any](field string, n pgtype.Numeric, parse func(string) (T,
 	return v, nil
 }
 
-// transactionFilterFingerprint identifies the filters of a transaction list (not the page).
-func transactionFilterFingerprint(f domain.TransactionFilter) string {
-	h := sha256.New()
-	write := func(s string) { h.Write([]byte(s)); h.Write([]byte{0}) }
+// transactionListFingerprint identifies a transaction list: its portfolio and filters, not the page.
+func transactionListFingerprint(portfolioID domain.ID, f domain.TransactionFilter) string {
+	parts := []string{"portfolio=" + portfolioID.String()}
 	if f.Symbol != nil {
-		write("symbol=" + f.Symbol.String())
+		parts = append(parts, "symbol="+f.Symbol.String())
 	}
 	if f.Side != nil {
-		write("side=" + string(*f.Side))
+		parts = append(parts, "side="+string(*f.Side))
 	}
 	if f.From != nil {
-		write("from=" + f.From.UTC().Format(time.RFC3339Nano))
+		parts = append(parts, "from="+f.From.UTC().Format(time.RFC3339Nano))
 	}
 	if f.To != nil {
-		write("to=" + f.To.UTC().Format(time.RFC3339Nano))
+		parts = append(parts, "to="+f.To.UTC().Format(time.RFC3339Nano))
 	}
-	return hex.EncodeToString(h.Sum(nil)[:8])
+	return fingerprint(parts...)
 }

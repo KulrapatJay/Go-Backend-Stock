@@ -275,3 +275,22 @@ func mustVersion(t *testing.T, n int64) domain.Version {
 	}
 	return v
 }
+
+// TestPortfolioListRejectsCursorFromAnotherOwner: a portfolio cursor continues the list of the
+// owner it was issued for.
+func TestPortfolioListRejectsCursorFromAnotherOwner(t *testing.T) {
+	store := newRuntimeStore(t)
+	alice, bob := insertUser(t, store), insertUser(t, store)
+	for range 3 {
+		insertPortfolio(t, store, alice.ID)
+		insertPortfolio(t, store, bob.ID)
+	}
+	first, err := store.Portfolios().ListOwned(t.Context(), alice.ID, page(t, 1, ""))
+	if err != nil || first.NextCursor == "" {
+		t.Fatalf("first page of alice = %+v, %v", first, err)
+	}
+
+	_, err = store.Portfolios().ListOwned(t.Context(), bob.ID, page(t, 1, first.NextCursor))
+
+	requireCode(t, err, domain.CodeInvalidInput)
+}

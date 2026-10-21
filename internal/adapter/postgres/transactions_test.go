@@ -425,3 +425,26 @@ func insertInstrument(t *testing.T, store *Store) domain.Instrument {
 	}
 	return got
 }
+
+// TestTransactionListRejectsCursorFromAnotherPortfolio: a cursor continues the list of the
+// portfolio it came from; on another portfolio it would silently skip rows.
+func TestTransactionListRejectsCursorFromAnotherPortfolio(t *testing.T) {
+	store := newRuntimeStore(t)
+	user := insertUser(t, store)
+	a, b := insertPortfolio(t, store, user.ID), insertPortfolio(t, store, user.ID)
+	instrument := insertInstrument(t, store)
+	for range 3 {
+		insertTrade(t, store, user.ID, newTrade(t, a.ID, instrument, domain.SideBuy, "1", "10", now()))
+		insertTrade(t, store, user.ID, newTrade(t, b.ID, instrument, domain.SideBuy, "1", "10", now()))
+	}
+	firstFilter, _ := domain.NewTransactionFilter(page(t, 1, ""), nil, nil, nil, nil)
+	first, err := store.Transactions().List(t.Context(), user.ID, a.ID, firstFilter)
+	if err != nil || first.NextCursor == "" {
+		t.Fatalf("first page of A = %+v, %v", first, err)
+	}
+
+	onB, _ := domain.NewTransactionFilter(page(t, 1, first.NextCursor), nil, nil, nil, nil)
+	_, err = store.Transactions().List(t.Context(), user.ID, b.ID, onB)
+
+	requireCode(t, err, domain.CodeInvalidInput)
+}

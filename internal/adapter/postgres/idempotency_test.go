@@ -165,3 +165,30 @@ func TestIdempotencyDeleteForPortfolioAllowsPortfolioDelete(t *testing.T) {
 		t.Fatalf("delete records then portfolio: %v", err)
 	}
 }
+
+// TestIdempotencySaveIntoForeignPortfolioIsNotFound: a record can only be stored under a portfolio
+// of the scope's own user. Otherwise it would pin the owner's portfolio (FK RESTRICT) and the
+// owner's DeleteForPortfolio could never remove it.
+func TestIdempotencySaveIntoForeignPortfolioIsNotFound(t *testing.T) {
+	store := newRuntimeStore(t)
+	owner := createScope(t, store)
+	bob := insertUser(t, store)
+	foreign := owner
+	foreign.UserID = bob.ID
+
+	err := store.WithinTransaction(t.Context(), func(r portTx) error {
+		return r.Idempotency().Save(t.Context(), newIdempotencyRecord(t, foreign, "intruder-key", now()))
+	})
+
+	if !errors.Is(err, domain.ErrNotFound) {
+		t.Fatalf("Save into another user's portfolio error = %v, want not_found", err)
+	}
+	if err := store.WithinTransaction(t.Context(), func(r portTx) error {
+		if err := r.Idempotency().DeleteForPortfolio(t.Context(), owner.UserID, owner.PortfolioID); err != nil {
+			return err
+		}
+		return r.Portfolios().DeleteOwnedEmpty(t.Context(), owner.UserID, owner.PortfolioID)
+	}); err != nil {
+		t.Fatalf("the owner cannot delete their portfolio: %v", err)
+	}
+}

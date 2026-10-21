@@ -65,9 +65,10 @@ func (r *PortfolioRepository) ListOwned(ctx context.Context, ownerID domain.ID, 
 	if page.IsZero() {
 		return domain.PortfolioPage{}, domain.NewError(domain.CodeInternal, "portfolio list needs a page")
 	}
+	owner := fingerprint("owner=" + ownerID.String())
 	params := sqlc.ListOwnedPortfoliosParams{UserID: pgUUID(ownerID), RowLimit: int32(page.Limit() + 1)} //nolint:gosec // Limit is at most domain.MaxPageLimit.
 	if page.Cursor() != "" {
-		pos, err := decodeCursor(page.Cursor(), cursorKindPortfolios, "")
+		pos, err := decodeCursor(page.Cursor(), cursorKindPortfolios, owner)
 		if err != nil {
 			return domain.PortfolioPage{}, err
 		}
@@ -85,7 +86,7 @@ func (r *PortfolioRepository) ListOwned(ctx context.Context, ownerID domain.ID, 
 	for i, row := range rows {
 		if i == page.Limit() {
 			last := out.Items[len(out.Items)-1]
-			out.NextCursor = encodeCursor(cursorPosition{Kind: cursorKindPortfolios, At: last.CreatedAt, ID: last.ID.String()})
+			out.NextCursor = encodeCursor(cursorPosition{Kind: cursorKindPortfolios, Filter: owner, At: last.CreatedAt, ID: last.ID.String()})
 			break
 		}
 		p, err := portfolioFromRow(row)
@@ -119,7 +120,10 @@ func (r *PortfolioRepository) UpdateOwned(ctx context.Context, p domain.Portfoli
 }
 
 // DeleteOwnedEmpty deletes the owner's portfolio when it has no transactions. Idempotency keys
-// must be removed first (IdempotencyRepository.DeleteForPortfolio).
+// must be removed first (IdempotencyRepository.DeleteForPortfolio). Refusing a portfolio that has
+// transactions leaves the transaction usable. The one exception: a trade inserted at the same
+// time by a caller that skipped LockOwned makes the DELETE fail with the foreign key violation;
+// that path also returns ErrPortfolioNotEmpty but the transaction is aborted.
 func (r *PortfolioRepository) DeleteOwnedEmpty(ctx context.Context, ownerID, portfolioID domain.ID) error {
 	n, err := r.q.DeleteOwnedEmptyPortfolio(ctx, sqlc.DeleteOwnedEmptyPortfolioParams{ID: pgUUID(portfolioID), UserID: pgUUID(ownerID)})
 	if err != nil {

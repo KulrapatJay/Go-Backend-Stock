@@ -31,8 +31,10 @@ func (r *InstrumentRepository) BySymbol(ctx context.Context, symbol domain.Symbo
 }
 
 // Upsert stores an instrument built with domain.NewInstrument and returns the stored row. When
-// the symbol already exists (a concurrent request inserted it first) it returns that row. When
-// the provider asset is already stored under another symbol it returns unknown_symbol, because
+// the symbol already exists (a concurrent request inserted it first) it returns that row as
+// stored, even if its source or provider asset id differs: phase 1 does not handle ticker reuse
+// or mixed demo/alpaca rows. When the provider asset is already stored under another symbol it
+// returns unknown_symbol, because
 // phase 1 cannot follow a symbol change. Either way the transaction stays usable.
 func (r *InstrumentRepository) Upsert(ctx context.Context, i domain.Instrument) (domain.Instrument, error) {
 	if _, err := r.q.InsertInstrument(ctx, sqlc.InsertInstrumentParams{

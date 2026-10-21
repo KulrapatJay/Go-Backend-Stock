@@ -38,10 +38,11 @@ func (r *IdempotencyRepository) DeleteExpired(ctx context.Context, scope domain.
 	}))
 }
 
-// Save stores a record built with domain.NewIdempotencyRecord. A key the scope already has
-// returns domain.ErrIdempotencyConflict and aborts the transaction (see the port).
+// Save stores a record built with domain.NewIdempotencyRecord under the scope user's own
+// portfolio; a missing or foreign portfolio returns domain.ErrNotFound. A key the scope already
+// has returns domain.ErrIdempotencyConflict and aborts the transaction (see the port).
 func (r *IdempotencyRepository) Save(ctx context.Context, rec domain.IdempotencyRecord) error {
-	return mapError(r.q.InsertIdempotencyKey(ctx, sqlc.InsertIdempotencyKeyParams{
+	n, err := r.q.InsertIdempotencyKey(ctx, sqlc.InsertIdempotencyKeyParams{
 		PortfolioID: pgUUID(rec.Scope.PortfolioID),
 		UserID:      pgUUID(rec.Scope.UserID),
 		Operation:   string(rec.Scope.Operation),
@@ -50,7 +51,14 @@ func (r *IdempotencyRepository) Save(ctx context.Context, rec domain.Idempotency
 		Result:      rec.Result,
 		CreatedAt:   pgTime(rec.CreatedAt),
 		ExpiresAt:   pgTime(rec.ExpiresAt),
-	}))
+	})
+	if err != nil {
+		return mapError(err)
+	}
+	if n == 0 {
+		return domain.ErrNotFound
+	}
+	return nil
 }
 
 // DeleteForPortfolio removes every record of the owner's portfolio, before the portfolio is deleted.

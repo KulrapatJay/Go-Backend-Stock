@@ -84,33 +84,41 @@ func (q *Queries) GetIdempotencyKey(ctx context.Context, arg GetIdempotencyKeyPa
 	return i, err
 }
 
-const insertIdempotencyKey = `-- name: InsertIdempotencyKey :exec
+const insertIdempotencyKey = `-- name: InsertIdempotencyKey :execrows
 INSERT INTO app.idempotency_keys (portfolio_id, user_id, operation, key, request_hash, result, created_at, expires_at)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+SELECT p.id, p.user_id, $1::text, $2::text, $3::bytea, $4::jsonb,
+       $5::timestamptz, $6::timestamptz
+FROM app.portfolios p
+WHERE p.id = $7 AND p.user_id = $8
 `
 
 type InsertIdempotencyKeyParams struct {
-	PortfolioID pgtype.UUID
-	UserID      pgtype.UUID
 	Operation   string
 	Key         string
 	RequestHash []byte
 	Result      []byte
 	CreatedAt   pgtype.Timestamptz
 	ExpiresAt   pgtype.Timestamptz
+	PortfolioID pgtype.UUID
+	UserID      pgtype.UUID
 }
 
-// A second Save of the same key violates idempotency_keys_pkey and aborts the transaction.
-func (q *Queries) InsertIdempotencyKey(ctx context.Context, arg InsertIdempotencyKeyParams) error {
-	_, err := q.db.Exec(ctx, insertIdempotencyKey,
-		arg.PortfolioID,
-		arg.UserID,
+// Inserts only under a portfolio of the scope's user; zero rows means the portfolio is missing or
+// not theirs. A second Save of the same key still violates idempotency_keys_pkey and aborts the
+// transaction.
+func (q *Queries) InsertIdempotencyKey(ctx context.Context, arg InsertIdempotencyKeyParams) (int64, error) {
+	result, err := q.db.Exec(ctx, insertIdempotencyKey,
 		arg.Operation,
 		arg.Key,
 		arg.RequestHash,
 		arg.Result,
 		arg.CreatedAt,
 		arg.ExpiresAt,
+		arg.PortfolioID,
+		arg.UserID,
 	)
-	return err
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }

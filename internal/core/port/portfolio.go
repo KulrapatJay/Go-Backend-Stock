@@ -26,7 +26,9 @@ type PortfolioRepository interface {
 	// the row with version + 1; a mismatch returns domain.ErrVersionConflict and a name the owner
 	// already uses returns domain.ErrPortfolioNameConflict.
 	UpdateOwned(ctx context.Context, portfolio domain.Portfolio, ownerID domain.ID) (domain.Portfolio, error)
-	// DeleteOwnedEmpty returns domain.ErrPortfolioNotEmpty while transactions remain.
+	// DeleteOwnedEmpty returns domain.ErrPortfolioNotEmpty while transactions remain. That refusal
+	// leaves the transaction usable, except when a caller that skipped LockOwned inserted a trade
+	// at the same time: that path also returns ErrPortfolioNotEmpty but the transaction is aborted.
 	DeleteOwnedEmpty(ctx context.Context, ownerID, portfolioID domain.ID) error
 }
 
@@ -49,7 +51,9 @@ type TransactionRepository interface {
 type InstrumentRepository interface {
 	BySymbol(ctx context.Context, symbol domain.Symbol) (domain.Instrument, error)
 	// Upsert returns the stored row; when a concurrent request inserted the symbol first it
-	// returns that existing row. When the provider asset is already stored under another symbol
+	// returns that existing row. An existing symbol is returned as stored, even if its source or
+	// provider asset id differs (ticker reuse and mixed demo/alpaca rows are out of scope in
+	// phase 1). When the provider asset is already stored under another symbol
 	// (the provider renamed it, FB -> META) it returns an unknown_symbol error: phase 1 does not
 	// follow symbol changes. Neither case aborts the transaction.
 	Upsert(ctx context.Context, instrument domain.Instrument) (domain.Instrument, error)
@@ -59,7 +63,9 @@ type InstrumentRepository interface {
 type IdempotencyRepository interface {
 	Get(ctx context.Context, scope domain.IdempotencyScope, key string) (domain.IdempotencyRecord, error)
 	DeleteExpired(ctx context.Context, scope domain.IdempotencyScope, key string, now time.Time) error
-	// Save returns domain.ErrIdempotencyConflict when the scope already has the key. Callers hold
+	// Save stores the record under a portfolio of the scope's user and returns domain.ErrNotFound
+	// when the portfolio is missing or not theirs. It returns domain.ErrIdempotencyConflict when
+	// the scope already has the key. Callers hold
 	// the portfolio row lock (LockOwned) and call Get first, so a concurrent Save cannot win. If a
 	// conflict is returned anyway, the surrounding transaction is aborted (see UnitOfWork): the
 	// caller must read the stored record in a new transaction, not in the same callback.
