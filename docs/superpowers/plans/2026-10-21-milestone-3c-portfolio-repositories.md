@@ -3181,3 +3181,14 @@ Expected: ผ่านทั้งคู่ ไม่มี `SKIP`
 git add docs README.md
 git commit -m "docs: record milestone 3c portfolio repositories and phase 1 limitations"
 ```
+
+---
+
+## ภาคผนวก: แก้หลังรีวิวทั้ง branch (2026-10-21)
+
+โค้ดในบล็อกของ Task 3–5 ข้างบนคือสิ่งที่ลงมือตามแผน; รีวิวทั้ง branch ด้วย subagent พบ Important 1 ข้อและ Minor 6 ข้อ ผู้ใช้ตัดสินให้แก้ทั้งหมด (commit "fix(db): check the portfolio owner on idempotency Save and scope cursors to their list", "test(db): build values before goroutines and wait longer for the delete race" และเอกสารใน commit ถัดไป) ไฟล์จริงจึงต่างจากบล็อกข้างบน:
+
+- `queries/idempotency.sql`, `idempotency.go`: `Save` เป็น `INSERT ... SELECT` จาก `portfolios` ของผู้ใช้ใน scope, 0 แถว → `ErrNotFound` + `TestIdempotencySaveIntoForeignPortfolioIsNotFound`
+- `cursor.go`, `transactions.go`, `portfolios.go`: ฟังก์ชัน `fingerprint(parts...)`; cursor ของรายการซื้อขายผูกกับ portfolio id (`transactionListFingerprint`) และของพอร์ตผูกกับเจ้าของ + tests `TestTransactionListRejectsCursorFromAnotherPortfolio`, `TestPortfolioListRejectsCursorFromAnotherOwner`
+- comment ของ `port/portfolio.go` (Save, DeleteOwnedEmpty, Upsert), `instruments.go`, `portfolios.go`
+- tests: ค่าที่สร้างด้วย helper ที่อาจ `t.Fatal` ถูกสร้างก่อนเปิด goroutine ผ่าน `prepared` ใน `fixtures_test.go` (instruments, idempotency, uow, transactions, otp); `waitForLockWait` รอ 10 วินาทีและกรอง `datname = current_database()`

@@ -178,13 +178,15 @@ goose แบบเลขต่อเนื่อง (`goose create -s`), ห้�
 - `History`/`List` ของพอร์ตที่ไม่มีหรือไม่ใช่ของตน → `ErrNotFound`; พอร์ตของตนที่ว่าง → รายการว่าง
 - **instrument ที่ provider เปลี่ยน symbol** (ผู้ใช้เลือก 2026-10-21): `Upsert` ใช้ `ON CONFLICT DO NOTHING` ครอบทั้ง unique ของ symbol และ `(source, provider_asset_id)` แล้วอ่านด้วย symbol; ถ้า asset นั้นอยู่ใต้ symbol อื่น คืน `unknown_symbol` (422) พร้อมข้อความว่า symbol ถูกเปลี่ยนชื่อและยังไม่รองรับ; transaction ยังใช้ต่อได้
 - ตัวกรองรายการ: `from`/`to` รวมขอบทั้งสองด้าน, `symbol` เทียบกับ symbol ปัจจุบันของ instrument; `NewTransactionFilter` ปฏิเสธ pointer ไปยัง `Symbol{}` หรือ side ที่ไม่ใช่ buy/sell เป็น `internal` (แก้ Minor ในหัวข้อ 7)
+- `IdempotencyRepository.Save` บันทึกได้เฉพาะใต้พอร์ตของผู้ใช้ใน scope (INSERT ... SELECT จาก `portfolios`) พอร์ตที่ไม่มีหรือไม่ใช่ของตน → `ErrNotFound`; ไม่เช่นนั้น record ของผู้อื่นจะล็อกพอร์ตด้วย FK RESTRICT จน `DeleteForPortfolio` ของเจ้าของลบไม่ได้ (รีวิว 3c)
 - `Idempotency()` มีเฉพาะใน `TxRepositories` เพราะอ่าน/เขียนใต้ portfolio lock เสมอ; `result` ที่อ่านกลับจาก jsonb เป็นค่า JSON เดิมแต่ช่องว่างและลำดับ key อาจต่างจากที่ส่งไป
+- `InstrumentRepository.Upsert` คืนแถวของ symbol ที่มีอยู่ตามที่เก็บไว้ แม้ source หรือ provider asset id ต่าง (ticker reuse และ demo/alpaca ปนกันอยู่นอกขอบเขต phase 1); `DeleteOwnedEmpty` ที่ชน FK เพราะมีรายการถูก insert พร้อมกันโดยไม่ lock คืน `ErrPortfolioNotEmpty` แต่ transaction จบแล้ว (กรณีที่ผู้เรียก lock ถูกต้องไม่เจอ)
 - `Store` implement `port.UnitOfWork` แล้ว; `withinTx` rollback และคืน connection เมื่อ callback ออกด้วย `runtime.Goexit` ด้วย (พบระหว่าง prototype ของ 3c: `t.Fatal` ใน callback ทำให้ connection ค้างและ `pool.Close` รอตลอดไป)
 
 ### 6.1 Keyset pagination
 
 - พอร์ตเรียง `created_at DESC, id DESC`; รายการเรียง `executed_at DESC, sequence DESC` คีย์ท้ายทำให้ลำดับคงที่แม้เวลาเท่ากัน
-- cursor = base64url ของ JSON `{k, f, t, i|s}`: ชนิดของรายการ (`portfolios`/`transactions`), ลายนิ้วมือของ filter (8 ไบต์แรกของ SHA-256 ของ symbol/side/from/to เป็น hex; พอร์ตใช้ค่าว่าง), เวลาของแถวสุดท้าย และ id หรือ sequence ของแถวนั้น (≤ 1 KiB ตาม `domain.Page`); เข้ารหัส/ถอดรหัสใน postgres adapter
+- cursor = base64url ของ JSON `{k, f, t, i|s}`: ชนิดของรายการ (`portfolios`/`transactions`), ลายนิ้วมือของขอบเขตของรายการ (8 ไบต์แรกของ SHA-256 เป็น hex: รายการพอร์ตผูกกับเจ้าของ, รายการซื้อขายผูกกับ portfolio id และ symbol/side/from/to) จึงใช้ cursor ข้ามพอร์ตหรือข้ามผู้ใช้ไม่ได้, เวลาของแถวสุดท้าย และ id หรือ sequence ของแถวนั้น (≤ 1 KiB ตาม `domain.Page`); เข้ารหัส/ถอดรหัสใน postgres adapter
 - cursor เสียหรือไม่ตรงกับ filter ปัจจุบัน → `invalid_input` (`cursor ...`) เพราะ cursor มาจาก client
 - `NextCursor` เป็น `""` เมื่อหมดหน้า
 
