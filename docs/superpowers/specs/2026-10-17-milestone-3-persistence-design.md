@@ -1,6 +1,6 @@
 # Milestone 3 — Schema, sqlc, repositories และ audit persistence (design)
 
-- **สถานะ:** ผู้ใช้ยืนยันแล้ว 2026-10-17; แผน 3a ผ่านการตรวจรับ 2026-10-20: [2026-10-17-milestone-3a-schema-sqlc-audit.md](../plans/2026-10-17-milestone-3a-schema-sqlc-audit.md); แผน 3b ผ่านการตรวจรับ 2026-10-21: [2026-10-20-milestone-3b-auth-repositories.md](../plans/2026-10-20-milestone-3b-auth-repositories.md)
+- **สถานะ:** ผู้ใช้ยืนยันแล้ว 2026-10-17; แผน 3a ผ่านการตรวจรับ 2026-10-20: [2026-10-17-milestone-3a-schema-sqlc-audit.md](../plans/2026-10-17-milestone-3a-schema-sqlc-audit.md); แผน 3b ผ่านการตรวจรับ 2026-10-21: [2026-10-20-milestone-3b-auth-repositories.md](../plans/2026-10-20-milestone-3b-auth-repositories.md); แผน 3c: [2026-10-21-milestone-3c-portfolio-repositories.md](../plans/2026-10-21-milestone-3c-portfolio-repositories.md)
 - **อ้างอิง:** [AGENTS.md](../../../AGENTS.md), [phase 1 spec](2026-10-05-phase-1-design.md) หัวข้อ 4, 7, 8, 9, 11, [milestone 2 design](2026-10-16-milestone-2-domain-ports-design.md), [ADR-0013](../../adr/0013-domain-value-types.md), [roadmap](../plans/2026-10-05-phase-1-roadmap.md) milestone 3 รวม "ข้อที่ส่งต่อให้ milestone 3" ใต้ milestone 2
 
 ## 1. เป้าหมาย การแบ่งงาน และเกณฑ์ผ่าน
@@ -170,10 +170,21 @@ goose แบบเลขต่อเนื่อง (`goose create -s`), ห้�
 | `InstrumentRepository` | `BySymbol`; `Upsert` ใช้ `ON CONFLICT DO NOTHING` แล้วอ่านแถวที่มีอยู่ คำขอพร้อมกันได้แถวเดียวกัน |
 | `IdempotencyRepository` | `Get` คืน record แม้หมดอายุ (service ตัดสิน); `DeleteExpired` ลบเฉพาะเมื่อหมดอายุ ณ `now`; `Save` ชน key เดิม → `ErrIdempotencyConflict`; `DeleteForPortfolio` ใช้ก่อนลบพอร์ต |
 
+รายละเอียดที่ตัดสินในแผน 3c (2026-10-21):
+
+- **conflict กับ transaction:** `PortfolioRepository.Insert` ใช้ `ON CONFLICT (user_id, lower(name)) DO NOTHING` + จำนวนแถว ชื่อซ้ำจึงไม่ทำให้ transaction จบ; การเปลี่ยนชื่อซ้ำใน `UpdateOwned` และ `IdempotencyRepository.Save` ที่ชน key ยังอาศัย unique violation ซึ่งทำให้ transaction จบตาม `port.UnitOfWork` (service คืน error ทันทีโดยไม่ต้องเขียน audit ความล้มเหลว)
+- `UpdateOwned`/`Update` ที่ไม่มีแถวตรง จะตรวจต่อว่าแถวของเจ้าของยังอยู่หรือไม่: อยู่ → `ErrVersionConflict`, ไม่อยู่หรือไม่ใช่ของตน → `ErrNotFound`
+- `DeleteOwnedEmpty` ลบด้วยเงื่อนไข `NOT EXISTS` ของ transactions (transaction ยังใช้ต่อได้เมื่อพอร์ตไม่ว่าง); FK violation ของ `transactions_portfolio_id_fkey` ที่เกิดเมื่อมีรายการถูก insert พร้อมกันโดยไม่ lock แปลงเป็น `ErrPortfolioNotEmpty` **เฉพาะใน method นี้** และ `mapError` ไม่แปลง FK นี้อีก (ข้อส่งต่อจากรีวิว 3a)
+- `History`/`List` ของพอร์ตที่ไม่มีหรือไม่ใช่ของตน → `ErrNotFound`; พอร์ตของตนที่ว่าง → รายการว่าง
+- **instrument ที่ provider เปลี่ยน symbol** (ผู้ใช้เลือก 2026-10-21): `Upsert` ใช้ `ON CONFLICT DO NOTHING` ครอบทั้ง unique ของ symbol และ `(source, provider_asset_id)` แล้วอ่านด้วย symbol; ถ้า asset นั้นอยู่ใต้ symbol อื่น คืน `unknown_symbol` (422) พร้อมข้อความว่า symbol ถูกเปลี่ยนชื่อและยังไม่รองรับ; transaction ยังใช้ต่อได้
+- ตัวกรองรายการ: `from`/`to` รวมขอบทั้งสองด้าน, `symbol` เทียบกับ symbol ปัจจุบันของ instrument; `NewTransactionFilter` ปฏิเสธ pointer ไปยัง `Symbol{}` หรือ side ที่ไม่ใช่ buy/sell เป็น `internal` (แก้ Minor ในหัวข้อ 7)
+- `Idempotency()` มีเฉพาะใน `TxRepositories` เพราะอ่าน/เขียนใต้ portfolio lock เสมอ; `result` ที่อ่านกลับจาก jsonb เป็นค่า JSON เดิมแต่ช่องว่างและลำดับ key อาจต่างจากที่ส่งไป
+- `Store` implement `port.UnitOfWork` แล้ว; `withinTx` rollback และคืน connection เมื่อ callback ออกด้วย `runtime.Goexit` ด้วย (พบระหว่าง prototype ของ 3c: `t.Fatal` ใน callback ทำให้ connection ค้างและ `pool.Close` รอตลอดไป)
+
 ### 6.1 Keyset pagination
 
 - พอร์ตเรียง `created_at DESC, id DESC`; รายการเรียง `executed_at DESC, sequence DESC` คีย์ท้ายทำให้ลำดับคงที่แม้เวลาเท่ากัน
-- cursor = base64url ของค่าตำแหน่งสุดท้ายและลายนิ้วมือของ filter (≤ 1 KiB ตาม `domain.Page`); เข้ารหัส/ถอดรหัสใน postgres adapter
+- cursor = base64url ของ JSON `{k, f, t, i|s}`: ชนิดของรายการ (`portfolios`/`transactions`), ลายนิ้วมือของ filter (8 ไบต์แรกของ SHA-256 ของ symbol/side/from/to เป็น hex; พอร์ตใช้ค่าว่าง), เวลาของแถวสุดท้าย และ id หรือ sequence ของแถวนั้น (≤ 1 KiB ตาม `domain.Page`); เข้ารหัส/ถอดรหัสใน postgres adapter
 - cursor เสียหรือไม่ตรงกับ filter ปัจจุบัน → `invalid_input` (`cursor ...`) เพราะ cursor มาจาก client
 - `NextCursor` เป็น `""` เมื่อหมดหน้า
 
@@ -196,7 +207,7 @@ goose แบบเลขต่อเนื่อง (`goose create -s`), ห้�
 | contract ของ ports: unique violation, not-found, `Update` ห้ามแก้ `portfolio_id`, tie-break ของการเรียง, `Save` เมื่อชน | 3a หัวข้อ 4.3 (comment ใน ports อัปเดตพร้อมกัน), 3b, 3c |
 | CHECK ขนาด metadata นับแบบเดียวกับ Go, email ไม่พึ่ง `lower()` | 3a หัวข้อ 3.2 |
 | comment ของ sentinel errors ขัดกับ ports; `errors.Is(err, (*domain.Error)(nil))` panic | 3a (แก้ comment ใน `errors.go` และให้ `Is` คืน false กับ nil) |
-| `NewTransactionFilter` รับ `Symbol{}`/`Side("")` ว่าง | 3c |
+| `NewTransactionFilter` รับ `Symbol{}`/`Side("")` ว่าง | 3c (แก้แล้ว: คืน `internal`) |
 | `ParseExecutedAt` รับทศนิยม 7 หลักที่หลักท้ายเป็น 0 และ `,` | ยังไม่แก้ (ไม่กระทบ persistence) — คงไว้ใน roadmap |
 | อีเมลที่มี `,;<>` | milestone 4 (Mailer) |
 | เอกสาร `ParseID(field, s)`/`domain.ID` | 3a (แก้เอกสารพร้อม spec หัวข้อ 8) |
