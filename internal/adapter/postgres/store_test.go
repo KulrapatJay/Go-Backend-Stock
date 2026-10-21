@@ -4,9 +4,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/jackc/pgx/v5/pgxpool"
 
 	"go-backend-stock/internal/core/domain"
 )
@@ -234,5 +237,39 @@ func TestAuditMetadataSizeIsCountedDifferentlyInGoAndDatabase(t *testing.T) {
 	}
 	if auditExists(t, e.ID) {
 		t.Fatal("event was stored although the database CHECK rejects it")
+	}
+}
+
+// TestWithinTxEndsTransactionWhenCallbackExitsGoroutine: a callback that leaves through
+// runtime.Goexit (t.Fatal does this) skips the normal return path; the transaction must still be
+// rolled back and its connection returned, or pool.Close would wait forever.
+func TestWithinTxEndsTransactionWhenCallbackExitsGoroutine(t *testing.T) {
+	// Not openPool: its cleanup would block on the leaked connection instead of reporting it.
+	pool, err := pgxpool.New(t.Context(), integrationURL(t, "TEST_RUNTIME_DATABASE_URL"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	store := NewStore(pool)
+	e := auditEvent(t, `{}`)
+	done := make(chan struct{})
+
+	go func() {
+		defer close(done)
+		_ = store.withinTx(t.Context(), func(r *txRepositories) error {
+			if err := r.Audit().Append(t.Context(), e); err != nil {
+				return err
+			}
+			runtime.Goexit()
+			return nil
+		})
+	}()
+	<-done
+
+	if n := pool.Stat().AcquiredConns(); n != 0 {
+		t.Fatalf("%d connections still held after the callback exited", n)
+	}
+	pool.Close()
+	if auditExists(t, e.ID) {
+		t.Fatal("audit committed although the callback never returned")
 	}
 }

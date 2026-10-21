@@ -82,8 +82,8 @@ func (r *txRepositories) Audit() port.AuditRepository {
 }
 
 // withinTx runs fn in one READ COMMITTED transaction (row locks serialize writes, ADR-0009).
-// The transaction commits only when fn returns nil; an error or a panic rolls it back, so a
-// business change and its audit event are never committed apart.
+// The transaction commits only when fn returns nil; an error, a panic or runtime.Goexit rolls it
+// back, so a business change and its audit event are never committed apart.
 func (s *Store) withinTx(ctx context.Context, fn func(*txRepositories) error) (err error) {
 	tx, err := s.pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.ReadCommitted})
 	if err != nil {
@@ -91,14 +91,18 @@ func (s *Store) withinTx(ctx context.Context, fn func(*txRepositories) error) (e
 	}
 	// Roll back with a context that outlives a cancelled request.
 	rollback := func() error { return tx.Rollback(context.WithoutCancel(ctx)) }
+	returned := false
 	defer func() {
-		if p := recover(); p != nil {
+		// fn panicked or left the goroutine (runtime.Goexit, as t.Fatal does): end the transaction
+		// so its connection goes back to the pool. A panic keeps unwinding after this.
+		if !returned {
 			_ = rollback()
-			panic(p)
 		}
 	}()
 
-	if err := fn(&txRepositories{q: sqlc.New(tx)}); err != nil {
+	err = fn(&txRepositories{q: sqlc.New(tx)})
+	returned = true
+	if err != nil {
 		if rbErr := rollback(); rbErr != nil {
 			return errors.Join(err, fmt.Errorf("rollback: %w", rbErr))
 		}
