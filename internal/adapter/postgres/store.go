@@ -56,6 +56,11 @@ func (s *Store) OIDCFlows() port.OIDCFlowRepository {
 // RateLimits returns the rate-limit repository. Admit runs its own transaction.
 func (s *Store) RateLimits() port.RateLimitRepository { return &RateLimitRepository{store: s} }
 
+// Instruments returns the instrument repository over the pool.
+func (s *Store) Instruments() port.InstrumentRepository {
+	return &InstrumentRepository{q: sqlc.New(s.pool)}
+}
+
 // txRepositories are the repositories bound to one database transaction. Plan 3c adds the
 // portfolio-side accessors until it satisfies port.TxRepositories.
 type txRepositories struct {
@@ -74,6 +79,11 @@ func (r *txRepositories) Identities() port.IdentityRepository { return &Identity
 // OTPChallenges returns the OTP challenge repository bound to this transaction.
 func (r *txRepositories) OTPChallenges() port.OTPChallengeRepository {
 	return &OTPChallengeRepository{q: r.q, inTx: true}
+}
+
+// Instruments returns the instrument repository bound to this transaction.
+func (r *txRepositories) Instruments() port.InstrumentRepository {
+	return &InstrumentRepository{q: r.q}
 }
 
 // Audit returns the audit repository bound to this transaction.

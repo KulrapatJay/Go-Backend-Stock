@@ -49,7 +49,9 @@ type TransactionRepository interface {
 type InstrumentRepository interface {
 	BySymbol(ctx context.Context, symbol domain.Symbol) (domain.Instrument, error)
 	// Upsert returns the stored row; when a concurrent request inserted the symbol first it
-	// returns that existing row.
+	// returns that existing row. When the provider asset is already stored under another symbol
+	// (the provider renamed it, FB -> META) it returns an unknown_symbol error: phase 1 does not
+	// follow symbol changes. Neither case aborts the transaction.
 	Upsert(ctx context.Context, instrument domain.Instrument) (domain.Instrument, error)
 }
 
