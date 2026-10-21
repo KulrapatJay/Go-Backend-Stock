@@ -13,11 +13,15 @@ import (
 	"go-backend-stock/internal/core/port"
 )
 
-// Store owns the connection pool and builds repositories. It becomes the port.UnitOfWork once
-// every repository exists (milestone 3c); until then transactions go through withinTx.
+// Store owns the connection pool, builds repositories and is the port.UnitOfWork.
 type Store struct {
 	pool *pgxpool.Pool
 }
+
+var (
+	_ port.UnitOfWork     = (*Store)(nil)
+	_ port.TxRepositories = (*txRepositories)(nil)
+)
 
 // NewStore returns a Store over pool.
 func NewStore(pool *pgxpool.Pool) *Store {
@@ -71,8 +75,7 @@ func (s *Store) Instruments() port.InstrumentRepository {
 	return &InstrumentRepository{q: sqlc.New(s.pool)}
 }
 
-// txRepositories are the repositories bound to one database transaction. Plan 3c adds the
-// portfolio-side accessors until it satisfies port.TxRepositories.
+// txRepositories are the repositories bound to one database transaction (port.TxRepositories).
 type txRepositories struct {
 	q *sqlc.Queries
 }
@@ -101,6 +104,12 @@ func (r *txRepositories) Transactions() port.TransactionRepository {
 	return &TransactionRepository{q: r.q}
 }
 
+// Idempotency returns the idempotency repository bound to this transaction. Records are only
+// read and written under the portfolio lock, so there is no pool accessor.
+func (r *txRepositories) Idempotency() port.IdempotencyRepository {
+	return &IdempotencyRepository{q: r.q}
+}
+
 // Instruments returns the instrument repository bound to this transaction.
 func (r *txRepositories) Instruments() port.InstrumentRepository {
 	return &InstrumentRepository{q: r.q}
@@ -109,6 +118,11 @@ func (r *txRepositories) Instruments() port.InstrumentRepository {
 // Audit returns the audit repository bound to this transaction.
 func (r *txRepositories) Audit() port.AuditRepository {
 	return &AuditRepository{q: r.q}
+}
+
+// WithinTransaction runs fn in one transaction (see withinTx and port.UnitOfWork).
+func (s *Store) WithinTransaction(ctx context.Context, fn func(port.TxRepositories) error) error {
+	return s.withinTx(ctx, func(r *txRepositories) error { return fn(r) })
 }
 
 // withinTx runs fn in one READ COMMITTED transaction (row locks serialize writes, ADR-0009).
