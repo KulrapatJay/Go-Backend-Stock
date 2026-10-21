@@ -331,13 +331,14 @@ func TestPortfolioDeleteRacingAnUnlockedInsertIsNotEmpty(t *testing.T) {
 	user := insertUser(t, store)
 	p := insertPortfolio(t, store, user.ID)
 	instrument := insertInstrument(t, store)
+	trade := newTrade(t, p.ID, instrument, domain.SideBuy, "1", "10", now())
 	inserted := make(chan struct{})
 	release := make(chan struct{})
 	done := make(chan error, 1)
 
 	go func() {
 		done <- store.withinTx(t.Context(), func(r *txRepositories) error {
-			if _, err := r.Transactions().Insert(t.Context(), user.ID, newTrade(t, p.ID, instrument, domain.SideBuy, "1", "10", now())); err != nil {
+			if _, err := r.Transactions().Insert(t.Context(), user.ID, trade); err != nil {
 				return err
 			}
 			close(inserted)
@@ -364,10 +365,11 @@ func TestPortfolioDeleteRacingAnUnlockedInsertIsNotEmpty(t *testing.T) {
 func waitForLockWait(t *testing.T, prefix string) {
 	t.Helper()
 	admin := openPool(t, "TEST_ADMIN_DATABASE_URL")
-	for range 200 {
+	for range 1000 {
 		var n int
 		if err := admin.QueryRow(t.Context(),
-			`SELECT count(*) FROM pg_stat_activity WHERE wait_event_type = 'Lock' AND query LIKE '%' || $1 || '%'`, prefix).Scan(&n); err != nil {
+			`SELECT count(*) FROM pg_stat_activity
+			 WHERE datname = current_database() AND wait_event_type = 'Lock' AND query LIKE '%' || $1 || '%'`, prefix).Scan(&n); err != nil {
 			t.Fatal(err)
 		}
 		if n > 0 {

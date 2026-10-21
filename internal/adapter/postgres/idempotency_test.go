@@ -96,9 +96,14 @@ func TestIdempotencyKeysAreScoped(t *testing.T) {
 func TestIdempotencyConcurrentSaveSucceedsOnce(t *testing.T) {
 	store := newRuntimeStore(t)
 	scope := createScope(t, store)
+	records := make([]domain.IdempotencyRecord, 10)
+	for i := range records {
+		records[i] = newIdempotencyRecord(t, scope, "retry-key", now())
+	}
+	next := prepared(records)
 
 	succeeded, errs := runConcurrently(10, func() error {
-		rec := newIdempotencyRecord(t, scope, "retry-key", now())
+		rec := next()
 		return store.WithinTransaction(t.Context(), func(r portTx) error { return r.Idempotency().Save(t.Context(), rec) })
 	})
 

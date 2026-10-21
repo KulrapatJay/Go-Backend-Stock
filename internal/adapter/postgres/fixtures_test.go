@@ -2,6 +2,7 @@ package postgres
 
 import (
 	"crypto/rand"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -63,4 +64,12 @@ func runConcurrently(n int, call func() error) (succeeded int, errs []error) {
 		}
 	}
 	return succeeded, errs
+}
+
+// prepared hands out items one by one, safely from many goroutines. Tests build their values
+// first, because the helpers that build them may call t.Fatal, which must not run in a goroutine
+// other than the test's own.
+func prepared[T any](items []T) func() T {
+	var next atomic.Int32
+	return func() T { return items[next.Add(1)-1] }
 }

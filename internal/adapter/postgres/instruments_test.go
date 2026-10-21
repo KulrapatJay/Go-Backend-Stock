@@ -53,9 +53,14 @@ func TestInstrumentConcurrentUpsertReturnsOneRow(t *testing.T) {
 	symbol := randomSymbol(t)
 	assetID := "asset-" + newID(t).String()
 	ids := make(chan domain.ID, 10)
+	candidates := make([]domain.Instrument, 10)
+	for i := range candidates {
+		candidates[i] = newInstrument(t, symbol, assetID)
+	}
+	next := prepared(candidates)
 
 	succeeded, errs := runConcurrently(10, func() error {
-		got, err := store.Instruments().Upsert(t.Context(), newInstrument(t, symbol, assetID))
+		got, err := store.Instruments().Upsert(t.Context(), next())
 		ids <- got.ID
 		return err
 	})

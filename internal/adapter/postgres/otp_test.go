@@ -174,8 +174,14 @@ func TestOTPChallengeConcurrentReissueUnderUserLock(t *testing.T) {
 	store := newRuntimeStore(t)
 	user := insertUser(t, store)
 	issued := make(chan domain.ID, 10)
+	challenges := make([]domain.OTPChallenge, 10)
+	for i := range challenges {
+		challenges[i] = newChallenge(t, user.ID, domain.OTPPurposeEmailVerification, now())
+	}
+	next := prepared(challenges)
 
 	succeeded, errs := runConcurrently(10, func() error {
+		c := next()
 		return store.withinTx(t.Context(), func(r *txRepositories) error {
 			if _, err := r.Users().Lock(t.Context(), user.ID); err != nil {
 				return err
@@ -184,7 +190,6 @@ func TestOTPChallengeConcurrentReissueUnderUserLock(t *testing.T) {
 			if err := r.OTPChallenges().InvalidateOpen(t.Context(), user.ID, domain.OTPPurposeEmailVerification, at); err != nil {
 				return err
 			}
-			c := newChallenge(t, user.ID, domain.OTPPurposeEmailVerification, at)
 			if err := r.OTPChallenges().Insert(t.Context(), c); err != nil {
 				return err
 			}

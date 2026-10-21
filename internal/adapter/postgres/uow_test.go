@@ -68,8 +68,14 @@ func TestConcurrentSellsNeverOversell(t *testing.T) {
 	instrument := insertInstrument(t, store)
 	insertTrade(t, store, user.ID, newTrade(t, p.ID, instrument, domain.SideBuy, "5", "10", now()))
 	one := decimal.NewFromInt(1)
+	sells := make([]domain.Transaction, 10)
+	for i := range sells {
+		sells[i] = newTrade(t, p.ID, instrument, domain.SideSell, "1", "11", now())
+	}
+	next := prepared(sells)
 
 	succeeded, errs := runConcurrently(10, func() error {
+		sell := next()
 		return store.WithinTransaction(t.Context(), func(r portTx) error {
 			if _, err := r.Portfolios().LockOwned(t.Context(), user.ID, p.ID); err != nil {
 				return err
@@ -89,7 +95,7 @@ func TestConcurrentSellsNeverOversell(t *testing.T) {
 			if held.LessThan(one) {
 				return errNotEnoughShares
 			}
-			_, err = r.Transactions().Insert(t.Context(), user.ID, newTrade(t, p.ID, instrument, domain.SideSell, "1", "11", now()))
+			_, err = r.Transactions().Insert(t.Context(), user.ID, sell)
 			return err
 		})
 	})
