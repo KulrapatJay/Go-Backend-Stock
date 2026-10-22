@@ -17,6 +17,7 @@ import (
 var allowedThirdParty = map[string]bool{
 	"github.com/shopspring/decimal": true,
 	"github.com/google/uuid":        true,
+	"golang.org/x/crypto/argon2":    true,
 }
 
 // modulePath is read from go.mod so the rule survives a module rename.
@@ -46,6 +47,8 @@ func TestAllowedImportPaths(t *testing.T) {
 		"net/http":                                    true,
 		"github.com/shopspring/decimal":               true,
 		"github.com/google/uuid":                      true,
+		"golang.org/x/crypto/argon2":                  true,
+		"golang.org/x/crypto/bcrypt":                  false,
 		"go-backend-stock/internal/core/domain":       true,
 		"go-backend-stock/internal/core/port":         true,
 		"go-backend-stock/internal/adapter/postgres":  false,
