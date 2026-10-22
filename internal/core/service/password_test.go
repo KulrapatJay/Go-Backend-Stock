@@ -249,8 +249,12 @@ func TestNewPasswordHasherValidatesConfig(t *testing.T) {
 		"no iterations":   {Params: Argon2Params{MemoryKiB: 64, Iterations: 0, Parallelism: 1}, Concurrency: 1, Logger: discard},
 		"no parallelism":  {Params: Argon2Params{MemoryKiB: 64, Iterations: 1, Parallelism: 0}, Concurrency: 1, Logger: discard},
 		"memory below 8p": {Params: Argon2Params{MemoryKiB: 15, Iterations: 1, Parallelism: 2}, Concurrency: 1, Logger: discard},
-		"no concurrency":  {Params: testArgon2Params, Concurrency: 0, Logger: discard},
-		"no logger":       {Params: testArgon2Params, Concurrency: 1},
+		// Above the limits decodePHC enforces, the verifier would refuse every hash we write.
+		"memory above stored limit":      {Params: Argon2Params{MemoryKiB: 262145, Iterations: 1, Parallelism: 1}, Concurrency: 1, Logger: discard},
+		"iterations above stored limit":  {Params: Argon2Params{MemoryKiB: 64, Iterations: 11, Parallelism: 1}, Concurrency: 1, Logger: discard},
+		"parallelism above stored limit": {Params: Argon2Params{MemoryKiB: 128, Iterations: 1, Parallelism: 9}, Concurrency: 1, Logger: discard},
+		"no concurrency":                 {Params: testArgon2Params, Concurrency: 0, Logger: discard},
+		"no logger":                      {Params: testArgon2Params, Concurrency: 1},
 	} {
 		if _, err := NewPasswordHasher(cfg); err == nil {
 			t.Errorf("%s: NewPasswordHasher() accepted the config", name)

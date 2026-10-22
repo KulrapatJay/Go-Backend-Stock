@@ -72,6 +72,9 @@ func NewPasswordHasher(cfg PasswordHasherConfig) (*PasswordHasher, error) {
 	switch {
 	case p.Iterations < 1 || p.Parallelism < 1 || p.MemoryKiB < 8*uint32(p.Parallelism):
 		return nil, errors.New("invalid argon2 parameters")
+	case p.MemoryKiB > maxStoredMemoryKiB || p.Iterations > maxStoredIterations || p.Parallelism > maxStoredParallelism:
+		// Hashes above these limits would be refused by decodePHC, so Verify could never accept them.
+		return nil, errors.New("argon2 parameters exceed the limits the verifier accepts")
 	case cfg.Concurrency < 1:
 		return nil, errors.New("password hash concurrency must be at least 1")
 	case cfg.Logger == nil:
