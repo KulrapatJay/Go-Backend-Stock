@@ -38,6 +38,7 @@ func TestParseEmail(t *testing.T) {
 		"User@Example.COM":                        "user@example.com",
 		"  a.b+tag@example.com  ":                 "a.b+tag@example.com", // dots and +suffix are kept
 		"ÄLICE@EXAMPLE.COM":                       "älice@example.com",
+		"O'Brien@Example.com":                     "o'brien@example.com",                     // an apostrophe is a legal local-part character
 		strings.Repeat("a", 242) + "@example.com": strings.Repeat("a", 242) + "@example.com", // 254
 	} {
 		e, err := domain.ParseEmail(in)
@@ -48,6 +49,10 @@ func TestParseEmail(t *testing.T) {
 	for _, in := range []string{
 		"", "   ", "user", "@example.com", "user@", "a@b@c", "us er@example.com", "user@exa\tmple.com",
 		"user\x00@example.com", "\xff@example.com",
+		"a,b@example.com", "a;b@example.com", "<a@example.com>", `"a"@example.com`, "a(b)@example.com",
+		"a:b@example.com", "a[b]@example.com", `a\b@example.com`, "a@exa]mple.com",
+		"a​b@example.com",                         // a zero-width space hides a character
+		"a‮b@example.com",                         // a bidi override reorders the text
 		strings.Repeat("a", 243) + "@example.com", // 255
 	} {
 		_, err := domain.ParseEmail(in)
