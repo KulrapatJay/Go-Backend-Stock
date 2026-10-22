@@ -48,6 +48,14 @@ services:
       DOCS_ENABLED: ${DOCS_ENABLED}
       DOCS_TRY_IT_OUT_ENABLED: ${DOCS_TRY_IT_OUT_ENABLED}
       SHUTDOWN_TIMEOUT: 10s
+      CSRF_SECRET: ${CSRF_SECRET}
+      OTP_SECRET: ${OTP_SECRET}
+      RATE_LIMIT_SECRET: ${RATE_LIMIT_SECRET}
+      OIDC_SECRET: ${OIDC_SECRET}
+      SMTP_HOST: mailpit
+      SMTP_PORT: "1025"
+      SMTP_FROM: no-reply@localhost
+      SMTP_TLS: none
     ports:
       - "127.0.0.1:8080:8080"
     depends_on:

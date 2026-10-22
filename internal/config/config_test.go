@@ -12,11 +12,15 @@ func envFrom(values map[string]string) func(string) string {
 }
 
 func validDevEnv() map[string]string {
-	return map[string]string{
+	env := map[string]string{
 		"APP_ENV":       "development",
 		"PUBLIC_ORIGIN": "http://localhost:8080",
 		"DATABASE_URL":  "postgres://app_runtime:devpass@postgres:5432/stock?sslmode=disable",
 	}
+	for k, v := range devSecrets() {
+		env[k] = v
+	}
+	return env
 }
 
 func TestLoadDevelopmentDefaults(t *testing.T) {
@@ -48,11 +52,7 @@ func TestLoadDevelopmentDefaults(t *testing.T) {
 }
 
 func TestLoadProductionDefaultsDisableDocs(t *testing.T) {
-	cfg, err := Load(envFrom(map[string]string{
-		"APP_ENV":       "production",
-		"PUBLIC_ORIGIN": "https://stock.example.com",
-		"DATABASE_URL":  "postgres://app_runtime:prodpass@db.example.com:5432/postgres?sslmode=verify-full",
-	}))
+	cfg, err := Load(envFrom(validProdEnv()))
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
 	}
