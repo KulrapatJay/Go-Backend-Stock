@@ -1,6 +1,10 @@
 package domain
 
-import "time"
+import (
+	"strconv"
+	"strings"
+	"time"
+)
 
 // MaxOTPFailedAttemptsCeiling is the DB CHECK ceiling on otp_challenges.failed_attempts; the
 // allowed number of attempts comes from config and must stay within 1..this value.
@@ -52,4 +56,44 @@ func NewOTPChallenge(c OTPChallenge) (OTPChallenge, error) {
 		return OTPChallenge{}, err
 	}
 	return c, nil
+}
+
+// OTPLength is the number of digits in an OTP.
+const OTPLength = 6
+
+// OTPCode is a six-digit one-time code. It prints, formats and marshals as [REDACTED]; Reveal
+// returns the digits for hashing and for the email body only.
+type OTPCode struct{ value string }
+
+func (OTPCode) String() string   { return redacted }
+func (OTPCode) GoString() string { return redacted }
+
+// MarshalJSON keeps the code out of JSON logs and responses.
+func (OTPCode) MarshalJSON() ([]byte, error) { return []byte(`"` + redacted + `"`), nil }
+
+// Reveal returns the digits. Call it only to compute the digest or to write the email.
+func (c OTPCode) Reveal() string { return c.value }
+
+// ParseOTP accepts exactly six ASCII digits ("0".."9"). Other Unicode digits such as Thai or
+// Arabic-Indic numerals are rejected: they would never match the digest of the issued code.
+func ParseOTP(s string) (OTPCode, error) {
+	if len(s) != OTPLength {
+		return OTPCode{}, invalidInput("otp", "must be 6 digits")
+	}
+	for i := 0; i < len(s); i++ {
+		if s[i] < '0' || s[i] > '9' {
+			return OTPCode{}, invalidInput("otp", "must be 6 digits")
+		}
+	}
+	return OTPCode{value: s}, nil
+}
+
+// OTPCodeFromNumber formats a number from 0 to 999999 as six digits with leading zeros. The
+// server calls it with a value it drew itself, so a number out of range is an internal error.
+func OTPCodeFromNumber(n int64) (OTPCode, error) {
+	if n < 0 || n > 999999 {
+		return OTPCode{}, invariant("otp", "number must be between 0 and 999999")
+	}
+	s := strconv.FormatInt(n, 10)
+	return OTPCode{value: strings.Repeat("0", OTPLength-len(s)) + s}, nil
 }
