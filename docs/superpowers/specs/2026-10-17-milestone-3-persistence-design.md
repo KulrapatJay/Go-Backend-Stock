@@ -1,6 +1,6 @@
 # Milestone 3 — Schema, sqlc, repositories และ audit persistence (design)
 
-- **สถานะ:** ผู้ใช้ยืนยันแล้ว 2026-10-17; แผน 3a ผ่านการตรวจรับ 2026-10-20: [2026-10-17-milestone-3a-schema-sqlc-audit.md](../plans/2026-10-17-milestone-3a-schema-sqlc-audit.md); แผน 3b ผ่านการตรวจรับ 2026-10-21: [2026-10-20-milestone-3b-auth-repositories.md](../plans/2026-10-20-milestone-3b-auth-repositories.md); แผน 3c: [2026-10-21-milestone-3c-portfolio-repositories.md](../plans/2026-10-21-milestone-3c-portfolio-repositories.md)
+- **สถานะ:** ผู้ใช้ยืนยันแล้ว 2026-10-17; แผน 3a ผ่านการตรวจรับ 2026-10-20: [2026-10-17-milestone-3a-schema-sqlc-audit.md](../plans/2026-10-17-milestone-3a-schema-sqlc-audit.md); แผน 3b ผ่านการตรวจรับ 2026-10-21: [2026-10-20-milestone-3b-auth-repositories.md](../plans/2026-10-20-milestone-3b-auth-repositories.md); แผน 3c ผ่านการตรวจรับ 2026-10-22: [2026-10-21-milestone-3c-portfolio-repositories.md](../plans/2026-10-21-milestone-3c-portfolio-repositories.md)
 - **อ้างอิง:** [AGENTS.md](../../../AGENTS.md), [phase 1 spec](2026-10-05-phase-1-design.md) หัวข้อ 4, 7, 8, 9, 11, [milestone 2 design](2026-10-16-milestone-2-domain-ports-design.md), [ADR-0013](../../adr/0013-domain-value-types.md), [roadmap](../plans/2026-10-05-phase-1-roadmap.md) milestone 3 รวม "ข้อที่ส่งต่อให้ milestone 3" ใต้ milestone 2
 
 ## 1. เป้าหมาย การแบ่งงาน และเกณฑ์ผ่าน
