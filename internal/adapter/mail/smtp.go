@@ -121,7 +121,10 @@ func (m *SMTPMailer) deliver(ctx context.Context, to string, raw []byte) error {
 	}
 	// The caller's context (not dialCtx) closes the connection, so a send that runs out of time
 	// reports the connection's own timeout error while a cancelled one is cut off at once.
-	stop := context.AfterFunc(ctx, func() { _ = conn.Close() })
+	// The callback closes only rawConn: conn is reassigned below for implicit TLS, and closing the
+	// raw connection also aborts the TLS layer on top of it.
+	rawConn := conn
+	stop := context.AfterFunc(ctx, func() { _ = rawConn.Close() })
 	defer stop()
 
 	if m.cfg.TLS == TLSImplicit {

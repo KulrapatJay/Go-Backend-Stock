@@ -360,7 +360,7 @@ func TestSMTPMailerTimesOut(t *testing.T) {
 	}
 }
 
-func TestSMTPMailerStopsWhenTheContextIsCancelled(t *testing.T) {
+func TestSMTPMailerStopsAtTheContextDeadline(t *testing.T) {
 	srv := startFakeSMTP(t, fakeSMTPOptions{stall: true})
 	mailer := newTestMailer(t, srv, nil) // 5s timeout: only the context can end this quickly
 
@@ -375,13 +375,39 @@ func TestSMTPMailerStopsWhenTheContextIsCancelled(t *testing.T) {
 	}
 }
 
+func TestSMTPMailerStopsWhenTheContextIsCancelled(t *testing.T) {
+	srv := startFakeSMTP(t, fakeSMTPOptions{stall: true})
+	mailer := newTestMailer(t, srv, nil) // 5s timeout and no context deadline: only cancel() can end this quickly
+
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	time.AfterFunc(50*time.Millisecond, cancel)
+	start := time.Now()
+	err := mailer.SendEmailVerification(ctx, testOTPMail(t))
+	if err == nil {
+		t.Fatal("SendEmailVerification() succeeded against a server that never answers")
+	}
+	if elapsed := time.Since(start); elapsed > 2*time.Second {
+		t.Errorf("took %v after cancel, the connection was not closed", elapsed)
+	}
+	var netErr net.Error
+	if errors.As(err, &netErr) && netErr.Timeout() {
+		t.Errorf("error = %v, want a cancellation (closed connection), not the 5s send timeout", err)
+	}
+}
+
 func TestSMTPMailerFailsWhenNothingListens(t *testing.T) {
 	srv := startFakeSMTP(t, fakeSMTPOptions{})
 	mailer := newTestMailer(t, srv, nil)
 	_ = srv.ln.Close()
 
-	if err := mailer.SendEmailVerification(t.Context(), testOTPMail(t)); err == nil {
-		t.Error("SendEmailVerification() succeeded without a server")
+	err := mailer.SendEmailVerification(t.Context(), testOTPMail(t))
+	if err == nil {
+		t.Fatal("SendEmailVerification() succeeded without a server")
+	}
+	var opErr *net.OpError
+	if !errors.As(err, &opErr) || opErr.Op != "dial" {
+		t.Errorf("error = %v, want a dial error", err)
 	}
 }
 
