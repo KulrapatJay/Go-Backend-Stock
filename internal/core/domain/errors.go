@@ -42,11 +42,21 @@ const (
 type Error struct {
 	Code    ErrorCode
 	Message string
+	// Reasons are stable codes that say which rules a value broke, such as "password_too_short",
+	// so a client can point at the exact problem. Optional; the HTTP adapter returns them as
+	// error.details.
+	Reasons []string
 }
 
 // NewError returns an *Error with the given code and client-safe message.
 func NewError(code ErrorCode, message string) *Error {
 	return &Error{Code: code, Message: message}
+}
+
+// NewReasonsError returns an *Error that also lists the rule codes the value broke. It copies
+// reasons so the caller may reuse the slice.
+func NewReasonsError(code ErrorCode, message string, reasons ...string) *Error {
+	return &Error{Code: code, Message: message, Reasons: append([]string(nil), reasons...)}
 }
 
 func (e *Error) Error() string { return string(e.Code) + ": " + e.Message }

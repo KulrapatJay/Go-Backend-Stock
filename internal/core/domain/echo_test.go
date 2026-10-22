@@ -22,6 +22,7 @@ func TestErrorsNeverEchoInput(t *testing.T) {
 		"ParseFee":      func(s string) error { _, err := domain.ParseFee(s); return err },
 		"ParseSymbol":   func(s string) error { _, err := domain.ParseSymbol("1" + s); return err },
 		"ParseEmail":    func(s string) error { _, err := domain.ParseEmail(s + " x"); return err },
+		"ParsePassword": func(s string) error { _, err := domain.ParsePassword(s, domain.Email{}); return err },
 		"ParseExecutedAt": func(s string) error {
 			_, err := domain.ParseExecutedAt(s, time.Now())
 			return err
