@@ -13,6 +13,10 @@ Licence of the source: the SecLists repository is licensed under the MIT License
 provenance note: the directory README of Passwords/Common-Credentials does not mention it, and
 the repository README states that the whole project is licensed under the MIT licence.
 
+Caveat: the original publisher of this list (the UK National Cyber Security Centre) does not state a
+licence for it in SecLists. It is used here under SecLists' repository-wide MIT licence, which the
+project owner accepted on 2026-10-23. Re-check the upstream terms before any commercial use.
+
 Filtering (service.FilterBlocklistEntry): lower-cased; only entries of 6-32 printable ASCII
 characters without spaces that contain at least one letter and one special character are kept;
 duplicates are removed; the result is sorted. An entry that fails these rules can never equal a

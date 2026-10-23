@@ -3,8 +3,10 @@ package mail
 import (
 	"context"
 	"crypto/tls"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net"
 	"net/smtp"
 	"strconv"
@@ -75,6 +77,20 @@ func (c SMTPConfig) String() string {
 
 // GoString makes %#v print the same safe form.
 func (c SMTPConfig) GoString() string { return c.String() }
+
+// MarshalJSON marshals the same safe summary, so encoding a config cannot expose the credentials.
+func (c SMTPConfig) MarshalJSON() ([]byte, error) { return json.Marshal(c.String()) }
+
+// LogValue makes slog (including its JSON handler, which ignores String) log only the server,
+// the TLS mode and the sender: never the username or the password.
+func (c SMTPConfig) LogValue() slog.Value {
+	return slog.GroupValue(
+		slog.String("host", c.Host),
+		slog.Int("port", c.Port),
+		slog.String("tls", string(c.TLS)),
+		slog.String("from", c.From),
+	)
+}
 
 // String names the server only (value receiver, so a copy of the mailer is safe to print too).
 func (m SMTPMailer) String() string { return "SMTPMailer{" + m.cfg.String() + "}" }

@@ -2,6 +2,7 @@ package mail
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"crypto/ecdsa"
 	"crypto/elliptic"
@@ -10,8 +11,10 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"math/big"
 	"net"
 	"net/textproto"
@@ -449,5 +452,42 @@ func TestSMTPMailerNeverPrintsItsPassword(t *testing.T) {
 		if strings.Contains(out, "S3cretMailPass") {
 			t.Errorf("output %q leaks the SMTP password", out)
 		}
+	}
+}
+
+func TestSMTPConfigAndMailerStayOutOfJSONLogsAndMarshal(t *testing.T) {
+	cfg := SMTPConfig{
+		Host: "smtp.example.com", Port: 587, Username: "mailer-user-77", Password: "S3cretMailPass",
+		From: "no-reply@example.com", TLS: TLSStartTLS, Timeout: time.Second,
+	}
+	m, err := NewSMTPMailer(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var buf bytes.Buffer
+	logger := slog.New(slog.NewJSONHandler(&buf, nil))
+	logger.Info("x", slog.Any("smtp", cfg), slog.Any("smtpPtr", &cfg),
+		slog.Any("mailer", m), slog.Any("mailerValue", *m), slog.Any("mailerPtr", &m))
+	outputs := map[string]string{"slog": buf.String()}
+	for name, v := range map[string]any{"cfg": cfg, "cfgPtr": &cfg, "mailer": m, "mailerValue": *m} {
+		raw, err := json.Marshal(v)
+		if err != nil {
+			t.Fatalf("json.Marshal(%s): %v", name, err)
+		}
+		outputs["json "+name] = string(raw)
+	}
+	for name, out := range outputs {
+		for _, secret := range []string{"S3cretMailPass", "mailer-user-77"} {
+			if strings.Contains(out, secret) {
+				t.Errorf("%s output %q leaks %q", name, out, secret)
+			}
+		}
+	}
+	if !strings.Contains(outputs["slog"], "smtp.example.com") {
+		t.Errorf("slog output %q should still name the host", outputs["slog"])
+	}
+	if !strings.Contains(outputs["json cfg"], "smtp.example.com") {
+		t.Errorf("json output %q should still name the host", outputs["json cfg"])
 	}
 }
