@@ -133,6 +133,16 @@
 
 **แผน 4a ปิดข้อส่งต่อแล้ว:** `ParseEmail` ปฏิเสธ `"(),:;<>[\]` และอักขระซ่อน (ข้อส่งต่อจาก milestone 2); `service.NowForStorage` ตัดเวลาที่ microsecond (รีวิว 3b); `service.NewRateLimitPolicy` สร้าง rules ผ่าน `domain.NewRateLimitRule` เท่านั้น จึงไม่มี rule ที่ `Limit` เป็นศูนย์ (รีวิว 3b) — ที่เหลือของข้อส่งต่อ 3b (`FOR UPDATE` ของ `OTPChallengeRepository.Lock`, purpose อื่น) ปิดใน 4b ตามหัวข้อ 9 ของ design
 
+**ข้อส่งต่อจากรีวิวทั้ง branch ของแผน 4a ไป 4b** (ledger ของแผนเป็น git-ignored จึงจดไว้ที่นี่):
+
+- ก่อน merge: `.env.example` ที่ commit ต้องมี `CSRF_SECRET`, `OTP_SECRET`, `RATE_LIMIT_SECRET`, `OIDC_SECRET` ที่มีค่า `dev-only-…` ยาวอย่างน้อย 32 bytes และต่างกันทั้งสี่ตัว (ตอนนี้ `config.Load` ต้องใช้ค่าเหล่านี้ใน dev จึงทำให้ `cp .env.example .env && docker compose up` ล้มจนกว่าจะมี) — ผู้ใช้เป็นเจ้าของไฟล์นี้
+- งานแรกของ 4b: `domain.RateLimitDecision` ต้องบอก scope ที่ปฏิเสธ (เพิ่ม field `Scope` และตั้งจาก `k.scope` ใน `postgres/ratelimit.go`) เพื่อใส่ `scope` ใน metadata ของ `security.rate_limited` ตาม spec หัวข้อ 5
+- งานแรกของ 4b: เสริมการปิดค่าลับก่อนที่ `RegisterInput`/`LoginInput` จะถือ `Password`: `Password`, `OTPCode` และ `config.Secret` ยังพิมพ์ค่าจริงเมื่อใช้ `%d` หรือเมื่ออยู่ใน field ที่ไม่ export ของ struct อื่น (fmt ไม่เรียก `String()` ที่นั่น) — พิจารณาเก็บค่าหลัง pointer + `fmt.Formatter` และชนิดที่ปิดค่าลับสำหรับ session token/CSRF token/nonce พร้อม test ที่ format input จริง
+- ตอนต่อสาย 4b: ส่ง `service.NowForStorage(clock)` เป็น `now` ของ `RateLimitRepository.Admit` ด้วย; ต่อ `ClientIPResolver` ด้วย `RemoteAddr().String()` และ header `X-Forwarded-For` ทุกบรรทัดตามลำดับ (ปิด trust proxy ของ Fiber เอง); ตรวจ cookie `csrf_nonce` ว่าเป็น base64url 43 ตัวก่อนสร้าง binding; login ต้องตัดรหัสผ่านเกิน 32 ตัวก่อน hash และมี test; ปิด HTTP ก่อนแล้วจึงเรียก `Dispatcher.Close` ด้วยเวลาที่เหลือของ `SHUTDOWN_TIMEOUT`; `ErrQueueFull`/`ErrDispatcherClosed` ต้อง log แล้วไปต่อ ห้ามเปลี่ยนคำตอบ 202
+- เก็บกวาด (ทำเมื่อแตะไฟล์นั้น): `DefaultArgon2Params` เป็นตัวแปร global ที่แก้ได้ → เปลี่ยนเป็นฟังก์ชัน; `NewCSRFCodec`/`NewPacer` ต้องปฏิเสธ clock ที่เป็น nil; `deliver` ควรไม่นับ error ของ `Quit` หลัง DATA สำเร็จ และคืน `ctx.Err()` เมื่อถูก cancel เพื่อให้ Dispatcher จัดเป็น `canceled`; worker ของ `Dispatcher` ต้องมี `recover` ที่ log `mail.panic`; ใช้ `domain.MaxOTPFailedAttemptsCeiling` แทนเลข 20 ใน `config/auth.go`; `parseCIDRs` ควร normalise/ปฏิเสธ prefix แบบ IPv4-mapped; warn log ของ hasher ควรแยก timeout กับ cancel; เติมค่าเริ่มต้นของ `MAIL_SEND_TIMEOUT` (10s) ใน README
+- ต้องถามผู้ใช้ใน 4b: rate limit ของ IPv6 ใช้ address เต็ม (/128) ตาม spec 4.7 ซึ่งผู้ใช้ที่มี prefix /64 หมุน address เพื่อเลี่ยงโควตาได้ — จะจัดกลุ่มเป็น /64 หรือไม่ (ถ้าเปลี่ยนให้เขียน ADR)
+- ควรเพิ่มใน CI: service Mailpit และ `REQUIRE_MAIL_INTEGRATION=1` เพื่อให้ test ส่งอีเมลจริงไม่พังเงียบ ๆ
+
 **ไฟล์หลัก:** `internal/core/service/auth*.go`, `internal/core/service/otp*.go`, `internal/core/service/email_verification*.go`, `internal/adapter/http/auth*.go`, `internal/adapter/http/middleware/`, `internal/adapter/identity/`, `internal/adapter/mail/`
 
 - [x] ทำ OTP generation/HMAC แบบมี purpose และ SMTP adapter ไป Mailpit ตั้งแต่ขั้นนี้ เพราะ signup ต้องยืนยันอีเมลก่อน login ได้ (แผน 4a: `GenerateOTP`, `OTPCodec`, `SMTPMailer`, `Dispatcher`; `make test-mail` ส่งถึง Mailpit จริง)
