@@ -3,7 +3,7 @@
 Go API สำหรับบันทึกรายการซื้อขายหุ้นสหรัฐฯ และติดตามต้นทุน/กำไรขาดทุนของหลายพอร์ต
 ระบบนี้บันทึกการลงทุนที่ทำผ่านช่องทางอื่น ไม่ใช่ระบบส่งคำสั่งซื้อขายจริง
 
-> **สถานะ:** Milestone 3 — schema และ repositories ครบ แต่ API ยังมีเฉพาะ `/healthz`, `/readyz` และเอกสาร API; auth, พอร์ต และรายการซื้อขายยังไม่เปิดใช้งาน
+> **สถานะ:** Milestone 4a — ชิ้นส่วนพื้นฐานของ auth (password policy, Argon2id, OTP, session/CSRF token, rate-limit rules, Mailer) พร้อมแล้ว แต่ API ยังมีเฉพาะ `/healthz`, `/readyz` และเอกสาร API; endpoint ของ auth เปิดใน milestone 4b ส่วนพอร์ตและรายการซื้อขายยังไม่เปิดใช้งาน
 
 ## เริ่มใช้งาน (dev พร้อม hot reload)
 
@@ -50,6 +50,14 @@ Access log เก็บ method, route template, status และ duration โด
 - PostgreSQL เปิดให้เครื่อง host ที่ `127.0.0.1:55432` (เปลี่ยนได้ด้วย `POSTGRES_HOST_PORT`)
 - ล้างข้อมูลทั้งหมดแล้วเริ่มใหม่: `docker compose down -v`
 
+## ตัวแปรสภาพแวดล้อมของ auth (milestone 4a)
+
+`CSRF_SECRET`, `OTP_SECRET`, `RATE_LIMIT_SECRET` และ `OIDC_SECRET` ต้องตั้งใน `.env` เป็นค่ายาวอย่างน้อย 32 bytes (สำหรับ dev ใช้ค่า placeholder `dev-only-…` เช่น `dev-only-csrf-secret-0123456789abcdef` ได้); production ปฏิเสธค่าที่ขึ้นต้นด้วย `dev-only-` และสี่ค่าต้องไม่ซ้ำกัน
+
+ตัวแปรอื่นมีค่าเริ่มต้นสำหรับ dev จึงไม่ต้องตั้ง: `SESSION_TTL` (168h), `PASSWORD_HASH_CONCURRENCY` (4), `AUTH_RESPONSE_FLOOR`/`AUTH_RESPONSE_JITTER` (500ms/100ms), `OTP_MAX_ATTEMPTS` (5), `OTP_RESEND_COOLDOWN` (60s), `OTP_REQUESTS_PER_HOUR_EMAIL`/`_IP` (5/20), `LOGIN_ATTEMPTS_PER_EMAIL`/`_IP` (10/30 ต่อ 15 นาที), `TRUSTED_PROXY_CIDRS` (ว่าง = ไม่เชื่อ `X-Forwarded-For`), `SMTP_HOST`/`SMTP_PORT`/`SMTP_FROM`/`SMTP_TLS`/`MAIL_SEND_TIMEOUT` (compose ชี้ไป Mailpit ที่ `mailpit:1025` แบบไม่เข้ารหัส) production ต้องตั้ง `SMTP_HOST`, `SMTP_PORT`, `SMTP_FROM` และ `SMTP_TLS` เป็น `starttls` หรือ `tls` เอง
+
+อีเมลที่ระบบส่ง (รหัสยืนยัน และแจ้งว่ามีบัญชีอยู่แล้ว) เป็นภาษาอังกฤษแบบ ASCII ในตอนนี้
+
 ## พัฒนาและทดสอบ
 
 ```bash
@@ -57,6 +65,7 @@ make tools            # ติดตั้ง swag, go-swagger, goose ตาม�
 make lint-install     # ติดตั้ง golangci-lint ลง ./bin
 make test             # unit/HTTP/contract tests (integration tests จะ skip)
 make test-integration # integration tests กับ PostgreSQL ใน compose (ต้องเปิด stack ก่อน)
+make test-mail        # ส่งอีเมลจริงไป Mailpit ใน compose แล้วอ่านกลับ (docker compose up -d mailpit)
 make swagger          # generate docs/api จาก annotations แล้ว validate
 make check            # tidy + vet + lint + swagger + tests + ตรวจว่า docs/api commit แล้ว
 ```
