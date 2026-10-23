@@ -3,20 +3,28 @@
 package mail
 
 import (
+	"bytes"
 	"crypto/rand"
 	"encoding/hex"
+	"mime"
+	"mime/quotedprintable"
 	"strings"
 	"time"
 	"unicode"
+	"unicode/utf8"
 
 	"go-backend-stock/internal/core/domain"
 )
 
 const (
-	verificationSubject        = "Your verification code"
-	registrationAttemptSubject = "Someone tried to register with your email address"
+	verificationSubject        = "รหัสยืนยันอีเมลของคุณ"
+	registrationAttemptSubject = "มีผู้พยายามสมัครสมาชิกด้วยอีเมลของคุณ"
 	otpExpiryLayout            = "2006-01-02 15:04"
 )
+
+// thaiZone is UTC+7, built by hand so the emails do not depend on tzdata being installed. Thailand
+// has no daylight saving time.
+var thaiZone = time.FixedZone("ICT", 7*3600)
 
 func unsafeMail(rule string) error {
 	return domain.NewError(domain.CodeInternal, "mail: "+rule)
@@ -39,8 +47,8 @@ func checkAddress(addr string) error {
 	return nil
 }
 
-// checkHeaderValue accepts only printable ASCII without line breaks. Subjects are fixed ASCII
-// strings; anything else would need RFC 2047 encoding, which this package does not do yet.
+// checkHeaderValue accepts only printable ASCII without line breaks. It guards the Message-ID,
+// which is written as is; the Subject goes through checkSubject and RFC 2047 encoding instead.
 func checkHeaderValue(v string) error {
 	if strings.ContainsFunc(v, func(r rune) bool { return r > unicode.MaxASCII || unicode.IsControl(r) }) {
 		return unsafeMail("header value must be printable ASCII on one line")
@@ -48,7 +56,44 @@ func checkHeaderValue(v string) error {
 	return nil
 }
 
-// message is one email, built as plain text UTF-8 by hand so no header comes from a template.
+// checkSubject validates the raw subject before it is encoded: valid UTF-8 without control
+// characters (line breaks and tabs included) or Unicode line/paragraph separators. Letters from
+// any script are fine because encodeSubject turns them into ASCII encoded-words.
+func checkSubject(v string) error {
+	if !utf8.ValidString(v) {
+		return unsafeMail("subject must be valid UTF-8")
+	}
+	if strings.ContainsFunc(v, func(r rune) bool {
+		return unicode.IsControl(r) || r == '\u2028' || r == '\u2029'
+	}) {
+		return unsafeMail("subject must be one line without control characters")
+	}
+	return nil
+}
+
+// encodeSubject returns the RFC 2047 Q-encoded form of a validated subject. An ASCII-only subject
+// is returned unchanged; longer encoded subjects are folded with CRLF + space, which is the only
+// line break the encoder can emit.
+func encodeSubject(v string) string {
+	return mime.QEncoding.Encode("UTF-8", v)
+}
+
+// encodeBody returns body as quoted-printable (RFC 2045) with CRLF line breaks and lines of at
+// most 76 characters. Text mode turns each "\n" into CRLF, so callers keep plain "\n" text.
+func encodeBody(body string) ([]byte, error) {
+	var buf bytes.Buffer
+	w := quotedprintable.NewWriter(&buf)
+	if _, err := w.Write([]byte(strings.ReplaceAll(body, "\r\n", "\n"))); err != nil {
+		return nil, err
+	}
+	if err := w.Close(); err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
+}
+
+// message is one email, built as plain text UTF-8 (quoted-printable body, RFC 2047 subject) by
+// hand so no header comes from a template.
 type message struct {
 	from, to, subject, body string
 	date                    time.Time
@@ -61,23 +106,28 @@ func (m message) bytes() ([]byte, error) {
 			return nil, err
 		}
 	}
-	for _, v := range []string{m.subject, m.id} {
-		if err := checkHeaderValue(v); err != nil {
-			return nil, err
-		}
+	if err := checkSubject(m.subject); err != nil {
+		return nil, err
+	}
+	if err := checkHeaderValue(m.id); err != nil {
+		return nil, err
+	}
+	body, err := encodeBody(m.body)
+	if err != nil {
+		return nil, err
 	}
 	var b strings.Builder
 	header := func(name, value string) { b.WriteString(name + ": " + value + "\r\n") }
 	header("From", "<"+m.from+">")
 	header("To", "<"+m.to+">")
-	header("Subject", m.subject)
+	header("Subject", encodeSubject(m.subject))
 	header("Date", m.date.UTC().Format(time.RFC1123Z))
 	header("Message-ID", "<"+m.id+">")
 	header("MIME-Version", "1.0")
 	header("Content-Type", "text/plain; charset=utf-8")
-	header("Content-Transfer-Encoding", "8bit")
+	header("Content-Transfer-Encoding", "quoted-printable")
 	b.WriteString("\r\n")
-	b.WriteString(strings.ReplaceAll(strings.ReplaceAll(m.body, "\r\n", "\n"), "\n", "\r\n"))
+	b.Write(body)
 	return []byte(b.String()), nil
 }
 
@@ -92,14 +142,14 @@ func newMessageID(fromAddr string) (string, error) {
 }
 
 func verificationBody(m domain.OTPMail) string {
-	return "Your verification code is " + m.OTP.Reveal() + ".\n\n" +
-		"It expires at " + m.ExpiresAt.UTC().Format(otpExpiryLayout) + " UTC. Do not share it with anyone.\n\n" +
-		"Reference: " + m.ChallengeID.String() + "\n\n" +
-		"If you did not create an account, you can ignore this email.\n"
+	return "รหัสยืนยันของคุณคือ " + m.OTP.Reveal() + "\n\n" +
+		"รหัสนี้ใช้ได้ถึง " + m.ExpiresAt.In(thaiZone).Format(otpExpiryLayout) + " น. (เวลาประเทศไทย) ห้ามบอกรหัสนี้กับผู้อื่น\n\n" +
+		"รหัสอ้างอิง: " + m.ChallengeID.String() + "\n\n" +
+		"หากคุณไม่ได้สมัครบัญชี ไม่ต้องทำอะไร\n"
 }
 
 func registrationAttemptBody() string {
-	return "Someone tried to create an account with this email address, but an account already exists.\n\n" +
-		"If it was you, sign in instead, or use the password reset option if you forgot your password.\n" +
-		"If it was not you, you can ignore this email.\n"
+	return "มีผู้พยายามสร้างบัญชีด้วยอีเมลนี้ แต่อีเมลนี้มีบัญชีอยู่แล้ว\n\n" +
+		"หากเป็นคุณ ให้เข้าสู่ระบบแทน หรือใช้ตัวเลือก \"ลืมรหัสผ่าน\" หากจำรหัสผ่านไม่ได้\n" +
+		"หากไม่ใช่คุณ ไม่ต้องทำอะไร\n"
 }

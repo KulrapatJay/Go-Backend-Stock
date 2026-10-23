@@ -257,12 +257,21 @@ func TestSMTPMailerSendsTheVerificationEmail(t *testing.T) {
 		t.Errorf("envelope = from %q to %q", m.From, m.To)
 	}
 	for _, want := range []string{
-		"Subject: Your verification code\r\n", "Date: Thu, 22 Oct 2026 09:00:00 +0000\r\n",
-		"Content-Type: text/plain; charset=utf-8\r\n", "Content-Transfer-Encoding: 8bit\r\n",
-		"042731", mail.ChallengeID.String(),
+		"Date: Thu, 22 Oct 2026 09:00:00 +0000\r\n",
+		"Content-Type: text/plain; charset=utf-8\r\n", "Content-Transfer-Encoding: quoted-printable\r\n",
+		"Subject: =?UTF-8?",
 	} {
 		if !strings.Contains(m.Data, want) {
 			t.Errorf("message lacks %q:\n%s", want, m.Data)
+		}
+	}
+	got2 := parseReceivedMail(t, m.Data)
+	if got2.subject != wantVerificationSubject {
+		t.Errorf("decoded subject = %q, want %q", got2.subject, wantVerificationSubject)
+	}
+	for _, want := range []string{"042731", mail.ChallengeID.String(), "น. (เวลาประเทศไทย)"} {
+		if !strings.Contains(got2.body, want) {
+			t.Errorf("decoded body lacks %q:\n%s", want, got2.body)
 		}
 	}
 }
@@ -278,8 +287,18 @@ func TestSMTPMailerSendsTheRegistrationAttemptWithoutACode(t *testing.T) {
 		t.Fatalf("SendRegistrationAttempt() error = %v", err)
 	}
 	got := srv.messages()
-	if len(got) != 1 || !strings.Contains(got[0].Data, "already exists") || strings.Contains(got[0].Data, "verification code") {
-		t.Errorf("messages = %+v", got)
+	if len(got) != 1 {
+		t.Fatalf("server received %d messages, want 1", len(got))
+	}
+	parsed := parseReceivedMail(t, got[0].Data)
+	if parsed.subject != wantRegistrationAttemptSubject {
+		t.Errorf("decoded subject = %q, want %q", parsed.subject, wantRegistrationAttemptSubject)
+	}
+	if !strings.Contains(parsed.body, "มีบัญชีอยู่แล้ว") || strings.Contains(parsed.body, "รหัสยืนยัน") {
+		t.Errorf("decoded body = %q", parsed.body)
+	}
+	if sixDigitCode.MatchString(parsed.body) || sixDigitCode.MatchString(parsed.subject) {
+		t.Errorf("the registration attempt email must carry no 6-digit code:\n%s\n%s", parsed.subject, parsed.body)
 	}
 }
 

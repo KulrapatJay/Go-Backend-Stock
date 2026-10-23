@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/url"
@@ -84,8 +85,8 @@ func mailpitDo(ctx context.Context, method, apiURL, path string, body any, out a
 }
 
 // waitForMessage polls Mailpit until a message to recipient arrives, returns it with its text
-// body, and deletes it afterwards.
-func waitForMessage(t *testing.T, apiURL, recipient string) (mailpitMessage, string) {
+// body and raw source, and deletes it afterwards.
+func waitForMessage(t *testing.T, apiURL, recipient string) (mailpitMessage, string, string) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(t.Context(), 15*time.Second)
 	defer cancel()
@@ -118,7 +119,39 @@ func waitForMessage(t *testing.T, apiURL, recipient string) (mailpitMessage, str
 	if err := mailpitDo(ctx, http.MethodGet, apiURL, "/api/v1/message/"+url.PathEscape(found.ID), nil, &detail); err != nil {
 		t.Fatalf("read message %s: %v", found.ID, err)
 	}
-	return found, detail.Text
+
+	rawReq, err := http.NewRequestWithContext(ctx, http.MethodGet, apiURL+"/api/v1/message/"+url.PathEscape(found.ID)+"/raw", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rawResp, err := http.DefaultClient.Do(rawReq)
+	if err != nil {
+		t.Fatalf("read raw message %s: %v", found.ID, err)
+	}
+	defer rawResp.Body.Close()
+	rawBytes, err := io.ReadAll(rawResp.Body)
+	if err != nil || rawResp.StatusCode != http.StatusOK {
+		t.Fatalf("read raw message %s: status %d, error %v", found.ID, rawResp.StatusCode, err)
+	}
+	return found, detail.Text, string(rawBytes)
+}
+
+// assertThaiTransport checks the wire format Mailpit stored: an RFC 2047 Subject, a UTF-8
+// quoted-printable body, and no raw Thai octets anywhere in the message. The headers are logged
+// so `go test -v` shows what a mail server really received.
+func assertThaiTransport(t *testing.T, raw string) {
+	t.Helper()
+	headers, _, _ := strings.Cut(raw, "\r\n\r\n")
+	t.Logf("headers as stored by Mailpit:\n%s", headers)
+	if !strings.Contains(headers, "Subject: =?UTF-8?") {
+		t.Errorf("Subject is not RFC 2047 encoded:\n%s", headers)
+	}
+	if !strings.Contains(headers, "Content-Transfer-Encoding: quoted-printable") {
+		t.Errorf("body is not quoted-printable:\n%s", headers)
+	}
+	if strings.ContainsFunc(raw, func(r rune) bool { return r > 127 }) {
+		t.Errorf("raw message carries non-ASCII octets")
+	}
 }
 
 func uniqueRecipient(t *testing.T) domain.Email {
@@ -142,13 +175,14 @@ func TestMailpitReceivesTheVerificationEmail(t *testing.T) {
 	if err := mailer.SendEmailVerification(t.Context(), mail); err != nil {
 		t.Fatalf("SendEmailVerification() error = %v", err)
 	}
-	msg, text := waitForMessage(t, apiURL, mail.To.String())
-	if msg.Subject != "Your verification code" {
-		t.Errorf("Subject = %q", msg.Subject)
+	msg, text, raw := waitForMessage(t, apiURL, mail.To.String())
+	if msg.Subject != wantVerificationSubject {
+		t.Errorf("Subject = %q, want %q", msg.Subject, wantVerificationSubject)
 	}
-	if !strings.Contains(text, "042731") || !strings.Contains(text, mail.ChallengeID.String()) {
+	if !strings.Contains(text, "042731") || !strings.Contains(text, mail.ChallengeID.String()) || !strings.Contains(text, "รหัสยืนยันของคุณคือ 042731") {
 		t.Errorf("body lacks the code or the reference:\n%s", text)
 	}
+	assertThaiTransport(t, raw)
 }
 
 func TestMailpitReceivesTheRegistrationAttemptEmail(t *testing.T) {
@@ -158,8 +192,12 @@ func TestMailpitReceivesTheRegistrationAttemptEmail(t *testing.T) {
 	if err := mailer.SendRegistrationAttempt(t.Context(), to); err != nil {
 		t.Fatalf("SendRegistrationAttempt() error = %v", err)
 	}
-	msg, text := waitForMessage(t, apiURL, to.String())
-	if msg.Subject != "Someone tried to register with your email address" || !strings.Contains(text, "already exists") {
+	msg, text, raw := waitForMessage(t, apiURL, to.String())
+	if msg.Subject != wantRegistrationAttemptSubject || !strings.Contains(text, "มีบัญชีอยู่แล้ว") {
 		t.Errorf("Subject = %q, body:\n%s", msg.Subject, text)
 	}
+	if sixDigitCode.MatchString(text) {
+		t.Errorf("the registration attempt email must carry no 6-digit code:\n%s", text)
+	}
+	assertThaiTransport(t, raw)
 }
