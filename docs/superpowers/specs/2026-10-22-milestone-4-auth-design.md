@@ -111,7 +111,7 @@ scripts/                   build_blocklist.go (สร้างไฟล์ block
 - `service.Pacer` ใช้กับ register, ขอรหัสยืนยันใหม่ และ password reset (milestone 5): จับเวลาตั้งแต่ service เริ่ม แล้วรอจนครบ floor + jitter สุ่ม 0..jitter (ค่าเริ่มต้น 500 ms + 100 ms) ทั้งกรณีสำเร็จและ error ที่ต้องไม่เปิดเผยสถานะ; ไม่รอเกิน context deadline
 - `port.Mailer` ตาม phase 1 spec หัวข้อ 8 (`SendEmailVerification`, `SendRegistrationAttempt`; `SendPasswordReset`, `SendPasswordChanged` เพิ่มใน milestone 5)
 - `adapter/mail`:
-  - `SMTPMailer` สร้างข้อความ plain text UTF-8 เอง (From, To, Subject, Date, Message-ID, MIME-Version, Content-Type, Content-Transfer-Encoding: 8bit) และส่งด้วย `net/smtp` ตาม `SMTP_TLS` (`none`, `starttls`, `tls`) พร้อม AUTH PLAIN เมื่อมี username
+  - `SMTPMailer` สร้างข้อความ plain text UTF-8 เอง (From, To, Subject, Date, Message-ID, MIME-Version, Content-Type, Content-Transfer-Encoding: quoted-printable) (ผู้ใช้ยืนยันให้ส่งอีเมลเป็นภาษาไทยและใช้ quoted-printable แทน 8bit เมื่อ 2026-10-23) และส่งด้วย `net/smtp` ตาม `SMTP_TLS` (`none`, `starttls`, `tls`) พร้อม AUTH PLAIN เมื่อมี username
   - ปฏิเสธที่อยู่หรือ header ที่มี CR/LF หรือ `,;<>"` เป็น internal error (กัน header injection; ไม่ควรเกิดเพราะ `ParseEmail` ปฏิเสธแล้ว)
   - `Dispatcher` implement `port.Mailer` โดยใส่งานลงคิวขนาดจำกัด (100) แล้วคืนทันที; worker ส่งด้วย `MAIL_SEND_TIMEOUT`; คิวเต็มหรือส่งไม่สำเร็จเขียน application error log ที่ไม่มี OTP, ที่อยู่อีเมลเต็ม หรือ secret; shutdown หยุดรับงานแล้วรอส่งที่ค้างจนถึง shutdown timeout
 - `ParseEmail` ปฏิเสธ `"(),:;<>[\]` เพิ่มเป็น `invalid_input` (ปิดข้อส่งต่อจาก milestone 2 เรื่องอีเมลที่มี `,;<>`); อีเมลที่บันทึกไปแล้วใน DB ไม่มีอักขระเหล่านี้เพราะยังไม่มี endpoint สมัคร
