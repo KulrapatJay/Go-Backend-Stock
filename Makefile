@@ -75,6 +75,18 @@ test-integration:
 	TEST_MAINTENANCE_DATABASE_URL="$(TEST_MAINTENANCE_DATABASE_URL)" \
 	go test -race -count=1 ./internal/adapter/postgres/...
 
+MAILPIT_SMTP_ADDR ?= 127.0.0.1:1025
+MAILPIT_API_URL ?= http://127.0.0.1:8025
+
+.PHONY: test-mail
+
+# Sends real emails to the Mailpit of docker compose (docker compose up -d mailpit) and reads them back.
+test-mail:
+	REQUIRE_MAIL_INTEGRATION=1 \
+	TEST_SMTP_ADDR="$(MAILPIT_SMTP_ADDR)" \
+	TEST_MAILPIT_API_URL="$(MAILPIT_API_URL)" \
+	go test -race -count=1 -run 'TestMailpit' ./internal/adapter/mail/...
+
 .PHONY: lint-install lint check
 
 lint-install:
