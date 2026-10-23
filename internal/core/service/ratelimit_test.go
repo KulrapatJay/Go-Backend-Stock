@@ -183,7 +183,7 @@ func TestRateLimitPolicyKeysHideEmailAndNormaliseIP(t *testing.T) {
 func TestRateLimitPolicyRejectsUnknownClientIP(t *testing.T) {
 	policy := newTestPolicy(t)
 	_, err := policy.Login(mustEmail(t, "user@example.com"), netip.Addr{})
-	requireCode(t, err, domain.CodeInternal)
+	_ = requireCode(t, err, domain.CodeInternal)
 }
 
 func TestNewRateLimitPolicyValidatesConfig(t *testing.T) {

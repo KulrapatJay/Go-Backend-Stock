@@ -84,7 +84,7 @@ func TestHashAndVerify(t *testing.T) {
 func TestHashRejectsZeroPassword(t *testing.T) {
 	h, _ := newHasher(t, testArgon2Params, 1, 0)
 	_, err := h.Hash(t.Context(), domain.Password{})
-	requireCode(t, err, domain.CodeInternal)
+	_ = requireCode(t, err, domain.CodeInternal)
 }
 
 func TestHashUsesTheConfirmedFormat(t *testing.T) {
@@ -128,7 +128,7 @@ func TestVerifyRejectsMalformedHashes(t *testing.T) {
 		if ok {
 			t.Errorf("%s: Verify() = true for a malformed hash", name)
 		}
-		requireCode(t, err, domain.CodeInternal)
+		_ = requireCode(t, err, domain.CodeInternal)
 		if _, err := h.NeedsRehash(hash); err == nil {
 			t.Errorf("%s: NeedsRehash() accepted a malformed hash", name)
 		}
@@ -151,7 +151,7 @@ func TestVerifyRejectsOversizedParameters(t *testing.T) {
 	} {
 		start := time.Now()
 		_, err := h.Verify(t.Context(), hash, "Zq9!kVx1")
-		requireCode(t, err, domain.CodeInternal)
+		_ = requireCode(t, err, domain.CodeInternal)
 		if time.Since(start) > time.Second {
 			t.Errorf("%s: rejecting took %v, it must not start hashing", name, time.Since(start))
 		}
@@ -203,7 +203,7 @@ func TestQueueTimeoutReturnsServerBusy(t *testing.T) {
 
 	start := time.Now()
 	_, err := h.Hash(t.Context(), mustPassword(t, "Zq9!kVx1"))
-	requireCode(t, err, domain.CodeServerBusy)
+	_ = requireCode(t, err, domain.CodeServerBusy)
 	if elapsed := time.Since(start); elapsed < 25*time.Millisecond || elapsed > time.Second {
 		t.Errorf("waited %v, want about the 30ms queue timeout", elapsed)
 	}
@@ -226,7 +226,7 @@ func TestCancelledContextWhileWaitingReturnsServerBusy(t *testing.T) {
 	defer cancel()
 	start := time.Now()
 	_, err := h.Hash(ctx, mustPassword(t, "Zq9!kVx1"))
-	requireCode(t, err, domain.CodeServerBusy)
+	_ = requireCode(t, err, domain.CodeServerBusy)
 	if time.Since(start) > time.Second {
 		t.Errorf("a cancelled request kept waiting for %v", time.Since(start))
 	}
@@ -240,7 +240,7 @@ func TestVerifyDummyCostsAsMuchAsVerifyAndUsesTheQueue(t *testing.T) {
 
 	release := hold(t, h)
 	defer release()
-	requireCode(t, h.VerifyDummy(t.Context(), "anything at all"), domain.CodeServerBusy)
+	_ = requireCode(t, h.VerifyDummy(t.Context(), "anything at all"), domain.CodeServerBusy)
 }
 
 func TestNewPasswordHasherValidatesConfig(t *testing.T) {

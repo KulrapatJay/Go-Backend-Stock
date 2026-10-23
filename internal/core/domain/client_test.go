@@ -39,11 +39,11 @@ func TestSanitizeUserAgent(t *testing.T) {
 		"nul":           "a\x00b",
 		"escape":        "a\x1b[31mb",
 		"c1 control":    "a\u0085b",
-		"bidi override": "a‮b",
-		"zero width":    "a​b",
+		"bidi override": "a\u202eb",
+		"zero width":    "a\u200bb",
 	} {
 		got := domain.SanitizeUserAgent(in)
-		if strings.ContainsAny(got, "\r\n\x00\x1b\u0085‮​") {
+		if strings.ContainsAny(got, "\r\n\x00\x1b\u0085\u202e\u200b") {
 			t.Errorf("%s: SanitizeUserAgent(%q) = %q still has the character", name, in, got)
 		}
 		if got == "" {

@@ -41,7 +41,7 @@ func TestCSRFIssueAndVerify(t *testing.T) {
 		t.Errorf("Verify() one second before expiry error = %v", err)
 	}
 	clock.Advance(time.Second)
-	requireCode(t, codec.Verify(token, binding), domain.CodeCSRFFailed) // expired at the expiry second
+	_ = requireCode(t, codec.Verify(token, binding), domain.CodeCSRFFailed) // expired at the expiry second
 }
 
 func TestCSRFTokenLayout(t *testing.T) {

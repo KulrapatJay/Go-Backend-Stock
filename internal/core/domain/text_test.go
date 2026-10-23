@@ -51,8 +51,8 @@ func TestParseEmail(t *testing.T) {
 		"user\x00@example.com", "\xff@example.com",
 		"a,b@example.com", "a;b@example.com", "<a@example.com>", `"a"@example.com`, "a(b)@example.com",
 		"a:b@example.com", "a[b]@example.com", `a\b@example.com`, "a@exa]mple.com",
-		"a​b@example.com",                         // a zero-width space hides a character
-		"a‮b@example.com",                         // a bidi override reorders the text
+		"a\u200bb@example.com",                    // a zero-width space hides a character
+		"a\u202eb@example.com",                    // a bidi override reorders the text
 		strings.Repeat("a", 243) + "@example.com", // 255
 	} {
 		_, err := domain.ParseEmail(in)
