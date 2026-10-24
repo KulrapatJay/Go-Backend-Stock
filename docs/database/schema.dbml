@@ -1,7 +1,7 @@
   // Paste this entire file into https://dbdiagram.io
   // Source: docs/superpowers/specs/2026-10-05-phase-1-design.md
   // DBML syntax: https://dbml.dbdiagram.io/docs/
-  // Design proposal only. Goose migrations remain the schema deployment source.
+  // Mirrors migrations/00002-00004. Goose migrations are the source of truth: change both together.
 
   Project stock_portfolio {
     database_type: 'PostgreSQL'
@@ -19,14 +19,14 @@
 
   Table app.users {
     id uuid [pk, not null]
-    email varchar(254) [not null, unique, note: 'Trim and lowercase; preserve dots and plus suffixes.']
+    email varchar(254) [not null, unique, note: 'Normalized by Go ParseEmail (trim, lowercase; dots and plus suffixes kept). Compared exactly: no lower() in SQL, which could disagree with Go for non-ASCII letters.']
     password_hash text [null, note: 'Argon2id PHC string; NULL for Google-only accounts. Selected only by login/register/reset queries.']
     email_verified_at timestamptz [null, note: 'NULL until email OTP confirm, successful password reset, or Google email_verified signup. Never reset to NULL.']
     created_at timestamptz [not null]
     updated_at timestamptz [not null]
 
     checks {
-      `email = lower(btrim(email)) AND length(email) > 0` [name: 'users_email_normalized']
+      `char_length(email) BETWEEN 1 AND 254` [name: 'users_email_length']
     }
 
     Note: 'A Google-only user and its auth_provider must be created atomically. No account deletion in phase 1.'
@@ -40,12 +40,13 @@
     created_at timestamptz [not null]
 
     indexes {
-      (provider, provider_subject) [unique]
-      (user_id, provider) [unique]
+      (provider, provider_subject) [unique, name: 'auth_providers_subject_key']
+      (user_id, provider) [unique, name: 'auth_providers_user_provider_key']
     }
 
     checks {
       `provider = 'google'` [name: 'auth_providers_provider_allowed']
+      `char_length(provider_subject) >= 1` [name: 'auth_providers_subject_length']
     }
   }
 
@@ -118,6 +119,8 @@
       `asset_class = 'us_equity'` [name: 'instruments_asset_class_allowed']
       `status IN ('active', 'inactive')` [name: 'instruments_status_allowed']
       `source IN ('alpaca', 'demo')` [name: 'instruments_source_allowed']
+      `char_length(name) >= 1` [name: 'instruments_name_length']
+      `char_length(exchange) >= 1` [name: 'instruments_exchange_length']
     }
 
     Note: '''
@@ -182,8 +185,8 @@
     }
 
     Note: '''
-      Goose must add a partial UNIQUE index on (user_id, purpose)
-      WHERE consumed_at IS NULL AND invalidated_at IS NULL:
+      Migration 00002 adds the partial UNIQUE index otp_challenges_one_open_idx
+      on (user_id, purpose) WHERE consumed_at IS NULL AND invalidated_at IS NULL:
       one open challenge per user per flow.
       Every query filters by purpose. Invalidate the previous open
       challenge of the same purpose before inserting a new one.
@@ -262,8 +265,10 @@
 
     checks {
       `operation IN ('transactions.create')` [name: 'idempotency_keys_operation_allowed']
+      `char_length(key) >= 1` [name: 'idempotency_keys_key_length']
+      `octet_length(request_hash) = 32` [name: 'idempotency_keys_hash_length']
       `expires_at > created_at` [name: 'idempotency_keys_expiry_valid']
-      `octet_length(result::text) <= 16384` [name: 'idempotency_keys_result_size']
+      `octet_length(result::text) <= 17408` [name: 'idempotency_keys_result_size', note: 'Backstop, not the same limit as Go (16 KiB raw): jsonb::text adds spaces, so the counts differ.']
     }
 
     Note: 'Commit with transaction mutation and audit. Same key/payload returns the original result; different payload conflicts. Check portfolio ownership in the same transaction.'
@@ -280,7 +285,7 @@
     target_id text [null, note: 'Logical target reference; survives deletion of the target.']
     outcome text [not null]
     reason_code varchar(80) [null]
-    metadata jsonb [not null, note: 'Allowlisted fields only; decimal values encoded as strings.']
+    metadata jsonb [not null, default: `'{}'::jsonb`, note: 'Allowlisted fields only; decimal values encoded as strings. Go rejects NUL and invalid UTF-8, which jsonb cannot store.']
 
     indexes {
       (actor_user_id, occurred_at)
@@ -289,11 +294,14 @@
     }
 
     checks {
+      `char_length(event_type) >= 1` [name: 'audit_events_event_type_length']
+      `char_length(target_type) >= 1` [name: 'audit_events_target_type_length']
       `outcome IN ('success', 'failure', 'denied')` [name: 'audit_events_outcome_allowed']
-      `octet_length(metadata::text) <= 8192` [name: 'audit_events_metadata_size']
+      `jsonb_typeof(metadata) = 'object'` [name: 'audit_events_metadata_object']
+      `octet_length(metadata::text) <= 9216` [name: 'audit_events_metadata_size', note: 'Backstop, not the same limit as Go (8 KiB raw): jsonb::text adds a space after every comma and colon (8101 raw bytes became 9900), so some metadata Go accepts is rejected here and rolls back as internal.']
     }
 
-    Note: 'Append-only for runtime role. No foreign keys to users, sessions or targets; no cascading deletion. Retain 90 days; cleanup uses a separate maintenance role.'
+    Note: 'Runtime role has INSERT only (no SELECT, UPDATE or DELETE). No foreign keys to users, sessions or targets; no cascading deletion. Retain 90 days; cleanup uses the maintenance role (SELECT id, occurred_at + DELETE).'
   }
 
   Ref: app.auth_providers.user_id > app.users.id [delete: restrict, update: no action]

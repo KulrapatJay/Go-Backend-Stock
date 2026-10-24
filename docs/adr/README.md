@@ -20,3 +20,6 @@
 | [0010](0010-swagger-2-via-swaggo.md) | เอกสาร API เป็น Swagger 2.0 generate ด้วย swaggo/swag | Accepted |
 | [0011](0011-api-and-migration-evolution.md) | กติกาการเปลี่ยน API และ database migration | Accepted |
 | [0012](0012-defer-stock-page-and-charts.md) | เลื่อนหน้าหุ้นรายตัวและกราฟไปเฟสถัดไป | Accepted |
+| [0013](0013-domain-value-types.md) | Domain value types แบบ parse, don't validate และชนิดตัวเลขแยกตามความหมาย | Accepted |
+| [0014](0014-mail-dispatcher-and-timing-floor.md) | ส่งอีเมลหลังตอบผ่าน dispatcher เบื้องหลัง และ timing floor ใน core | Accepted |
+| [0015](0015-filtered-password-blocklist.md) | Blocklist รหัสผ่านที่กรองตามกติกาของเรา | Accepted |

@@ -1,0 +1,13 @@
+version: "2"
+sql:
+  - engine: postgresql
+    # The prelude declares schema app, which bootstrap creates outside goose; migrations/ is the schema.
+    schema:
+      - internal/adapter/postgres/sqlc_schema_app.sql
+      - migrations
+    queries: internal/adapter/postgres/queries
+    gen:
+      go:
+        package: sqlc
+        out: internal/adapter/postgres/sqlc
+        sql_package: pgx/v5

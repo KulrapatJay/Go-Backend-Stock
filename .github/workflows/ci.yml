@@ -35,6 +35,7 @@ jobs:
       MIGRATION_DATABASE_URL: postgres://app_migrator:ci_migrator_password@localhost:5432/stock?sslmode=disable
       TEST_ADMIN_DATABASE_URL: postgres://postgres:ci_admin_password@localhost:5432/stock?sslmode=disable
       TEST_RUNTIME_DATABASE_URL: postgres://app_runtime:ci_runtime_password@localhost:5432/stock?sslmode=disable
+      TEST_MAINTENANCE_DATABASE_URL: postgres://app_maintenance:ci_maintenance_password@localhost:5432/stock?sslmode=disable
       REQUIRE_INTEGRATION: "1"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -62,6 +63,11 @@ jobs:
         run: |
           make swagger
           git diff --exit-code -- docs/api
+
+      - name: sqlc code is regenerated and committed
+        run: |
+          make sqlc
+          make sqlc-clean
 
       - name: Bootstrap database roles
         run: |

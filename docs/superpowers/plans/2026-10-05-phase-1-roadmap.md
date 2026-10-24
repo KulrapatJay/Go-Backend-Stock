@@ -10,7 +10,7 @@
 
 **Spec:** [แบบระบบสำหรับตรวจยืนยัน](../specs/2026-10-05-phase-1-design.md) โดยยึดข้อกำหนดใน [AGENTS.md](../../../AGENTS.md)
 
-**Status:** ผู้ใช้ยืนยันให้เริ่มตามลำดับแล้ว จัดทำข้อเสนอ milestone 0 ใน spec ที่ลิงก์ด้านบนแล้ว ผู้ใช้ยืนยันข้อเสนอเดิมและเลื่อนหน้าหุ้นรายตัว/กราฟไปเฟสถัดไปแล้ว (2026-10-14) และยืนยันแบบ email verification, portfolio name uniqueness และกติการหัสผ่านแล้ว milestone 0 ผ่านการตรวจรับ; milestone 1 ผ่านการตรวจรับเมื่อ 2026-10-15 (ลงมือครบทุก task, self-review ทั้ง branch ไม่พบ Critical/Important, CI บน GitHub ผ่าน) ขั้นต่อไปคือแตกแผนย่อยของ milestone 2 ยังไม่เริ่ม
+**Status:** ผู้ใช้ยืนยันให้เริ่มตามลำดับแล้ว จัดทำข้อเสนอ milestone 0 ใน spec ที่ลิงก์ด้านบนแล้ว ผู้ใช้ยืนยันข้อเสนอเดิมและเลื่อนหน้าหุ้นรายตัว/กราฟไปเฟสถัดไปแล้ว (2026-10-14) และยืนยันแบบ email verification, portfolio name uniqueness และกติการหัสผ่านแล้ว milestone 0 ผ่านการตรวจรับ; milestone 1 ผ่านการตรวจรับเมื่อ 2026-10-15 (ลงมือครบทุก task, self-review ทั้ง branch ไม่พบ Critical/Important, CI บน GitHub ผ่าน) milestone 2 ผ่านการตรวจรับเมื่อ 2026-10-17 (ลงมือครบทุก task, รีวิวทั้ง branch ด้วย subagent แก้ Important ครบ 4 ข้อ) milestone 3 แผน 3a ผ่านการตรวจรับเมื่อ 2026-10-20 (รีวิวทั้ง branch ด้วย subagent แก้ Important ครบ 4 ข้อ, CI บน GitHub ผ่าน) แผน 3b ผ่านการตรวจรับเมื่อ 2026-10-21 (รีวิวทั้ง branch ด้วย subagent แก้ Important 2 ข้อและ Minor 4 ข้อ; CI บน GitHub ยังไม่ได้รันเพราะยังไม่ push) แผน 3c ผ่านการตรวจรับเมื่อ 2026-10-22 (รีวิวทั้ง branch ด้วย subagent แก้ Important 1 ข้อและ Minor 6 ข้อ) milestone 3 ครบทุกแผน; CI บน GitHub ของ 3b/3c ยังไม่ได้รันเพราะยังไม่ push milestone 4 มี design ([spec](../specs/2026-10-22-milestone-4-auth-design.md)) แบ่งเป็นแผน 4a/4b/4c; แผน 4a ลงมือครบแล้ว รอตรวจรับ ขั้นต่อไปคือแผน 4b
 
 ## Global Constraints
 
@@ -86,37 +86,72 @@
 
 ### 2. Domain + ports + กติกาข้อมูลพื้นฐาน
 
-**ไฟล์หลัก:** `internal/core/domain/{user,session,portfolio,transaction,money,price,audit,errors}.go`, `internal/core/port/` ตามรายชื่อและ signatures ที่ยืนยันใน milestone 0
+**แผนลงมือ:** [2026-10-16-milestone-2-domain-ports.md](2026-10-16-milestone-2-domain-ports.md)
 
-- [ ] สร้าง entities/value types และ validation สำหรับ quantity/price/fee, symbol, เวลา และ decimal strings
-- [ ] สร้าง service/repository/provider ports, Clock และขอบเขต atomic operations ตามแบบที่ยืนยัน
-- [ ] เพิ่ม unit tests สำหรับ precision/scale, ค่าติดลบ/ศูนย์ และค่าที่เกินช่วง โดยไม่ต้องใช้ DB หรือ Fiber
+**ไฟล์หลัก:** `internal/core/domain/` (value types, entities, errors), `internal/core/port/` (repository ports, UnitOfWork, Clock), `internal/core/boundary_test.go`
+
+- [x] สร้าง entities/value types และ validation สำหรับ quantity/price/fee, symbol, เวลา และ decimal strings
+- [x] สร้าง service/repository/provider ports, Clock และขอบเขต atomic operations ตามแบบที่ยืนยัน (สร้างเฉพาะ repository ports, UnitOfWork และ Clock ที่ milestone 3 ใช้; service/provider ports สร้างใน milestone ที่ใช้จริง ตามที่ผู้ใช้ยืนยัน 2026-10-16)
+- [x] เพิ่ม unit tests สำหรับ precision/scale, ค่าติดลบ/ศูนย์ และค่าที่เกินช่วง โดยไม่ต้องใช้ DB หรือ Fiber
 
 **ผ่านเมื่อ:** core compile/test ได้เองและไม่มี import ของ Fiber, pgx, sqlc-generated code หรือ provider SDK
 
+**ข้อที่ส่งต่อให้ milestone 3** (จากรีวิวทั้ง branch 2026-10-17 ระดับ Minor):
+- ทำ helper แปลง error จาก `Parse*` ของข้อมูลที่อ่านจาก DB ให้เป็น `internal` (ไม่ให้ข้อมูลเสียใน DB กลายเป็น 400) และให้ `ID` map กับ pgx ได้โดยไม่ต้องผ่าน string
+- เขียน contract ของ ports ให้ครบใน comment และ repository tests: unique violation → `ErrPortfolioNameConflict`/`ErrIdentityConflict`, not-found ของทุก method, `TransactionRepository.Update` ต้องกรองด้วย portfolio_id และห้ามแก้ portfolio_id, tie-break ของการเรียง list, พฤติกรรม `IdempotencyRepository.Save` เมื่อชน
+- DB CHECK ขนาด audit metadata ต้องนับแบบเดียวกับ Go (raw bytes ≤ 8 KiB) เพราะ `jsonb::text` เพิ่มช่องว่าง; email ต้องเก็บ/ค้นด้วยค่าที่ Go normalize แล้ว ไม่พึ่ง `lower()` ใน SQL
+- `NewTransactionFilter` ยังรับ `Symbol{}`/`Side("")` ที่ว่าง; entity ที่ไม่มี constructor (Transaction/Portfolio/User) ยังส่ง zero value ถึง repository ได้ (DB CHECK/FK จับเป็น internal)
+- `ParseExecutedAt` รับทศนิยม 7 หลักที่หลักท้ายเป็น 0 และ `,` แทน `.` (ไม่ปัดค่า แต่ไม่ตรง design §3); comment ของ sentinel errors ขัดกับ comment ใน ports; `errors.Is(err, (*domain.Error)(nil))` panic
+- อีเมลรับอักขระพิเศษของ mail syntax (`,;<>`) และ format characters: Mailer adapter (milestone 4) ต้อง validate ด้วย `net/mail` ก่อนใส่ header
+- เอกสาร: spec หัวข้อ 8 ยังเขียนว่า `domain.ID` เป็น UUID string และ design §3 เขียน `ParseID(s)` (โค้ดจริงคือ `ParseID(field, s)`)
+
 ### 3. Schema + goose + sqlc + repositories + audit persistence
+
+**แผนลงมือ:** [design](../specs/2026-10-17-milestone-3-persistence-design.md) — [3a](2026-10-17-milestone-3a-schema-sqlc-audit.md) (schema, roles, sqlc, audit), [3b](2026-10-20-milestone-3b-auth-repositories.md) (repositories ฝั่ง auth), [3c](2026-10-21-milestone-3c-portfolio-repositories.md) (repositories ฝั่งพอร์ต)
 
 **ไฟล์หลัก:** `migrations/`, `sqlc.yaml`, `internal/adapter/postgres/queries/`, `internal/adapter/postgres/sqlc/`, `internal/adapter/postgres/` สำหรับ repository implementations/tests
 
-- [ ] เพิ่มตาราง constraints/indexes และ DB role permissions ตามแบบ รวม instruments (surrogate key) และ version columns; ไม่แก้ managed schema ของ Supabase; migration ใช้เลขลำดับต่อเนื่องและไม่แก้ไฟล์ที่รันแล้ว
-- [ ] เขียน SQL queries, generate sqlc, map numeric/domain types และทดสอบ repository กับ PostgreSQL จริง
-- [ ] สร้าง transaction coordination และ audit append/read พร้อม failure injection ที่พิสูจน์ว่า audit/data rollback ด้วยกัน
-- [ ] ทดสอบ runtime role แก้/ลบ audit ไม่ได้, maintenance cleanup จำกัดเฉพาะสิทธิ์ที่จำเป็น และ audit ไม่ถูก cascade ลบตามข้อมูลต้นทาง
-- [ ] เปิด CI ตรวจ goose บน DB ว่าง, repository integration tests และ `sqlc generate` ตามด้วย `git diff --exit-code`
+- [x] เพิ่มตาราง constraints/indexes และ DB role permissions ตามแบบ รวม instruments (surrogate key) และ version columns; ไม่แก้ managed schema ของ Supabase; migration ใช้เลขลำดับต่อเนื่องและไม่แก้ไฟล์ที่รันแล้ว
+- [x] เขียน SQL queries, generate sqlc, map numeric/domain types และทดสอบ repository กับ PostgreSQL จริง (3a: sqlc + mapper + `AuditRepository`; 3b: repositories ฝั่ง auth ทั้ง 6 ตัว; 3c: repositories ฝั่งพอร์ตทั้ง 4 ตัว + keyset pagination)
+- [x] สร้าง transaction coordination และ audit append/read พร้อม failure injection ที่พิสูจน์ว่า audit/data rollback ด้วยกัน (3a: `withinTx` + failure injection ด้วย audit; 3c: `Store` เป็น `port.UnitOfWork` + failure injection ด้วยพอร์ตจริง + ขายพร้อมกันไม่เกินที่ถือ)
+- [x] ทดสอบ runtime role แก้/ลบ audit ไม่ได้, maintenance cleanup จำกัดเฉพาะสิทธิ์ที่จำเป็น และ audit ไม่ถูก cascade ลบตามข้อมูลต้นทาง
+- [x] เปิด CI ตรวจ goose บน DB ว่าง, repository integration tests และ `sqlc generate` ตามด้วย `git diff --exit-code`
 
 **ผ่านเมื่อ:** schema สร้างจากศูนย์ได้, generated code ไม่มี diff, role permissions ถูกต้อง และ integration tests ผ่านโดยไม่ใช้ Supabase จริง
 
+**ข้อที่ส่งต่อให้แผน 3b/3c** (จากรีวิว 3a 2026-10-20; ต้องตัดสินใจในแผนก่อนเขียน repository):
+- **conflict ทำให้ transaction จบ:** unique violation ที่แปลงเป็น `ErrPortfolioNameConflict`/`ErrIdentityConflict`/`ErrIdempotencyConflict` ไม่ทำให้ transaction กลับมาใช้ได้ (PostgreSQL abort แล้ว) แต่ละ repository ต้องเลือก `INSERT ... ON CONFLICT DO NOTHING` + ตรวจจำนวนแถว (ใช้กับ index บน `lower(name)` ได้) หรือ savepoint และ service ที่ต้องบันทึก audit หลัง conflict ต้องทำใน transaction ใหม่ — **3b:** users/auth_providers ใช้ `ON CONFLICT DO NOTHING` แล้ว; **3c:** portfolios ใช้ `ON CONFLICT` ตอน insert; การเปลี่ยนชื่อซ้ำและ idempotency `Save` ที่ชน ยอมให้ transaction จบตาม `port.UnitOfWork`
+- **instrument ที่ provider เปลี่ยน symbol** (FB → META โดย asset id เดิม): **ผู้ใช้เลือก (2026-10-20) บันทึกเป็นข้อจำกัดของ phase 1** ตาม AGENTS.md ที่ไม่รวม symbol changes — runtime ยังไม่มีสิทธิ์ UPDATE `instruments`; แผน 3c ต้องแปลงการชน `instruments_provider_asset_unique` เป็น error ที่อ่านเข้าใจ (ไม่ใช่ 500) และระบุข้อจำกัดใน README/UI — **3c:** คืน `unknown_symbol` (ผู้ใช้เลือก 2026-10-21) และระบุใน README แล้ว; UI ระบุตอนทำ frontend
+- **`transactions_portfolio_id_fkey` แปลงเป็น `ErrPortfolioNotEmpty` ทั้งสองทิศ:** ย้ายการแปลงนี้ไปที่ `DeleteOwnedEmpty` แทนการแปลงทั่วไป (INSERT ลงพอร์ตที่ไม่มีอยู่จะได้ 409 ผิดความหมาย) — **3c:** ย้ายแล้ว
+- **OTP ขอพร้อมกัน:** `otp_challenges_one_open_idx` ชนแล้วเป็น `internal` ให้ lock แถว user ก่อน `InvalidateOpen` + `Insert` ตาม phase 1 spec หัวข้อ 9 — **3b:** `TestOTPChallengeConcurrentReissueUnderUserLock` พิสูจน์ลำดับ lock นี้ที่ระดับ repository แล้ว; service ของ milestone 5 ต้องทำตาม
+- **เล็กน้อยจากรีวิว 3b (2026-10-20, เลื่อนไปทำใน milestone 4–5 ตอนที่ service เริ่มใช้ repositories ฝั่ง auth):** test ยังไม่คุม `FOR UPDATE` ของ `OTPChallengeRepository.Lock` และ `Lock`/`RecordFailure` กับ purpose อื่น (พฤติกรรมจริงถูกต้อง); เวลาใน Go (ns) กับใน PostgreSQL (µs) ต่างกันได้ในช่วง 1 µs ตอนตรวจหมดอายุ; `Admit` ที่ได้ rule `Limit: 0` คืน `not_found` แทน `internal` (rule ควรมาจาก `NewRateLimitRule` เสมอ); ~~`TestOTPChallengeConcurrentReissueUnderUserLock` เรียก `t.Fatal` จาก goroutine~~ (แก้ในรอบรีวิว 3c: สร้าง challenge ไว้ก่อน)
+- **เล็กน้อย:** rollback ใน `withinTx` ยังไม่มี timeout; request ที่ client ยกเลิกถูกจัดเป็น `internal` (log เป็น 500); test identity ครอบเฉพาะ `rate_limit_events` ควรเพิ่ม `transactions.sequence` (**3c:** `TestTransactionInsertKeepsEveryDigit` insert ผ่าน `app_runtime` และได้ sequence แล้ว); integration tests ทิ้งแถว audit ใน DB dev (runtime ลบไม่ได้ ล้างด้วย `docker compose down -v`); `numeric(28,10)` ปัดเงียบถ้าข้าม `Parse*` ทุก repository test ต้องส่งค่าผ่าน `Parse*` เสมอ
+
 ### 4. Auth + email verification + sessions + Google login + HTTP handlers
+
+**แผนลงมือ:** [design](../specs/2026-10-22-milestone-4-auth-design.md) — [4a](2026-10-22-milestone-4a-auth-building-blocks.md) (ชิ้นส่วนพื้นฐาน; ลงมือครบ รอตรวจรับ); 4b (AuthService, EmailVerificationService, middleware, endpoints) และ 4c (Google OIDC) ยังไม่มีแผน
+
+**แผน 4a ปิดข้อส่งต่อแล้ว:** `ParseEmail` ปฏิเสธ `"(),:;<>[\]` และอักขระซ่อน (ข้อส่งต่อจาก milestone 2); `service.NowForStorage` ตัดเวลาที่ microsecond (รีวิว 3b); `service.NewRateLimitPolicy` สร้าง rules ผ่าน `domain.NewRateLimitRule` เท่านั้น จึงไม่มี rule ที่ `Limit` เป็นศูนย์ (รีวิว 3b) — ที่เหลือของข้อส่งต่อ 3b (`FOR UPDATE` ของ `OTPChallengeRepository.Lock`, purpose อื่น) ปิดใน 4b ตามหัวข้อ 9 ของ design
+
+**ข้อส่งต่อจากรีวิวทั้ง branch ของแผน 4a ไป 4b** (ledger ของแผนเป็น git-ignored จึงจดไว้ที่นี่):
+
+- ก่อน merge: `.env.example` ที่ commit ต้องมี `CSRF_SECRET`, `OTP_SECRET`, `RATE_LIMIT_SECRET`, `OIDC_SECRET` ที่มีค่า `dev-only-…` ยาวอย่างน้อย 32 bytes และต่างกันทั้งสี่ตัว (ตอนนี้ `config.Load` ต้องใช้ค่าเหล่านี้ใน dev จึงทำให้ `cp .env.example .env && docker compose up` ล้มจนกว่าจะมี) — ผู้ใช้เป็นเจ้าของไฟล์นี้
+- งานแรกของ 4b: `domain.RateLimitDecision` ต้องบอก scope ที่ปฏิเสธ (เพิ่ม field `Scope` และตั้งจาก `k.scope` ใน `postgres/ratelimit.go`) เพื่อใส่ `scope` ใน metadata ของ `security.rate_limited` ตาม spec หัวข้อ 5
+- งานแรกของ 4b: เสริมการปิดค่าลับก่อนที่ `RegisterInput`/`LoginInput` จะถือ `Password`: `Password`, `OTPCode` และ `config.Secret` ยังพิมพ์ค่าจริงเมื่อใช้ `%d` หรือเมื่ออยู่ใน field ที่ไม่ export ของ struct อื่น (fmt ไม่เรียก `String()` ที่นั่น) — พิจารณาเก็บค่าหลัง pointer + `fmt.Formatter` และชนิดที่ปิดค่าลับสำหรับ session token/CSRF token/nonce พร้อม test ที่ format input จริง
+- ตอนต่อสาย 4b: ส่ง `service.NowForStorage(clock)` เป็น `now` ของ `RateLimitRepository.Admit` ด้วย; ต่อ `ClientIPResolver` ด้วย `RemoteAddr().String()` และ header `X-Forwarded-For` ทุกบรรทัดตามลำดับ (ปิด trust proxy ของ Fiber เอง); ตรวจ cookie `csrf_nonce` ว่าเป็น base64url 43 ตัวก่อนสร้าง binding; login ต้องตัดรหัสผ่านเกิน 32 ตัวก่อน hash และมี test; ปิด HTTP ก่อนแล้วจึงเรียก `Dispatcher.Close` ด้วยเวลาที่เหลือของ `SHUTDOWN_TIMEOUT`; `ErrQueueFull`/`ErrDispatcherClosed` ต้อง log แล้วไปต่อ ห้ามเปลี่ยนคำตอบ 202
+- เก็บกวาด (ทำเมื่อแตะไฟล์นั้น): `DefaultArgon2Params` เป็นตัวแปร global ที่แก้ได้ → เปลี่ยนเป็นฟังก์ชัน; `NewCSRFCodec`/`NewPacer` ต้องปฏิเสธ clock ที่เป็น nil; `deliver` ควรไม่นับ error ของ `Quit` หลัง DATA สำเร็จ และคืน `ctx.Err()` เมื่อถูก cancel เพื่อให้ Dispatcher จัดเป็น `canceled`; worker ของ `Dispatcher` ต้องมี `recover` ที่ log `mail.panic`; ใช้ `domain.MaxOTPFailedAttemptsCeiling` แทนเลข 20 ใน `config/auth.go`; `parseCIDRs` ควร normalise/ปฏิเสธ prefix แบบ IPv4-mapped; warn log ของ hasher ควรแยก timeout กับ cancel; เติมค่าเริ่มต้นของ `MAIL_SEND_TIMEOUT` (10s) ใน README
+- ต้องถามผู้ใช้ใน 4b: rate limit ของ IPv6 ใช้ address เต็ม (/128) ตาม spec 4.7 ซึ่งผู้ใช้ที่มี prefix /64 หมุน address เพื่อเลี่ยงโควตาได้ — จะจัดกลุ่มเป็น /64 หรือไม่ (ถ้าเปลี่ยนให้เขียน ADR)
+- ควรเพิ่มใน CI: service Mailpit และ `REQUIRE_MAIL_INTEGRATION=1` เพื่อให้ test ส่งอีเมลจริงไม่พังเงียบ ๆ
 
 **ไฟล์หลัก:** `internal/core/service/auth*.go`, `internal/core/service/otp*.go`, `internal/core/service/email_verification*.go`, `internal/adapter/http/auth*.go`, `internal/adapter/http/middleware/`, `internal/adapter/identity/`, `internal/adapter/mail/`
 
-- [ ] ทำ OTP generation/HMAC แบบมี purpose และ SMTP adapter ไป Mailpit ตั้งแต่ขั้นนี้ เพราะ signup ต้องยืนยันอีเมลก่อน login ได้
+- [x] ทำ OTP generation/HMAC แบบมี purpose และ SMTP adapter ไป Mailpit ตั้งแต่ขั้นนี้ เพราะ signup ต้องยืนยันอีเมลก่อน login ได้ (แผน 4a: `GenerateOTP`, `OTPCodec`, `SMTPMailer`, `Dispatcher`; `make test-mail` ส่งถึง Mailpit จริง)
 - [ ] ทำ register ที่ตอบ 202 แบบเดียวกันทุกกรณี, confirm/resend รหัสยืนยันอีเมล และปฏิเสธ login ของบัญชีที่ยังไม่ยืนยันด้วย `email_not_verified`
 - [ ] ทำ email/password login/logout, current-user endpoint และ session authentication พร้อม expiry/revocation
 - [ ] เพิ่ม cookie, CSRF, Origin checks, login rate limit และ error mapping พร้อม audit ของผลสำเร็จ/ล้มเหลว
 - [ ] เพิ่ม Google OIDC, state/nonce validation, PKCE S256 และ explicit account linking; ปิด flow ชัดเจนเมื่อ config ไม่ครบ
 - [ ] login ของอีเมลที่ไม่มีบัญชี/บัญชี Google-only ตรวจกับ hash จำลองและตอบแบบเดียวกับรหัสผิด
-- [ ] ทำ password validator (ความยาว, ASCII, พิมพ์เล็ก/ใหญ่/อักขระพิเศษ, blocklist แบบ go:embed, ไม่มีส่วนของอีเมล) พร้อม unit tests ของทุก field reason
+- [x] ทำ password validator (ความยาว, ASCII, พิมพ์เล็ก/ใหญ่/อักขระพิเศษ, blocklist แบบ go:embed, ไม่มีส่วนของอีเมล) พร้อม unit tests ของทุก field reason (แผน 4a: `domain.ParsePassword`, `service.PasswordPolicy`, ADR-0015)
 - [ ] ทดสอบ fake identity provider, replayed callback, invalid audience/issuer, session หมดอายุ/revoked และการ rollback เมื่อ audit insert ล้มเหลว
 - [ ] เพิ่ม auth annotations/examples แล้ว generate เอกสารใหม่ ตรวจ Swagger UI/browser cookie/CSRF โดยไม่ลดความปลอดภัย พร้อม curl cookie-jar examples และขั้นตอน Google login สำหรับ flow ที่ UI ไม่รองรับ ทั้งหมดทดสอบได้โดยไม่ใช้ Next.js
 

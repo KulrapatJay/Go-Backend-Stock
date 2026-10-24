@@ -1,6 +1,6 @@
 # Phase 1 — แบบระบบ Backend สำหรับตรวจยืนยัน
 
-**สถานะ:** milestone 0 ผ่านการตรวจรับเมื่อ 2026-10-14 — ผู้ใช้ยืนยันแบบทั้งหมดรวม email verification, portfolio name uniqueness และกติการหัสผ่าน ยังไม่ใช่ implementation; milestone 1 (โครง Go + Docker/PostgreSQL + CI + application log + Swagger) ผ่านการตรวจรับเมื่อ 2026-10-15
+**สถานะ:** milestone 0 ผ่านการตรวจรับเมื่อ 2026-10-14 — ผู้ใช้ยืนยันแบบทั้งหมดรวม email verification, portfolio name uniqueness และกติการหัสผ่าน ยังไม่ใช่ implementation; milestone 1 (โครง Go + Docker/PostgreSQL + CI + application log + Swagger) ผ่านการตรวจรับเมื่อ 2026-10-15; milestone 2 (domain + ports) ผ่านการตรวจรับเมื่อ 2026-10-17
 
 **ข้อกำหนดหลัก:** [AGENTS.md](../../../AGENTS.md) และ [roadmap](../plans/2026-10-05-phase-1-roadmap.md)
 
@@ -201,9 +201,9 @@ Direct connection หรือ session pooler ตามเครือข่า�
 
 ## 8. Ports และชนิดข้อมูล
 
-Signatures นี้เป็นข้อเสนอ interface ใน core ไม่ใช่ไฟล์โค้ดที่สร้างแล้ว ทุกชนิด `domain.*` เป็น plain Go value ไม่มี Fiber/pgx/sqlc/SDK types
+ทุกชนิด `domain.*` เป็น plain Go value ไม่มี Fiber/pgx/sqlc/SDK types. **Milestone 2 (2026-10-16):** สร้าง repository ports, `UnitOfWork`/`TxRepositories` และ `Clock` แล้วใน `internal/core/port` ตาม [milestone 2 design](2026-10-16-milestone-2-domain-ports-design.md) ส่วน service ports และ provider ports ด้านล่างยังเป็นข้อเสนอ และสร้างใน milestone ที่ใช้จริง; 4 พารามิเตอร์เปลี่ยนเป็นชนิดที่ตรวจแล้วตาม [ADR-0013](../../adr/0013-domain-value-types.md)
 
-ชนิดร่วม: `domain.ID` เป็น UUID string ที่ผ่าน validation, `domain.Principal` มี UserID/SessionID, `domain.RequestMeta` มี RequestID/MaskedIP/UserAgent; ไม่รับ actor ที่ client กำหนด `domain.Page` มี Limit/Cursor; Page result มี Items/NextCursor; `domain.Version` เป็น int32 ที่มากกว่าศูนย์
+ชนิดร่วม: `domain.ID` ห่อ UUID ที่ผ่าน validation (สร้างด้วย `NewID()` หรือ `ParseID(field, s)`; `String()` คืนรูปมาตรฐานตัวพิมพ์เล็ก), `domain.Principal` มี UserID/SessionID, `domain.RequestMeta` มี RequestID/MaskedIP/UserAgent; ไม่รับ actor ที่ client กำหนด `domain.Page` มี Limit/Cursor; Page result มี Items/NextCursor; `domain.Version` เป็น int32 ที่มากกว่าศูนย์
 
 Commands/results อ้าง field contract ในหัวข้อ API: RegisterInput/LoginInput, ResetPasswordInput, PortfolioInput, TransactionInput; domain.Transaction เพิ่ม ID/PortfolioID/InstrumentID/Symbol/Sequence/Version/CreatedAt/UpdatedAt; domain.Portfolio มี Version; domain.Instrument มี ID/Symbol/ProviderAssetID/Name/Exchange/AssetClass/Status/Source/VerifiedAt; SessionGrant มี User, raw Token, ExpiresAt สำหรับ HTTP adapter ตั้ง cookie เท่านั้น ไม่ serialize/log raw Token
 
@@ -251,7 +251,7 @@ type InstrumentProvider interface { // external lookup: Alpaca Assets API หร
     Lookup(context.Context, string) (domain.Instrument, error) // ErrUnknownSymbol / ErrDependencyUnavailable
 }
 type InstrumentRepository interface {
-    BySymbol(context.Context, string) (domain.Instrument, error)
+    BySymbol(context.Context, domain.Symbol) (domain.Instrument, error)
     Upsert(context.Context, domain.Instrument) (domain.Instrument, error) // คืนแถวจริงรวม ID; ชน symbol จาก request พร้อมกันให้คืนแถวที่มีอยู่
 }
 type IdentityProvider interface {
@@ -280,20 +280,21 @@ type TxRepositories interface {
 }
 type UserRepository interface {
     ByID(context.Context, domain.ID) (domain.User, error)
-    ByEmail(context.Context, string) (domain.User, error)
+    ByEmail(context.Context, domain.Email) (domain.User, error)
+    CredentialsByEmail(context.Context, domain.Email) (domain.UserCredentials, error) // query เดียวที่อ่าน password_hash: login/register/reset
     Lock(context.Context, domain.ID) (domain.User, error)
     Insert(context.Context, domain.User) error
-    SetPassword(context.Context, domain.ID, string, time.Time) error
+    SetPassword(context.Context, domain.ID, domain.PasswordHash, time.Time) error
     MarkEmailVerified(context.Context, domain.ID, time.Time) error // no-op ถ้ายืนยันแล้ว
 }
 type SessionRepository interface {
     ByTokenHash(context.Context, []byte) (domain.Session, error)
     Insert(context.Context, domain.Session) error
-    Revoke(context.Context, domain.ID, time.Time, string) (bool, error)
-    RevokeAll(context.Context, domain.ID, time.Time, string) (int64, error)
+    Revoke(context.Context, domain.ID, time.Time, domain.RevokeReason) (bool, error)
+    RevokeAll(context.Context, domain.ID, time.Time, domain.RevokeReason) (int64, error)
 }
 type IdentityRepository interface {
-    BySubject(context.Context, string, string) (domain.AuthProvider, error)
+    BySubject(context.Context, domain.IdentityProviderName, string) (domain.AuthProvider, error)
     Insert(context.Context, domain.AuthProvider) error
 }
 type OIDCFlowRepository interface {
