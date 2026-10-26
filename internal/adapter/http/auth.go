@@ -7,6 +7,7 @@ import (
 	"github.com/gofiber/fiber/v3"
 
 	"go-backend-stock/internal/adapter/http/middleware"
+	"go-backend-stock/internal/core/domain"
 	"go-backend-stock/internal/core/port"
 	"go-backend-stock/internal/core/service"
 )
@@ -17,10 +18,16 @@ type CSRFTokens interface {
 	Verify(token, binding string) error
 }
 
+// PasswordParser applies the whole password policy (service.PasswordPolicy implements it).
+type PasswordParser interface {
+	Parse(raw string, email domain.Email) (domain.Password, error)
+}
+
 // AuthOptions wires the auth endpoints. A nil Service registers no auth route, so the health and
 // docs tests can build the server without it.
 type AuthOptions struct {
 	Service       port.AuthService
+	Passwords     PasswordParser
 	CSRF          CSRFTokens
 	ClientIP      *ClientIPResolver // nil trusts no proxy header
 	PublicOrigin  string            // exact origin of unsafe requests, such as http://localhost:8080
@@ -28,10 +35,11 @@ type AuthOptions struct {
 }
 
 type authHandlers struct {
-	auth     port.AuthService
-	csrf     CSRFTokens
-	clientIP *ClientIPResolver
-	cookies  cookieJar
+	auth      port.AuthService
+	passwords PasswordParser
+	csrf      CSRFTokens
+	clientIP  *ClientIPResolver
+	cookies   cookieJar
 }
 
 // registerAuthRoutes adds the /api/v1/auth routes. Each route lists its middleware explicitly, in
@@ -44,10 +52,13 @@ func registerAuthRoutes(app *fiber.App, opts AuthOptions) {
 	if resolver == nil {
 		resolver = NewClientIPResolver(nil)
 	}
-	h := &authHandlers{auth: opts.Service, csrf: opts.CSRF, clientIP: resolver, cookies: newCookieJar(opts.SecureCookies)}
+	h := &authHandlers{auth: opts.Service, passwords: opts.Passwords, csrf: opts.CSRF, clientIP: resolver, cookies: newCookieJar(opts.SecureCookies)}
 	session := middleware.ResolveSession(opts.Service, h.cookies.sessionName)
 
+	csrf := middleware.CSRF(opts.CSRF, opts.PublicOrigin, h.cookies.nonceName)
+
 	app.Get("/api/v1/auth/csrf", session, h.csrfToken)
+	app.Post("/api/v1/auth/register", session, csrf, h.register)
 }
 
 // CSRFToken godoc
@@ -80,6 +91,7 @@ func (h *authHandlers) csrfToken(c fiber.Ctx) error {
 	if err != nil {
 		return err
 	}
+	c.Set(fiber.HeaderCacheControl, "no-store") // a token and its nonce cookie must not be cached
 	if !signedIn {
 		// Renewed on every call so the cookie lives exactly as long as the newest token.
 		h.cookies.set(c, h.cookies.nonceName, nonce, expiresAt)

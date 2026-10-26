@@ -73,7 +73,7 @@ test-integration:
 	TEST_ADMIN_DATABASE_URL="$(TEST_ADMIN_DATABASE_URL)" \
 	TEST_RUNTIME_DATABASE_URL="$(TEST_RUNTIME_DATABASE_URL)" \
 	TEST_MAINTENANCE_DATABASE_URL="$(TEST_MAINTENANCE_DATABASE_URL)" \
-	go test -race -count=1 ./internal/adapter/postgres/...
+	go test -race -count=1 ./internal/adapter/postgres/... ./internal/adapter/http/...
 
 MAILPIT_SMTP_ADDR ?= 127.0.0.1:1025
 MAILPIT_API_URL ?= http://127.0.0.1:8025

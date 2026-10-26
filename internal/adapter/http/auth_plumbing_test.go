@@ -64,6 +64,9 @@ func TestCSRFTokenBeforeLoginSetsANonceCookie(t *testing.T) {
 	if out.ExpiresAt.IsZero() || out.ExpiresAt.Location().String() != "UTC" {
 		t.Errorf("expires_at = %v, want a UTC time", out.ExpiresAt)
 	}
+	if got := resp.Header.Get("Cache-Control"); got != "no-store" {
+		t.Errorf("Cache-Control = %q, want no-store (a CSRF token and nonce cookie must not be cached)", got)
+	}
 
 	// The same browser asks again: the nonce is kept (and its cookie renewed) so older tabs keep working.
 	resp2, out2 := getCSRF(t, app, &nethttp.Cookie{Name: "csrf_nonce", Value: nonce.Value})

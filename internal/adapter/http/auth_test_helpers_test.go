@@ -89,18 +89,18 @@ func newAuthTestServer(t *testing.T, auth port.AuthService, secure bool) (*fiber
 }
 
 // syncBuffer is a bytes.Buffer that log handlers on several goroutines can share.
-type syncBuffer struct { //nolint:unused // the login tests of tasks 9-12 use it.
+type syncBuffer struct {
 	mu sync.Mutex
 	b  bytes.Buffer
 }
 
-func (s *syncBuffer) Write(p []byte) (int, error) { //nolint:unused // see syncBuffer.
+func (s *syncBuffer) Write(p []byte) (int, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.b.Write(p)
 }
 
-func (s *syncBuffer) String() string { //nolint:unused // see syncBuffer.
+func (s *syncBuffer) String() string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.b.String()

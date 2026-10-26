@@ -12,4 +12,7 @@ type AuthService interface {
 	// Authenticate resolves a raw session cookie. An unknown, malformed, expired or revoked token
 	// returns domain.ErrUnauthenticated; a failing session store returns dependency_unavailable.
 	Authenticate(ctx context.Context, token string) (domain.Principal, error)
+	// Register creates an unverified account and sends it a verification code, or tells the owner
+	// of an existing account that someone tried to register; the answer is the same either way.
+	Register(ctx context.Context, in domain.RegisterInput, meta domain.RequestMeta) (domain.OTPReceipt, error)
 }
