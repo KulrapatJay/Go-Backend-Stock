@@ -42,3 +42,27 @@ type ConfirmEmailRequest struct {
 	ChallengeID string `json:"challenge_id" example:"0192f0c1-7a8e-7cc4-9d2b-3f6c1a2b4c5d"`
 	OTP         string `json:"otp" example:"042731"`
 }
+
+// LoginRequest is the body of POST /api/v1/auth/login.
+type LoginRequest struct {
+	Email    string `json:"email" example:"user@example.com"`
+	Password string `json:"password" example:"Zq9!kVx1"`
+}
+
+// UserResponse is an account as the API shows it. It never carries the password hash.
+type UserResponse struct {
+	ID            string    `json:"id" example:"0192f0c1-7a8e-7cc4-9d2b-3f6c1a2b4c5d"`
+	Email         string    `json:"email" example:"user@example.com"`
+	EmailVerified bool      `json:"email_verified" example:"true"`
+	CreatedAt     time.Time `json:"created_at" example:"2026-10-24T09:30:00Z"`
+}
+
+func newUserResponse(u domain.User) UserResponse {
+	return UserResponse{ID: u.ID.String(), Email: u.Email.String(), EmailVerified: u.EmailVerifiedAt != nil, CreatedAt: u.CreatedAt.UTC()}
+}
+
+// SessionResponse answers a successful login. The session itself travels only in the cookie.
+type SessionResponse struct {
+	User      UserResponse `json:"user"`
+	ExpiresAt time.Time    `json:"expires_at" example:"2026-10-31T09:30:00Z"`
+}

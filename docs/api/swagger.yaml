@@ -56,6 +56,15 @@ definitions:
         example: ok
         type: string
     type: object
+  http.LoginRequest:
+    properties:
+      email:
+        example: user@example.com
+        type: string
+      password:
+        example: Zq9!kVx1
+        type: string
+    type: object
   http.OTPAcceptedResponse:
     properties:
       challenge_id:
@@ -82,6 +91,29 @@ definitions:
         type: string
       password:
         example: Zq9!kVx1
+        type: string
+    type: object
+  http.SessionResponse:
+    properties:
+      expires_at:
+        example: "2026-10-31T09:30:00Z"
+        type: string
+      user:
+        $ref: '#/definitions/http.UserResponse'
+    type: object
+  http.UserResponse:
+    properties:
+      created_at:
+        example: "2026-10-24T09:30:00Z"
+        type: string
+      email:
+        example: user@example.com
+        type: string
+      email_verified:
+        example: true
+        type: boolean
+      id:
+        example: 0192f0c1-7a8e-7cc4-9d2b-3f6c1a2b4c5d
         type: string
     type: object
 info:
@@ -213,6 +245,128 @@ paths:
           schema:
             $ref: '#/definitions/http.ErrorResponse'
       summary: Send a new verification code
+      tags:
+      - Auth
+  /api/v1/auth/login:
+    post:
+      consumes:
+      - application/json
+      description: 'Opens a session and sets it in the HttpOnly cookie session (__Host-session
+        over HTTPS; SameSite=Lax, Path=/); the body only describes it. An unknown
+        email, a wrong password and an account that signs in only with Google all
+        give the same 401. The right password of an account whose email is not verified
+        gives 403 email_not_verified. The pre-login csrf_nonce cookie is cleared:
+        call GET /api/v1/auth/csrf again for a token bound to the new session. Needs
+        X-CSRF-Token.'
+      operationId: login
+      parameters:
+      - description: Token from GET /api/v1/auth/csrf
+        in: header
+        name: X-CSRF-Token
+        required: true
+        type: string
+      - description: Email and password
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/http.LoginRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          headers:
+            Set-Cookie:
+              description: session=…; Path=/; Expires=…; HttpOnly; SameSite=Lax
+              type: string
+          schema:
+            $ref: '#/definitions/http.SessionResponse'
+        "400":
+          description: invalid_input or malformed_json
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+        "401":
+          description: invalid_credentials
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+        "403":
+          description: email_not_verified or csrf_failed
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+        "429":
+          description: rate_limited; wait Retry-After seconds
+          headers:
+            Retry-After:
+              description: Seconds to wait
+              type: integer
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+        "503":
+          description: server_busy (wait Retry-After seconds) or dependency_unavailable
+          headers:
+            Retry-After:
+              description: Seconds to wait (server_busy)
+              type: integer
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+      summary: Sign in with an email and a password
+      tags:
+      - Auth
+  /api/v1/auth/logout:
+    post:
+      description: 'Revokes the current session on the server and clears the session
+        cookie. Without an active session (none, expired or already revoked) it only
+        clears the cookie and still answers 204. Needs X-CSRF-Token: signed in, a
+        token bound to the session; otherwise one bound to the csrf_nonce cookie.'
+      operationId: logout
+      parameters:
+      - description: Token from GET /api/v1/auth/csrf
+        in: header
+        name: X-CSRF-Token
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: Signed out
+          headers:
+            Set-Cookie:
+              description: session=; Path=/; Expires=Tue, 10 Nov 2009 23:00:00 GMT;
+                HttpOnly; SameSite=Lax
+              type: string
+        "403":
+          description: csrf_failed
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+        "503":
+          description: dependency_unavailable
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+      summary: Sign out
+      tags:
+      - Auth
+  /api/v1/auth/me:
+    get:
+      description: Needs the session cookie from POST /api/v1/auth/login.
+      operationId: getCurrentUser
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/http.UserResponse'
+        "401":
+          description: unauthenticated
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+        "503":
+          description: 'dependency_unavailable: the session store could not be reached'
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+      summary: Get the signed-in account
       tags:
       - Auth
   /api/v1/auth/register:

@@ -64,6 +64,9 @@ func registerAuthRoutes(app *fiber.App, opts AuthOptions) {
 
 	app.Get("/api/v1/auth/csrf", session, h.csrfToken)
 	app.Post("/api/v1/auth/register", session, csrf, h.register)
+	app.Post("/api/v1/auth/login", session, csrf, h.login)
+	app.Get("/api/v1/auth/me", session, middleware.RequireAuth(), h.me)
+	app.Post("/api/v1/auth/logout", session, csrf, h.logout)
 	if opts.Verification != nil {
 		app.Post("/api/v1/auth/email-verification/request", session, csrf, h.requestVerification)
 		app.Post("/api/v1/auth/email-verification/confirm", session, csrf, h.confirmEmail)

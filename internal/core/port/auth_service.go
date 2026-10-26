@@ -15,6 +15,15 @@ type AuthService interface {
 	// Register creates an unverified account and sends it a verification code, or tells the owner
 	// of an existing account that someone tried to register; the answer is the same either way.
 	Register(ctx context.Context, in domain.RegisterInput, meta domain.RequestMeta) (domain.OTPReceipt, error)
+	// Login checks the password and opens a session. Every failure that must not reveal the account
+	// returns domain.ErrInvalidCredentials; the right password of an unverified account returns
+	// domain.ErrEmailNotVerified. Failures are audited before the error returns.
+	Login(ctx context.Context, in domain.LoginInput, meta domain.RequestMeta) (domain.SessionGrant, error)
+	// CurrentUser returns the account of p; an account that no longer exists is ErrUnauthenticated.
+	CurrentUser(ctx context.Context, p domain.Principal) (domain.User, error)
+	// Logout revokes p's session. A zero p (no active session) does nothing; a session that was
+	// revoked meanwhile is not audited again.
+	Logout(ctx context.Context, p domain.Principal, meta domain.RequestMeta) error
 }
 
 // EmailVerificationService confirms that the owner of a local account controls its email address.

@@ -128,7 +128,7 @@ type harnessConfig struct {
 
 type harnessOption func(*harnessConfig)
 
-func withHasherParams(p service.Argon2Params) harnessOption { //nolint:unused // login tests of task 11 use it.
+func withHasherParams(p service.Argon2Params) harnessOption {
 	return func(c *harnessConfig) { c.hasher = p }
 }
 
@@ -467,13 +467,14 @@ func (b *browser) confirm(challengeID, otp string) (response, []byte) {
 	return b.do(nethttp.MethodPost, "/api/v1/auth/email-verification/confirm", map[string]string{"challenge_id": challengeID, "otp": otp}, nil)
 }
 
-// signUpAndVerify registers email and confirms it with the code the fake mailer received.
+// signUpAndVerify registers email and confirms it with the code the fake mailer received (it
+// records the normalized, lower-case address).
 func (b *browser) signUpAndVerify(email, password string) {
 	b.t.Helper()
 	if resp, body := b.register(email, password); resp.StatusCode != nethttp.StatusAccepted {
 		b.t.Fatalf("register = %d %s", resp.StatusCode, body)
 	}
-	mail := b.h.mailer.lastVerification(b.t, email)
+	mail := b.h.mailer.lastVerification(b.t, strings.ToLower(email))
 	if resp, body := b.confirm(mail.ChallengeID.String(), mail.OTP.Reveal()); resp.StatusCode != nethttp.StatusNoContent {
 		b.t.Fatalf("confirm = %d %s", resp.StatusCode, body)
 	}
@@ -483,4 +484,31 @@ func (b *browser) signUpAndVerify(email, password string) {
 func wrongCode(code string) string {
 	first := code[0] - '0'
 	return string(rune('0'+(first+1)%10)) + code[1:]
+}
+
+func (b *browser) login(email, password string) (response, []byte) {
+	b.t.Helper()
+	b.fetchCSRF()
+	return b.do(nethttp.MethodPost, "/api/v1/auth/login", map[string]string{"email": email, "password": password}, nil)
+}
+
+func (b *browser) me() (response, []byte) {
+	b.t.Helper()
+	return b.do(nethttp.MethodGet, "/api/v1/auth/me", nil, nil)
+}
+
+// logout asks for a token first, as a page would: the binding changed at login.
+func (b *browser) logout() (response, []byte) {
+	b.t.Helper()
+	b.fetchCSRF()
+	return b.do(nethttp.MethodPost, "/api/v1/auth/logout", nil, nil)
+}
+
+func (h *authHarness) sessionsOf(t *testing.T, userID string) int {
+	t.Helper()
+	var n int
+	if err := h.admin.QueryRow(context.Background(), `SELECT count(*) FROM app.sessions WHERE user_id = $1`, userID).Scan(&n); err != nil {
+		t.Fatalf("count sessions: %v", err)
+	}
+	return n
 }

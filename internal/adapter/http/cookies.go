@@ -33,7 +33,7 @@ func (j cookieJar) set(c fiber.Ctx, name, value string, expires time.Time) {
 
 // clear expires the cookie with the same attributes it was set with, so the browser accepts the
 // deletion (a __Host- cookie must keep Secure and Path=/).
-func (j cookieJar) clear(c fiber.Ctx, name string) { //nolint:unused // logout uses it in task 11.
+func (j cookieJar) clear(c fiber.Ctx, name string) {
 	c.Cookie(&fiber.Cookie{
 		Name: name, Value: "", Path: "/", Expires: fasthttp.CookieExpireDelete,
 		Secure: j.secure, HTTPOnly: true, SameSite: fiber.CookieSameSiteLaxMode,
