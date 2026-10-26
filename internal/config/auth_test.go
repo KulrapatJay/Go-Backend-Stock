@@ -119,6 +119,7 @@ func TestLoadAuthRejectsInvalidValues(t *testing.T) {
 		{"cidr trusting everything", func(e map[string]string) { e["TRUSTED_PROXY_CIDRS"] = "0.0.0.0/0" }, "TRUSTED_PROXY_CIDRS"},
 		{"ipv6 cidr trusting everything", func(e map[string]string) { e["TRUSTED_PROXY_CIDRS"] = "::/0" }, "TRUSTED_PROXY_CIDRS"},
 		{"one bad cidr in a list", func(e map[string]string) { e["TRUSTED_PROXY_CIDRS"] = "10.0.0.0/8,garbage" }, "TRUSTED_PROXY_CIDRS"},
+		{"ipv4-mapped cidr never matches", func(e map[string]string) { e["TRUSTED_PROXY_CIDRS"] = "::ffff:10.0.0.0/104" }, "TRUSTED_PROXY_CIDRS"},
 		{"smtp port zero", func(e map[string]string) { e["SMTP_PORT"] = "0" }, "SMTP_PORT"},
 		{"smtp port too large", func(e map[string]string) { e["SMTP_PORT"] = "70000" }, "SMTP_PORT"},
 		{"smtp port text", func(e map[string]string) { e["SMTP_PORT"] = "abc" }, "SMTP_PORT"},

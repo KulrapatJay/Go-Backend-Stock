@@ -122,7 +122,14 @@ func (m *SMTPMailer) send(ctx context.Context, to, subject, body string) error {
 
 // deliver runs one SMTP conversation. The deadline covers all of it; cancelling ctx closes the
 // connection so a stalled server cannot hold a shutdown.
-func (m *SMTPMailer) deliver(ctx context.Context, to string, raw []byte) error {
+func (m *SMTPMailer) deliver(ctx context.Context, to string, raw []byte) (err error) {
+	defer func() {
+		// A send cut short by the caller reports the context's error, so the dispatcher logs it
+		// as canceled or timeout rather than as a network failure.
+		if err != nil && ctx.Err() != nil {
+			err = fmt.Errorf("%w: %w", ctx.Err(), err)
+		}
+	}()
 	deadline := time.Now().Add(m.cfg.Timeout)
 	if d, ok := ctx.Deadline(); ok && d.Before(deadline) {
 		deadline = d
@@ -186,5 +193,7 @@ func (m *SMTPMailer) deliver(ctx context.Context, to string, raw []byte) error {
 	if err := w.Close(); err != nil {
 		return err
 	}
-	return client.Quit()
+	// The server accepted the message (250 after DATA); a failing QUIT does not lose it.
+	_ = client.Quit()
+	return nil
 }

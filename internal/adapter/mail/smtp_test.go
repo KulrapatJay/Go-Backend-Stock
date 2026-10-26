@@ -33,6 +33,7 @@ type fakeSMTPOptions struct {
 	offerAuth   bool
 	rejectRcpt  bool
 	stall       bool // accept connections and never send the greeting
+	failQuit    bool // answer QUIT with an error after accepting the message
 }
 
 type received struct {
@@ -160,6 +161,10 @@ func (s *fakeSMTP) serve(conn net.Conn) {
 			s.mu.Unlock()
 			say("250 queued")
 		case upper == "QUIT":
+			if s.opts.failQuit {
+				say("554 transaction failed")
+				return
+			}
 			say("221 bye")
 			return
 		default:
@@ -508,5 +513,28 @@ func TestSMTPConfigAndMailerStayOutOfJSONLogsAndMarshal(t *testing.T) {
 	}
 	if !strings.Contains(outputs["json cfg"], "smtp.example.com") {
 		t.Errorf("json output %q should still name the host", outputs["json cfg"])
+	}
+}
+
+func TestSMTPMailerTreatsAFailingQuitAfterDataAsDelivered(t *testing.T) {
+	srv := startFakeSMTP(t, fakeSMTPOptions{failQuit: true})
+	mailer := newTestMailer(t, srv, nil)
+	if err := mailer.SendEmailVerification(t.Context(), testOTPMail(t)); err != nil {
+		t.Fatalf("SendEmailVerification() error = %v, but the server had already accepted the message", err)
+	}
+	if got := srv.messages(); len(got) != 1 {
+		t.Errorf("server received %d messages, want 1", len(got))
+	}
+}
+
+func TestSMTPMailerReportsCancellationAsTheContextError(t *testing.T) {
+	srv := startFakeSMTP(t, fakeSMTPOptions{stall: true})
+	mailer := newTestMailer(t, srv, nil)
+	ctx, cancel := context.WithCancel(t.Context())
+	time.AfterFunc(50*time.Millisecond, cancel)
+
+	err := mailer.SendEmailVerification(ctx, testOTPMail(t))
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("error = %v, want one that wraps context.Canceled so the dispatcher logs it as canceled", err)
 	}
 }
