@@ -10,7 +10,7 @@
 
 **Spec:** [แบบระบบสำหรับตรวจยืนยัน](../specs/2026-10-05-phase-1-design.md) โดยยึดข้อกำหนดใน [AGENTS.md](../../../AGENTS.md)
 
-**Status:** ผู้ใช้ยืนยันให้เริ่มตามลำดับแล้ว จัดทำข้อเสนอ milestone 0 ใน spec ที่ลิงก์ด้านบนแล้ว ผู้ใช้ยืนยันข้อเสนอเดิมและเลื่อนหน้าหุ้นรายตัว/กราฟไปเฟสถัดไปแล้ว (2026-10-14) และยืนยันแบบ email verification, portfolio name uniqueness และกติการหัสผ่านแล้ว milestone 0 ผ่านการตรวจรับ; milestone 1 ผ่านการตรวจรับเมื่อ 2026-10-15 (ลงมือครบทุก task, self-review ทั้ง branch ไม่พบ Critical/Important, CI บน GitHub ผ่าน) milestone 2 ผ่านการตรวจรับเมื่อ 2026-10-17 (ลงมือครบทุก task, รีวิวทั้ง branch ด้วย subagent แก้ Important ครบ 4 ข้อ) milestone 3 แผน 3a ผ่านการตรวจรับเมื่อ 2026-10-20 (รีวิวทั้ง branch ด้วย subagent แก้ Important ครบ 4 ข้อ, CI บน GitHub ผ่าน) แผน 3b ผ่านการตรวจรับเมื่อ 2026-10-21 (รีวิวทั้ง branch ด้วย subagent แก้ Important 2 ข้อและ Minor 4 ข้อ; CI บน GitHub ยังไม่ได้รันเพราะยังไม่ push) แผน 3c ผ่านการตรวจรับเมื่อ 2026-10-22 (รีวิวทั้ง branch ด้วย subagent แก้ Important 1 ข้อและ Minor 6 ข้อ) milestone 3 ครบทุกแผน; CI บน GitHub ของ 3b/3c ยังไม่ได้รันเพราะยังไม่ push milestone 4 มี design ([spec](../specs/2026-10-22-milestone-4-auth-design.md)) แบ่งเป็นแผน 4a/4b/4c; แผน 4a ลงมือครบแล้ว รอตรวจรับ ขั้นต่อไปคือแผน 4b
+**Status:** ผู้ใช้ยืนยันให้เริ่มตามลำดับแล้ว จัดทำข้อเสนอ milestone 0 ใน spec ที่ลิงก์ด้านบนแล้ว ผู้ใช้ยืนยันข้อเสนอเดิมและเลื่อนหน้าหุ้นรายตัว/กราฟไปเฟสถัดไปแล้ว (2026-10-14) และยืนยันแบบ email verification, portfolio name uniqueness และกติการหัสผ่านแล้ว milestone 0 ผ่านการตรวจรับ; milestone 1 ผ่านการตรวจรับเมื่อ 2026-10-15 (ลงมือครบทุก task, self-review ทั้ง branch ไม่พบ Critical/Important, CI บน GitHub ผ่าน) milestone 2 ผ่านการตรวจรับเมื่อ 2026-10-17 (ลงมือครบทุก task, รีวิวทั้ง branch ด้วย subagent แก้ Important ครบ 4 ข้อ) milestone 3 แผน 3a ผ่านการตรวจรับเมื่อ 2026-10-20 (รีวิวทั้ง branch ด้วย subagent แก้ Important ครบ 4 ข้อ, CI บน GitHub ผ่าน) แผน 3b ผ่านการตรวจรับเมื่อ 2026-10-21 (รีวิวทั้ง branch ด้วย subagent แก้ Important 2 ข้อและ Minor 4 ข้อ; CI บน GitHub ยังไม่ได้รันเพราะยังไม่ push) แผน 3c ผ่านการตรวจรับเมื่อ 2026-10-22 (รีวิวทั้ง branch ด้วย subagent แก้ Important 1 ข้อและ Minor 6 ข้อ) milestone 3 ครบทุกแผน; CI บน GitHub ของ 3b/3c ยังไม่ได้รันเพราะยังไม่ push milestone 4 มี design ([spec](../specs/2026-10-22-milestone-4-auth-design.md)) แบ่งเป็นแผน 4a/4b/4c; แผน 4a ลงมือครบแล้ว รอตรวจรับ แผน 4b ลงมือครบแล้ว รอตรวจรับ ขั้นต่อไปคือแผน 4c
 
 ## Global Constraints
 
@@ -77,7 +77,7 @@
 **ผ่านเมื่อ:** เปิด backend stack ได้โดยไม่มี web service, migration จบก่อน API เริ่ม, health/readiness และ Swagger UI ใช้งานได้, API image build และ checks ที่ตั้งไว้ผ่าน ยังไม่อ้างว่า auth/พอร์ตใช้งานได้ใน milestone นี้
 
 **ตรวจรับแล้ว 2026-10-15** — ข้อที่เลื่อนไปทำใน milestone ถัดไป (ผลจาก self-review, ไม่ขวางการตรวจรับ):
-- method ไม่ตรงกับ route ที่มีอยู่ (เช่น POST /healthz) ตอบ 404 แทน 405 + `Allow` — แก้พร้อม route แบบไม่ใช่ GET ใน milestone 4
+- method ไม่ตรงกับ route ที่มีอยู่ (เช่น POST /healthz) ตอบ 404 แทน 405 + `Allow` — แก้พร้อม route แบบไม่ใช่ GET ใน milestone 4 — **ปิดแล้วในแผน 4b Task 6**
 - Swagger `basePath` ตายตัว `/` ทำให้ Try it out หลัง reverse proxy ที่มี prefix ยิง URL ผิด — แก้ใน milestone 10
 - README: เปลี่ยนรหัสผ่านใน `.env` หลังรันครั้งแรกไม่มีผลจนกว่าจะ `docker compose down -v`; Makefile อ่าน `.env` เป็นไวยากรณ์ make (ค่าที่มีเครื่องหมายคำพูด/`#`/ช่องว่างจะพัง)
 - CI ยังไม่ทดสอบ compose stack (migrate ก่อน API, migration พัง); ยังไม่มี test ของ `main.go run()` และ timeout mapping (408)
@@ -129,28 +129,36 @@
 
 ### 4. Auth + email verification + sessions + Google login + HTTP handlers
 
-**แผนลงมือ:** [design](../specs/2026-10-22-milestone-4-auth-design.md) — [4a](2026-10-22-milestone-4a-auth-building-blocks.md) (ชิ้นส่วนพื้นฐาน; ลงมือครบ รอตรวจรับ); 4b (AuthService, EmailVerificationService, middleware, endpoints) และ 4c (Google OIDC) ยังไม่มีแผน
+**แผนลงมือ:** [design](../specs/2026-10-22-milestone-4-auth-design.md) — [4a](2026-10-22-milestone-4a-auth-building-blocks.md) (ชิ้นส่วนพื้นฐาน; ลงมือครบ รอตรวจรับ); [4b](2026-10-24-milestone-4b-auth-endpoints.md) (AuthService, EmailVerificationService, middleware, endpoints; ลงมือครบ รอตรวจรับ); 4c (Google OIDC) ยังไม่มีแผน
 
 **แผน 4a ปิดข้อส่งต่อแล้ว:** `ParseEmail` ปฏิเสธ `"(),:;<>[\]` และอักขระซ่อน (ข้อส่งต่อจาก milestone 2); `service.NowForStorage` ตัดเวลาที่ microsecond (รีวิว 3b); `service.NewRateLimitPolicy` สร้าง rules ผ่าน `domain.NewRateLimitRule` เท่านั้น จึงไม่มี rule ที่ `Limit` เป็นศูนย์ (รีวิว 3b) — ที่เหลือของข้อส่งต่อ 3b (`FOR UPDATE` ของ `OTPChallengeRepository.Lock`, purpose อื่น) ปิดใน 4b ตามหัวข้อ 9 ของ design
 
 **ข้อส่งต่อจากรีวิวทั้ง branch ของแผน 4a ไป 4b** (ledger ของแผนเป็น git-ignored จึงจดไว้ที่นี่):
 
 - ก่อน merge: `.env.example` ที่ commit ต้องมี `CSRF_SECRET`, `OTP_SECRET`, `RATE_LIMIT_SECRET`, `OIDC_SECRET` ที่มีค่า `dev-only-…` ยาวอย่างน้อย 32 bytes และต่างกันทั้งสี่ตัว (ตอนนี้ `config.Load` ต้องใช้ค่าเหล่านี้ใน dev จึงทำให้ `cp .env.example .env && docker compose up` ล้มจนกว่าจะมี) — ผู้ใช้เป็นเจ้าของไฟล์นี้
-- งานแรกของ 4b: `domain.RateLimitDecision` ต้องบอก scope ที่ปฏิเสธ (เพิ่ม field `Scope` และตั้งจาก `k.scope` ใน `postgres/ratelimit.go`) เพื่อใส่ `scope` ใน metadata ของ `security.rate_limited` ตาม spec หัวข้อ 5
-- งานแรกของ 4b: เสริมการปิดค่าลับก่อนที่ `RegisterInput`/`LoginInput` จะถือ `Password`: `Password`, `OTPCode` และ `config.Secret` ยังพิมพ์ค่าจริงเมื่อใช้ `%d` หรือเมื่ออยู่ใน field ที่ไม่ export ของ struct อื่น (fmt ไม่เรียก `String()` ที่นั่น) — พิจารณาเก็บค่าหลัง pointer + `fmt.Formatter` และชนิดที่ปิดค่าลับสำหรับ session token/CSRF token/nonce พร้อม test ที่ format input จริง
-- ตอนต่อสาย 4b: ส่ง `service.NowForStorage(clock)` เป็น `now` ของ `RateLimitRepository.Admit` ด้วย; ต่อ `ClientIPResolver` ด้วย `RemoteAddr().String()` และ header `X-Forwarded-For` ทุกบรรทัดตามลำดับ (ปิด trust proxy ของ Fiber เอง); ตรวจ cookie `csrf_nonce` ว่าเป็น base64url 43 ตัวก่อนสร้าง binding; login ต้องตัดรหัสผ่านเกิน 32 ตัวก่อน hash และมี test; ปิด HTTP ก่อนแล้วจึงเรียก `Dispatcher.Close` ด้วยเวลาที่เหลือของ `SHUTDOWN_TIMEOUT`; `ErrQueueFull`/`ErrDispatcherClosed` ต้อง log แล้วไปต่อ ห้ามเปลี่ยนคำตอบ 202
-- เก็บกวาด (ทำเมื่อแตะไฟล์นั้น): `DefaultArgon2Params` เป็นตัวแปร global ที่แก้ได้ → เปลี่ยนเป็นฟังก์ชัน; `NewCSRFCodec`/`NewPacer` ต้องปฏิเสธ clock ที่เป็น nil; `deliver` ควรไม่นับ error ของ `Quit` หลัง DATA สำเร็จ และคืน `ctx.Err()` เมื่อถูก cancel เพื่อให้ Dispatcher จัดเป็น `canceled`; worker ของ `Dispatcher` ต้องมี `recover` ที่ log `mail.panic`; ใช้ `domain.MaxOTPFailedAttemptsCeiling` แทนเลข 20 ใน `config/auth.go`; `parseCIDRs` ควร normalise/ปฏิเสธ prefix แบบ IPv4-mapped; warn log ของ hasher ควรแยก timeout กับ cancel; เติมค่าเริ่มต้นของ `MAIL_SEND_TIMEOUT` (10s) ใน README
-- ต้องถามผู้ใช้ใน 4b: rate limit ของ IPv6 ใช้ address เต็ม (/128) ตาม spec 4.7 ซึ่งผู้ใช้ที่มี prefix /64 หมุน address เพื่อเลี่ยงโควตาได้ — จะจัดกลุ่มเป็น /64 หรือไม่ (ถ้าเปลี่ยนให้เขียน ADR)
-- ควรเพิ่มใน CI: service Mailpit และ `REQUIRE_MAIL_INTEGRATION=1` เพื่อให้ test ส่งอีเมลจริงไม่พังเงียบ ๆ
+- งานแรกของ 4b: `domain.RateLimitDecision` ต้องบอก scope ที่ปฏิเสธ (เพิ่ม field `Scope` และตั้งจาก `k.scope` ใน `postgres/ratelimit.go`) เพื่อใส่ `scope` ใน metadata ของ `security.rate_limited` ตาม spec หัวข้อ 5 — **ปิดแล้วในแผน 4b**
+- งานแรกของ 4b: เสริมการปิดค่าลับก่อนที่ `RegisterInput`/`LoginInput` จะถือ `Password`: `Password`, `OTPCode` และ `config.Secret` ยังพิมพ์ค่าจริงเมื่อใช้ `%d` หรือเมื่ออยู่ใน field ที่ไม่ export ของ struct อื่น (fmt ไม่เรียก `String()` ที่นั่น) — พิจารณาเก็บค่าหลัง pointer + `fmt.Formatter` และชนิดที่ปิดค่าลับสำหรับ session token/CSRF token/nonce พร้อม test ที่ format input จริง — **ปิดแล้วในแผน 4b**
+- ตอนต่อสาย 4b: ส่ง `service.NowForStorage(clock)` เป็น `now` ของ `RateLimitRepository.Admit` ด้วย; ต่อ `ClientIPResolver` ด้วย `RemoteAddr().String()` และ header `X-Forwarded-For` ทุกบรรทัดตามลำดับ (ปิด trust proxy ของ Fiber เอง); ตรวจ cookie `csrf_nonce` ว่าเป็น base64url 43 ตัวก่อนสร้าง binding; login ต้องตัดรหัสผ่านเกิน 32 ตัวก่อน hash และมี test; ปิด HTTP ก่อนแล้วจึงเรียก `Dispatcher.Close` ด้วยเวลาที่เหลือของ `SHUTDOWN_TIMEOUT`; `ErrQueueFull`/`ErrDispatcherClosed` ต้อง log แล้วไปต่อ ห้ามเปลี่ยนคำตอบ 202 — **ปิดแล้วในแผน 4b**
+- เก็บกวาด (ทำเมื่อแตะไฟล์นั้น): `DefaultArgon2Params` เป็นตัวแปร global ที่แก้ได้ → เปลี่ยนเป็นฟังก์ชัน; `NewCSRFCodec`/`NewPacer` ต้องปฏิเสธ clock ที่เป็น nil; `deliver` ควรไม่นับ error ของ `Quit` หลัง DATA สำเร็จ และคืน `ctx.Err()` เมื่อถูก cancel เพื่อให้ Dispatcher จัดเป็น `canceled`; worker ของ `Dispatcher` ต้องมี `recover` ที่ log `mail.panic`; ใช้ `domain.MaxOTPFailedAttemptsCeiling` แทนเลข 20 ใน `config/auth.go`; `parseCIDRs` ควร normalise/ปฏิเสธ prefix แบบ IPv4-mapped; warn log ของ hasher ควรแยก timeout กับ cancel; เติมค่าเริ่มต้นของ `MAIL_SEND_TIMEOUT` (10s) ใน README — **ปิดแล้วในแผน 4b**
+- ต้องถามผู้ใช้ใน 4b: rate limit ของ IPv6 ใช้ address เต็ม (/128) ตาม spec 4.7 ซึ่งผู้ใช้ที่มี prefix /64 หมุน address เพื่อเลี่ยงโควตาได้ — จะจัดกลุ่มเป็น /64 หรือไม่ (ถ้าเปลี่ยนให้เขียน ADR) — **ตอบแล้ว (2026-10-24): คง /128 ตาม spec**
+- ควรเพิ่มใน CI: service Mailpit และ `REQUIRE_MAIL_INTEGRATION=1` เพื่อให้ test ส่งอีเมลจริงไม่พังเงียบ ๆ — **ปิดแล้วในแผน 4b**
+
+**ข้อส่งต่อจากแผน 4b ไปแผนถัดไป:**
+
+- docs/api: เพิ่ม `format: date-time` และ `required` list ของ DTO ตาม AGENTS.md
+- login ซ้อน (re-login ขณะมี session) ยังไม่ revoke session เดิม
+- สอง login พร้อมกันบนบัญชีที่ hash เก่าอาจได้ 401 หนึ่งครั้ง (fails closed)
+- test `TestConcurrentWrongCodesAreAllCounted` ส่ง 5 คำขอเท่ากับเพดาน ควรเพิ่มเป็น 8
+- ต้อง rotate รหัสผ่านของ dev DB ถ้าแชร์ transcript เพราะ Makefile echo คำสั่งตอนรัน `make test-integration` โดยไม่ใส่ `-s` (การเพิ่ม `@` ใน recipe ไม่อยู่ในงานของ 4b แค่จดไว้)
 
 **ไฟล์หลัก:** `internal/core/service/auth*.go`, `internal/core/service/otp*.go`, `internal/core/service/email_verification*.go`, `internal/adapter/http/auth*.go`, `internal/adapter/http/middleware/`, `internal/adapter/identity/`, `internal/adapter/mail/`
 
 - [x] ทำ OTP generation/HMAC แบบมี purpose และ SMTP adapter ไป Mailpit ตั้งแต่ขั้นนี้ เพราะ signup ต้องยืนยันอีเมลก่อน login ได้ (แผน 4a: `GenerateOTP`, `OTPCodec`, `SMTPMailer`, `Dispatcher`; `make test-mail` ส่งถึง Mailpit จริง)
-- [ ] ทำ register ที่ตอบ 202 แบบเดียวกันทุกกรณี, confirm/resend รหัสยืนยันอีเมล และปฏิเสธ login ของบัญชีที่ยังไม่ยืนยันด้วย `email_not_verified`
-- [ ] ทำ email/password login/logout, current-user endpoint และ session authentication พร้อม expiry/revocation
-- [ ] เพิ่ม cookie, CSRF, Origin checks, login rate limit และ error mapping พร้อม audit ของผลสำเร็จ/ล้มเหลว
+- [x] ทำ register ที่ตอบ 202 แบบเดียวกันทุกกรณี, confirm/resend รหัสยืนยันอีเมล และปฏิเสธ login ของบัญชีที่ยังไม่ยืนยันด้วย `email_not_verified` (แผน 4b)
+- [x] ทำ email/password login/logout, current-user endpoint และ session authentication พร้อม expiry/revocation (แผน 4b)
+- [x] เพิ่ม cookie, CSRF, Origin checks, login rate limit และ error mapping พร้อม audit ของผลสำเร็จ/ล้มเหลว (แผน 4b)
 - [ ] เพิ่ม Google OIDC, state/nonce validation, PKCE S256 และ explicit account linking; ปิด flow ชัดเจนเมื่อ config ไม่ครบ
-- [ ] login ของอีเมลที่ไม่มีบัญชี/บัญชี Google-only ตรวจกับ hash จำลองและตอบแบบเดียวกับรหัสผิด
+- [x] login ของอีเมลที่ไม่มีบัญชี/บัญชี Google-only ตรวจกับ hash จำลองและตอบแบบเดียวกับรหัสผิด (แผน 4b)
 - [x] ทำ password validator (ความยาว, ASCII, พิมพ์เล็ก/ใหญ่/อักขระพิเศษ, blocklist แบบ go:embed, ไม่มีส่วนของอีเมล) พร้อม unit tests ของทุก field reason (แผน 4a: `domain.ParsePassword`, `service.PasswordPolicy`, ADR-0015)
 - [ ] ทดสอบ fake identity provider, replayed callback, invalid audience/issuer, session หมดอายุ/revoked และการ rollback เมื่อ audit insert ล้มเหลว
 - [ ] เพิ่ม auth annotations/examples แล้ว generate เอกสารใหม่ ตรวจ Swagger UI/browser cookie/CSRF โดยไม่ลดความปลอดภัย พร้อม curl cookie-jar examples และขั้นตอน Google login สำหรับ flow ที่ UI ไม่รองรับ ทั้งหมดทดสอบได้โดยไม่ใช้ Next.js
