@@ -3,7 +3,7 @@
 // @title           Stock Portfolio Tracker API
 // @version         1.0
 // @description     Records US stock trades and tracks portfolio cost and P&L. It does not place real orders.
-// @description     Milestone 1 exposes only the Health endpoints; every other endpoint is not implemented yet.
+// @description     Milestone 4b exposes Health and the email/password Auth endpoints; Google sign-in, password reset, portfolios and transactions are not implemented yet.
 // @BasePath        /
 // @tag.name        Health
 // @tag.description Liveness and readiness probes
@@ -15,6 +15,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"os/signal"
 	"syscall"
@@ -23,6 +24,7 @@ import (
 
 	apidocs "go-backend-stock/docs/api"
 	httpadapter "go-backend-stock/internal/adapter/http"
+	"go-backend-stock/internal/adapter/mail"
 	"go-backend-stock/internal/adapter/postgres"
 	"go-backend-stock/internal/config"
 	"go-backend-stock/internal/logging"
@@ -55,9 +57,25 @@ func run() error {
 	}
 	defer pool.Close()
 
+	auth, err := buildAuth(cfg, pool, log)
+	if err != nil {
+		return err
+	}
+	// The mail queue is closed after HTTP stops (below). This covers every other way out of run.
+	mailClosed := false
+	defer func() {
+		if mailClosed {
+			return
+		}
+		earlyCtx, earlyCancel := context.WithTimeout(context.Background(), cfg.ShutdownTimeout)
+		defer earlyCancel()
+		closeMail(earlyCtx, auth.mail, log)
+	}()
+
 	app := httpadapter.NewServer(httpadapter.Options{
 		Logger:    log,
 		Readiness: pool,
+		Auth:      auth.options,
 		Docs: httpadapter.DocsOptions{
 			Enabled:         cfg.DocsEnabled,
 			TryItOutEnabled: cfg.DocsTryItOutEnabled,
@@ -87,6 +105,16 @@ func run() error {
 	if err := app.ShutdownWithContext(shutdownCtx); err != nil {
 		return fmt.Errorf("shutdown: %w", err)
 	}
+	// After HTTP, so no handler can queue an email any more; queued emails get the time left.
+	mailClosed = true
+	closeMail(shutdownCtx, auth.mail, log)
 	log.Info("server stopped", "event", "server.stopped")
 	return nil
+}
+
+// closeMail waits for queued emails until ctx ends and logs, without any address, if some were left.
+func closeMail(ctx context.Context, d *mail.Dispatcher, log *slog.Logger) {
+	if err := d.Close(ctx); err != nil {
+		log.Warn("emails were still queued at the shutdown deadline", "event", "mail.shutdown_incomplete")
+	}
 }
