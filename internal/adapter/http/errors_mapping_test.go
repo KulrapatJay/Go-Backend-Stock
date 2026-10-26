@@ -38,6 +38,7 @@ func TestErrorHandlerMapsDomainErrors(t *testing.T) {
 		{"identity conflict", domain.ErrIdentityConflict, 409, "identity_conflict", "", "", nil},
 		{"rate limited rounds up", domain.NewRetryError(domain.CodeRateLimited, "too many requests", 1500*time.Millisecond), 429, "rate_limited", "", "2", nil},
 		{"rate limited waits at least a second", domain.NewRetryError(domain.CodeRateLimited, "too many requests", 10*time.Millisecond), 429, "rate_limited", "", "1", nil},
+		{"rate limited without a wait defaults to a second", domain.NewError(domain.CodeRateLimited, "too many requests"), 429, "rate_limited", "", "1", nil},
 		{"server busy", domain.NewError(domain.CodeServerBusy, "server is busy, try again shortly"), 503, "server_busy", "", "1", nil},
 		{"dependency unavailable", domain.NewError(domain.CodeDependencyUnavailable, "session store is unavailable"), 503, "dependency_unavailable", "", "", nil},
 		{"internal hides its message", domain.NewError(domain.CodeInternal, "stored password hash is malformed"), 500, "internal", "Internal server error", "", nil},

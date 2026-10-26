@@ -134,7 +134,7 @@ func fromDomain(e *domain.Error) *APIError {
 		return &APIError{Status: status, Code: string(e.Code), Message: "Internal server error"}
 	}
 	api := &APIError{Status: status, Code: string(e.Code), Message: e.Message, Details: e.Reasons, RetryAfter: e.RetryAfter}
-	if e.Code == domain.CodeServerBusy && api.RetryAfter <= 0 {
+	if (e.Code == domain.CodeServerBusy || e.Code == domain.CodeRateLimited) && api.RetryAfter <= 0 {
 		api.RetryAfter = time.Second
 	}
 	return api
