@@ -111,6 +111,11 @@ func (a *Auth) Confirm(ctx context.Context, in domain.VerifyEmailInput, meta dom
 			return err
 		}
 		c, err := tx.OTPChallenges().Lock(ctx, domain.OTPPurposeEmailVerification, found.ID)
+		if errors.Is(err, domain.ErrNotFound) {
+			// Deleted between ByID and Lock: the same refusal as an unknown ID, audited and committed.
+			failure = "challenge_not_found"
+			return a.appendAudit(ctx, tx, meta, verificationFailed(found.ID, failure))
+		}
 		if err != nil {
 			return err
 		}

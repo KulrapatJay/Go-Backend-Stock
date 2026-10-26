@@ -120,3 +120,23 @@ func TestConfirmWaitsForTheResponseFloorOnEveryPath(t *testing.T) {
 		})
 	}
 }
+
+func TestConfirmLockMissAfterByIDIsAnAuditedInvalidVerification(t *testing.T) {
+	challenges := &confirmChallenges{
+		byID: func() (domain.OTPChallenge, error) { return domain.OTPChallenge{ID: mustID(t), UserID: mustID(t)}, nil },
+		lock: func() (domain.OTPChallenge, error) { return domain.OTPChallenge{}, domain.ErrNotFound },
+	}
+	auth, uow := newConfirmAuth(t, challenges, nil)
+
+	err := auth.Confirm(t.Context(), confirmInput(t), testMeta(t))
+	if !errors.Is(err, domain.ErrInvalidVerification) {
+		t.Fatalf("Confirm() error = %v, want ErrInvalidVerification (not a raw not-found)", err)
+	}
+	events := uow.audit.events
+	if len(events) != 1 || events[0].EventType != domain.EventAuthEmailVerificationFailed || events[0].ReasonCode != "challenge_not_found" {
+		t.Errorf("audit = %+v, want one auth.email_verification_failed with reason challenge_not_found", events)
+	}
+	if uow.commits != 1 {
+		t.Errorf("commits = %d, want 1: the audit must be committed", uow.commits)
+	}
+}
