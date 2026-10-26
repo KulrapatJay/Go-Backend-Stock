@@ -173,8 +173,11 @@ func TestConfirmRejectsNonASCIIDigitsWithoutCountingAnAttempt(t *testing.T) {
 	}
 }
 
-// Concurrent wrong codes must all be counted: Lock takes the challenge row FOR UPDATE (review of 3b).
-func TestConcurrentWrongCodesAreAllCounted(t *testing.T) {
+// Eight concurrent wrong codes against a limit of five: the attempt-limit check and RecordFailure
+// are serialized by the challenge row lock (Lock is FOR UPDATE), so exactly five are counted as
+// otp_mismatch and the other three see a full counter (too_many_attempts). Without the lock several
+// requests would read the same count and the counter and the audit trail would disagree.
+func TestConcurrentWrongCodesAreSerializedByTheChallengeLock(t *testing.T) {
 	h := newAuthHarness(t)
 	email := uniqueEmail(t)
 	owner := h.newBrowser(t)
@@ -183,35 +186,40 @@ func TestConcurrentWrongCodesAreAllCounted(t *testing.T) {
 	u, _ := h.user(t, email)
 	wrong := wrongCode(mail.OTP.Reveal())
 
-	browsers := make([]*browser, 5)
+	browsers := make([]*browser, 8)
 	for i := range browsers {
 		browsers[i] = h.newBrowser(t)
 		browsers[i].fetchCSRF()
 	}
 	var wg sync.WaitGroup
 	statuses := make([]int, len(browsers))
+	errs := make([]error, len(browsers))
 	for i, b := range browsers {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
 			resp, _, err := b.tryDo(nethttp.MethodPost, "/api/v1/auth/email-verification/confirm",
 				map[string]string{"challenge_id": mail.ChallengeID.String(), "otp": wrong}, nil)
-			if err == nil {
-				statuses[i] = resp.StatusCode
-			}
+			statuses[i], errs[i] = resp.StatusCode, err
 		}()
 	}
 	wg.Wait()
 	for i, s := range statuses {
-		if s != nethttp.StatusBadRequest {
+		if errs[i] != nil {
+			t.Errorf("request %d: %v", i, errs[i])
+		} else if s != nethttp.StatusBadRequest {
 			t.Errorf("request %d = %d, want 400", i, s)
 		}
 	}
 	if got := h.challenges(t, u.ID)[0].FailedAttempts; got != 5 {
-		t.Errorf("failed_attempts = %d, want 5", got)
+		t.Errorf("failed_attempts = %d, want exactly 5", got)
 	}
-	if got := failureReasons(h.auditByTarget(t, mail.ChallengeID.String())); len(got) != 5 {
-		t.Errorf("failure audits = %d, want 5", len(got))
+	counts := map[string]int{}
+	for _, reason := range failureReasons(h.auditByTarget(t, mail.ChallengeID.String())) {
+		counts[reason]++
+	}
+	if counts["otp_mismatch"] != 5 || counts["too_many_attempts"] != 3 || len(counts) != 2 {
+		t.Errorf("failure audits by reason = %v, want 5 x otp_mismatch and 3 x too_many_attempts", counts)
 	}
 }
 
