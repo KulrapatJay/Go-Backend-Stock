@@ -178,4 +178,26 @@ func TestRecordFailureLogsWhenTheAuditCannotBeWritten(t *testing.T) {
 	if !strings.Contains(ta.logs.String(), `"event":"audit.write_failed"`) || !strings.Contains(ta.logs.String(), `"level":"ERROR"`) {
 		t.Errorf("log %q should record audit.write_failed at error level", ta.logs.String())
 	}
+	for _, want := range []string{`"error_code":"audit_write_failed"`, "disk full"} {
+		if !strings.Contains(ta.logs.String(), want) {
+			t.Errorf("log %q should contain %s", ta.logs.String(), want)
+		}
+	}
+	if strings.Contains(ta.logs.String(), "203.0.113.9") || strings.Contains(ta.logs.String(), "test-agent") {
+		t.Errorf("log %q must not carry request data", ta.logs.String())
+	}
+}
+
+func TestAdmitReportsALimiterOutageAsUnavailable(t *testing.T) {
+	ta := newTestAuth(t, nil)
+	cause := errors.New("connection refused")
+	ta.repos.limits.err = cause
+	err := ta.auth.admit(t.Context(), nil, testMeta(t), domain.ID{})
+	_ = requireCode(t, err, domain.CodeDependencyUnavailable)
+	if !errors.Is(err, cause) {
+		t.Errorf("admit() error %v should keep the cause reachable", err)
+	}
+	if len(ta.uow.audit.events) != 0 {
+		t.Error("a limiter outage must not write audit")
+	}
 }

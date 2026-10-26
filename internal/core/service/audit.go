@@ -72,6 +72,8 @@ func (a *Auth) recordFailure(ctx context.Context, meta domain.RequestMeta, s aud
 	if err != nil {
 		a.log.Error("could not record an audit event",
 			slog.String("event", "audit.write_failed"),
+			slog.String("error_code", string(domain.CodeAuditWriteFailed)),
+			slog.String("error", err.Error()),
 			slog.String("request_id", meta.RequestID.String()),
 			slog.String("event_type", string(s.Type)))
 	}
