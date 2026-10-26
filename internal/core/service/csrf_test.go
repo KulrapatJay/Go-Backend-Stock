@@ -148,4 +148,7 @@ func TestNewCSRFCodecRejectsShortSecret(t *testing.T) {
 	if _, err := NewCSRFCodec([]byte("short"), newFakeClock()); err == nil {
 		t.Error("NewCSRFCodec() accepted a secret under 32 bytes")
 	}
+	if _, err := NewCSRFCodec([]byte(strings.Repeat("s", 32)), nil); err == nil {
+		t.Error("NewCSRFCodec() accepted a nil clock, which would panic on the first request")
+	}
 }

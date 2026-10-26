@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"crypto/rand"
+	"errors"
 	"math/big"
 	"time"
 
@@ -21,9 +22,16 @@ type Pacer struct {
 	randomJitter func(max time.Duration) time.Duration
 }
 
-// NewPacer returns a pacer that really sleeps. The defaults are a 500 ms floor and 0-100 ms of jitter.
-func NewPacer(clock port.Clock, floor, jitter time.Duration) *Pacer {
-	return &Pacer{clock: clock, floor: floor, jitter: jitter, sleep: sleepContext, randomJitter: cryptoJitter}
+// NewPacer returns a pacer that really sleeps. The usual values come from AUTH_RESPONSE_FLOOR and
+// AUTH_RESPONSE_JITTER. It rejects a nil clock and negative durations.
+func NewPacer(clock port.Clock, floor, jitter time.Duration) (*Pacer, error) {
+	switch {
+	case clock == nil:
+		return nil, errors.New("pacer needs a clock")
+	case floor < 0 || jitter < 0:
+		return nil, errors.New("pacer floor and jitter must not be negative")
+	}
+	return &Pacer{clock: clock, floor: floor, jitter: jitter, sleep: sleepContext, randomJitter: cryptoJitter}, nil
 }
 
 // Wait blocks until floor plus a random jitter in 0..jitter has passed since start. It returns at
