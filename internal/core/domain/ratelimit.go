@@ -60,4 +60,7 @@ type RateLimitDecision struct {
 	Allowed           bool
 	RetryAfter        time.Duration
 	RecordDenialAudit bool // true at most once per key per minute, so attacks cannot flood audit
+	// Scope is the scope of the key that denied, for the security.rate_limited audit metadata;
+	// "" when the request was allowed.
+	Scope RateLimitScope
 }

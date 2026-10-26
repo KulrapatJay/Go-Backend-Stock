@@ -282,3 +282,20 @@ func TestRateLimitDeniedRequestRecordsNoEventsForAllowedKeys(t *testing.T) {
 		t.Errorf("%d events recorded for the allowed key of a denied request, want 0", n)
 	}
 }
+
+// TestRateLimitDenialNamesTheDenyingScope: the use case records the scope in the
+// security.rate_limited audit event, so the decision must say which key refused.
+func TestRateLimitDenialNamesTheDenyingScope(t *testing.T) {
+	store := newRuntimeStore(t)
+	ip := rule(t, domain.RateLimitLoginIP, randomHash(t), 5, time.Hour)
+	email := rule(t, domain.RateLimitLoginEmail, randomHash(t), 1, time.Hour)
+	start := now()
+
+	if d := admit(t, store, start, ip, email); !d.Allowed || d.Scope != "" {
+		t.Fatalf("first attempt = %+v, want allowed with no scope", d)
+	}
+	d := admit(t, store, start.Add(time.Second), ip, email)
+	if d.Allowed || d.Scope != domain.RateLimitLoginEmail {
+		t.Errorf("second attempt = %+v, want denied by %s", d, domain.RateLimitLoginEmail)
+	}
+}
