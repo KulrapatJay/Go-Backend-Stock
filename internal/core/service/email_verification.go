@@ -79,6 +79,10 @@ func (a *Auth) Request(ctx context.Context, email domain.Email, meta domain.Requ
 // section 5). A failed attempt is audited and, for a wrong code, counted in the same transaction,
 // which commits before the error is returned, so neither is lost with the failure.
 func (a *Auth) Confirm(ctx context.Context, in domain.VerifyEmailInput, meta domain.RequestMeta) error {
+	// A challenge ID from register is real for a new email and a decoy for an existing one, and the
+	// two paths cost different amounts of work: the floor hides which one this was.
+	defer a.pacer.Wait(ctx, a.clock.Now())
+
 	rules, err := a.limits.EmailVerificationConfirm(meta.ClientIP)
 	if err != nil {
 		return err

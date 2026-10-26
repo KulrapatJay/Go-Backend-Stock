@@ -298,3 +298,27 @@ func TestRequestShareTheRegisterCooldown(t *testing.T) {
 		t.Errorf("request right after register = %d %s, want 429 with Retry-After", resp.StatusCode, body)
 	}
 }
+
+// A confirm on a real challenge and one on an unknown ID (what a decoy ID looks like) must both
+// take at least the response floor, or the time would show whether register made an account.
+func TestConfirmTakesAtLeastTheResponseFloor(t *testing.T) {
+	h := newAuthHarness(t, withResponseFloor(300*time.Millisecond))
+	b := h.newBrowser(t)
+	email := uniqueEmail(t)
+	b.register(email, "Zq9!kVx1")
+	mail := h.mailer.lastVerification(t, email)
+
+	for name, id := range map[string]string{"real challenge": mail.ChallengeID.String(), "unknown challenge": mustTestID(t).String()} {
+		b.fetchCSRF()
+		start := time.Now()
+		resp, body := b.do(nethttp.MethodPost, "/api/v1/auth/email-verification/confirm",
+			map[string]string{"challenge_id": id, "otp": wrongCode(mail.OTP.Reveal())}, nil)
+		elapsed := time.Since(start)
+		if resp.StatusCode != nethttp.StatusBadRequest {
+			t.Fatalf("%s: confirm = %d %s, want 400", name, resp.StatusCode, body)
+		}
+		if elapsed < 300*time.Millisecond {
+			t.Errorf("%s: confirm answered after %v, want at least the 300ms floor", name, elapsed)
+		}
+	}
+}
