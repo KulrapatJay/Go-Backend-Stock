@@ -136,7 +136,7 @@ func withResponseFloor(d time.Duration) harnessOption {
 	return func(c *harnessConfig) { c.floor = d }
 }
 
-func withFailingAudit() harnessOption { //nolint:unused // the tests of tasks 10-11 use it.
+func withFailingAudit() harnessOption {
 	return func(c *harnessConfig) { c.failAudit = true }
 }
 
