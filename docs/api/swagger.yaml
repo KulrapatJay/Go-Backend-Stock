@@ -7,7 +7,11 @@ definitions:
         type: string
       expires_at:
         example: "2026-10-24T10:00:00Z"
+        format: date-time
         type: string
+    required:
+    - csrf_token
+    - expires_at
     type: object
   http.ConfirmEmailRequest:
     properties:
@@ -17,12 +21,17 @@ definitions:
       otp:
         example: "042731"
         type: string
+    required:
+    - challenge_id
+    - otp
     type: object
   http.EmailRequest:
     properties:
       email:
         example: user@example.com
         type: string
+    required:
+    - email
     type: object
   http.ErrorBody:
     properties:
@@ -44,11 +53,17 @@ definitions:
       request_id:
         example: 0192f0c1-7a8e-7cc4-9d2b-3f6c1a2b4c5d
         type: string
+    required:
+    - code
+    - message
+    - request_id
     type: object
   http.ErrorResponse:
     properties:
       error:
         $ref: '#/definitions/http.ErrorBody'
+    required:
+    - error
     type: object
   http.HealthResponse:
     properties:
@@ -64,6 +79,9 @@ definitions:
       password:
         example: Zq9!kVx1
         type: string
+    required:
+    - email
+    - password
     type: object
   http.OTPAcceptedResponse:
     properties:
@@ -77,6 +95,10 @@ definitions:
         example: If this address can receive email, a verification code has been sent.
           It expires in 10 minutes.
         type: string
+    required:
+    - challenge_id
+    - expires_in
+    - message
     type: object
   http.ReadyResponse:
     properties:
@@ -92,19 +114,27 @@ definitions:
       password:
         example: Zq9!kVx1
         type: string
+    required:
+    - email
+    - password
     type: object
   http.SessionResponse:
     properties:
       expires_at:
         example: "2026-10-31T09:30:00Z"
+        format: date-time
         type: string
       user:
         $ref: '#/definitions/http.UserResponse'
+    required:
+    - expires_at
+    - user
     type: object
   http.UserResponse:
     properties:
       created_at:
         example: "2026-10-24T09:30:00Z"
+        format: date-time
         type: string
       email:
         example: user@example.com
@@ -115,6 +145,11 @@ definitions:
       id:
         example: 0192f0c1-7a8e-7cc4-9d2b-3f6c1a2b4c5d
         type: string
+    required:
+    - created_at
+    - email
+    - email_verified
+    - id
     type: object
 info:
   contact: {}
@@ -196,6 +231,14 @@ paths:
               type: integer
           schema:
             $ref: '#/definitions/http.ErrorResponse'
+        "500":
+          description: audit_write_failed or internal
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+        "503":
+          description: dependency_unavailable
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
       summary: Confirm an email address
       tags:
       - Auth
@@ -242,6 +285,14 @@ paths:
             Retry-After:
               description: Seconds to wait
               type: integer
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+        "500":
+          description: audit_write_failed or internal
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+        "503":
+          description: dependency_unavailable
           schema:
             $ref: '#/definitions/http.ErrorResponse'
       summary: Send a new verification code
@@ -302,6 +353,10 @@ paths:
               type: integer
           schema:
             $ref: '#/definitions/http.ErrorResponse'
+        "500":
+          description: audit_write_failed or internal
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
         "503":
           description: server_busy (wait Retry-After seconds) or dependency_unavailable
           headers:
@@ -338,6 +393,10 @@ paths:
               type: string
         "403":
           description: csrf_failed
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+        "500":
+          description: audit_write_failed or internal
           schema:
             $ref: '#/definitions/http.ErrorResponse'
         "503":
@@ -418,8 +477,12 @@ paths:
               type: integer
           schema:
             $ref: '#/definitions/http.ErrorResponse'
+        "500":
+          description: audit_write_failed or internal
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
         "503":
-          description: server_busy; wait Retry-After seconds
+          description: server_busy (wait Retry-After seconds) or dependency_unavailable
           headers:
             Retry-After:
               description: Seconds to wait

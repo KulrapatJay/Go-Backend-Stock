@@ -19,7 +19,8 @@ import (
 // @Failure      400  {object}  ErrorResponse  "invalid_input (details lists every broken password rule) or malformed_json"
 // @Failure      403  {object}  ErrorResponse  "csrf_failed"
 // @Failure      429  {object}  ErrorResponse  "rate_limited; wait Retry-After seconds"
-// @Failure      503  {object}  ErrorResponse  "server_busy; wait Retry-After seconds"
+// @Failure      500  {object}  ErrorResponse  "audit_write_failed or internal"
+// @Failure      503  {object}  ErrorResponse  "server_busy (wait Retry-After seconds) or dependency_unavailable"
 // @Header       429  {integer}  Retry-After  "Seconds to wait"
 // @Header       503  {integer}  Retry-After  "Seconds to wait"
 // @Router       /api/v1/auth/register [post]

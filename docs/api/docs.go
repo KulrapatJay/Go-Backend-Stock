@@ -107,6 +107,18 @@ const docTemplate = `{
                                 "description": "Seconds to wait"
                             }
                         }
+                    },
+                    "500": {
+                        "description": "audit_write_failed or internal",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "dependency_unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
                     }
                 }
             }
@@ -172,6 +184,18 @@ const docTemplate = `{
                                 "type": "integer",
                                 "description": "Seconds to wait"
                             }
+                        }
+                    },
+                    "500": {
+                        "description": "audit_write_failed or internal",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "dependency_unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
                         }
                     }
                 }
@@ -252,6 +276,12 @@ const docTemplate = `{
                             }
                         }
                     },
+                    "500": {
+                        "description": "audit_write_failed or internal",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
+                    },
                     "503": {
                         "description": "server_busy (wait Retry-After seconds) or dependency_unavailable",
                         "schema": {
@@ -299,6 +329,12 @@ const docTemplate = `{
                     },
                     "403": {
                         "description": "csrf_failed",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "audit_write_failed or internal",
                         "schema": {
                             "$ref": "#/definitions/http.ErrorResponse"
                         }
@@ -408,8 +444,14 @@ const docTemplate = `{
                             }
                         }
                     },
+                    "500": {
+                        "description": "audit_write_failed or internal",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
+                    },
                     "503": {
-                        "description": "server_busy; wait Retry-After seconds",
+                        "description": "server_busy (wait Retry-After seconds) or dependency_unavailable",
                         "schema": {
                             "$ref": "#/definitions/http.ErrorResponse"
                         },
@@ -487,6 +529,10 @@ const docTemplate = `{
     "definitions": {
         "http.CSRFResponse": {
             "type": "object",
+            "required": [
+                "csrf_token",
+                "expires_at"
+            ],
             "properties": {
                 "csrf_token": {
                     "type": "string",
@@ -494,12 +540,17 @@ const docTemplate = `{
                 },
                 "expires_at": {
                     "type": "string",
+                    "format": "date-time",
                     "example": "2026-10-24T10:00:00Z"
                 }
             }
         },
         "http.ConfirmEmailRequest": {
             "type": "object",
+            "required": [
+                "challenge_id",
+                "otp"
+            ],
             "properties": {
                 "challenge_id": {
                     "type": "string",
@@ -513,6 +564,9 @@ const docTemplate = `{
         },
         "http.EmailRequest": {
             "type": "object",
+            "required": [
+                "email"
+            ],
             "properties": {
                 "email": {
                     "type": "string",
@@ -522,6 +576,11 @@ const docTemplate = `{
         },
         "http.ErrorBody": {
             "type": "object",
+            "required": [
+                "code",
+                "message",
+                "request_id"
+            ],
             "properties": {
                 "code": {
                     "type": "string",
@@ -550,6 +609,9 @@ const docTemplate = `{
         },
         "http.ErrorResponse": {
             "type": "object",
+            "required": [
+                "error"
+            ],
             "properties": {
                 "error": {
                     "$ref": "#/definitions/http.ErrorBody"
@@ -567,6 +629,10 @@ const docTemplate = `{
         },
         "http.LoginRequest": {
             "type": "object",
+            "required": [
+                "email",
+                "password"
+            ],
             "properties": {
                 "email": {
                     "type": "string",
@@ -580,6 +646,11 @@ const docTemplate = `{
         },
         "http.OTPAcceptedResponse": {
             "type": "object",
+            "required": [
+                "challenge_id",
+                "expires_in",
+                "message"
+            ],
             "properties": {
                 "challenge_id": {
                     "type": "string",
@@ -606,6 +677,10 @@ const docTemplate = `{
         },
         "http.RegisterRequest": {
             "type": "object",
+            "required": [
+                "email",
+                "password"
+            ],
             "properties": {
                 "email": {
                     "type": "string",
@@ -619,9 +694,14 @@ const docTemplate = `{
         },
         "http.SessionResponse": {
             "type": "object",
+            "required": [
+                "expires_at",
+                "user"
+            ],
             "properties": {
                 "expires_at": {
                     "type": "string",
+                    "format": "date-time",
                     "example": "2026-10-31T09:30:00Z"
                 },
                 "user": {
@@ -631,9 +711,16 @@ const docTemplate = `{
         },
         "http.UserResponse": {
             "type": "object",
+            "required": [
+                "created_at",
+                "email",
+                "email_verified",
+                "id"
+            ],
             "properties": {
                 "created_at": {
                     "type": "string",
+                    "format": "date-time",
                     "example": "2026-10-24T09:30:00Z"
                 },
                 "email": {

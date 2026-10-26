@@ -21,6 +21,7 @@ import (
 // @Failure      401  {object}  ErrorResponse  "invalid_credentials"
 // @Failure      403  {object}  ErrorResponse  "email_not_verified or csrf_failed"
 // @Failure      429  {object}  ErrorResponse  "rate_limited; wait Retry-After seconds"
+// @Failure      500  {object}  ErrorResponse  "audit_write_failed or internal"
 // @Failure      503  {object}  ErrorResponse  "server_busy (wait Retry-After seconds) or dependency_unavailable"
 // @Header       200  {string}   Set-Cookie   "session=…; Path=/; Expires=…; HttpOnly; SameSite=Lax"
 // @Header       429  {integer}  Retry-After  "Seconds to wait"
@@ -76,6 +77,7 @@ func (h *authHandlers) me(c fiber.Ctx) error {
 // @Param        X-CSRF-Token  header  string  true  "Token from GET /api/v1/auth/csrf"
 // @Success      204  "Signed out"
 // @Failure      403  {object}  ErrorResponse  "csrf_failed"
+// @Failure      500  {object}  ErrorResponse  "audit_write_failed or internal"
 // @Failure      503  {object}  ErrorResponse  "dependency_unavailable"
 // @Header       204  {string}  Set-Cookie  "session=; Path=/; Expires=Tue, 10 Nov 2009 23:00:00 GMT; HttpOnly; SameSite=Lax"
 // @Router       /api/v1/auth/logout [post]

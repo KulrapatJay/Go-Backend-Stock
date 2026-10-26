@@ -28,6 +28,8 @@ type swaggerResponse struct {
 
 type swaggerSchema struct {
 	Ref        string                   `json:"$ref"`
+	Format     string                   `json:"format"`
+	Required   []string                 `json:"required"`
 	Properties map[string]swaggerSchema `json:"properties"`
 }
 

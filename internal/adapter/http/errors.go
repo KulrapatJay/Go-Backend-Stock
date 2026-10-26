@@ -28,14 +28,14 @@ func (e *APIError) Error() string { return e.Code + ": " + e.Message }
 
 // ErrorResponse is the single error envelope used by every endpoint.
 type ErrorResponse struct {
-	Error ErrorBody `json:"error"`
+	Error ErrorBody `json:"error" validate:"required"`
 }
 
 // ErrorBody carries the error code, a human-readable message and the request ID.
 type ErrorBody struct {
-	Code      string `json:"code" example:"not_found"`
-	Message   string `json:"message" example:"Not Found"`
-	RequestID string `json:"request_id" example:"0192f0c1-7a8e-7cc4-9d2b-3f6c1a2b4c5d"`
+	Code      string `json:"code" example:"not_found" validate:"required"`
+	Message   string `json:"message" example:"Not Found" validate:"required"`
+	RequestID string `json:"request_id" example:"0192f0c1-7a8e-7cc4-9d2b-3f6c1a2b4c5d" validate:"required"`
 	// Details lists the rules an input broke, such as password_too_short; only on invalid_input.
 	Details []string `json:"details,omitempty" example:"password_too_short,password_missing_special"`
 }

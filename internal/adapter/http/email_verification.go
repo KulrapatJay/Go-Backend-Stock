@@ -19,6 +19,8 @@ import (
 // @Failure      400  {object}  ErrorResponse  "invalid_input or malformed_json"
 // @Failure      403  {object}  ErrorResponse  "csrf_failed"
 // @Failure      429  {object}  ErrorResponse  "rate_limited; wait Retry-After seconds"
+// @Failure      500  {object}  ErrorResponse  "audit_write_failed or internal"
+// @Failure      503  {object}  ErrorResponse  "dependency_unavailable"
 // @Header       429  {integer}  Retry-After  "Seconds to wait"
 // @Router       /api/v1/auth/email-verification/request [post]
 func (h *authHandlers) requestVerification(c fiber.Ctx) error {
@@ -54,6 +56,8 @@ func (h *authHandlers) requestVerification(c fiber.Ctx) error {
 // @Failure      400  {object}  ErrorResponse  "invalid_verification, invalid_input or malformed_json"
 // @Failure      403  {object}  ErrorResponse  "csrf_failed"
 // @Failure      429  {object}  ErrorResponse  "rate_limited; wait Retry-After seconds"
+// @Failure      500  {object}  ErrorResponse  "audit_write_failed or internal"
+// @Failure      503  {object}  ErrorResponse  "dependency_unavailable"
 // @Header       429  {integer}  Retry-After  "Seconds to wait"
 // @Router       /api/v1/auth/email-verification/confirm [post]
 func (h *authHandlers) confirmEmail(c fiber.Ctx) error {
