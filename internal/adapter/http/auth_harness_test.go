@@ -206,7 +206,7 @@ func newAuthHarness(t *testing.T, opts ...harnessOption) *authHarness {
 	must(err)
 
 	app := NewServer(Options{Logger: log, Readiness: pool, Auth: AuthOptions{
-		Service: auth, Passwords: policy, CSRF: csrf,
+		Service: auth, Verification: auth, Passwords: policy, CSRF: csrf,
 		ClientIP: NewClientIPResolver(testTrustedProxies), PublicOrigin: testOrigin,
 	}})
 	return &authHarness{app: app, pool: pool, admin: admin, store: store, mailer: mailer, clock: clock, logs: logs, origin: testOrigin}
@@ -442,7 +442,7 @@ func (h *authHarness) auditFor(t *testing.T, requestID string) []auditRow {
 }
 
 // auditByTarget returns every event about one target (a user, challenge or session ID).
-func (h *authHarness) auditByTarget(t *testing.T, targetID string) []auditRow { //nolint:unused // the tests of tasks 10-11 use it.
+func (h *authHarness) auditByTarget(t *testing.T, targetID string) []auditRow {
 	t.Helper()
 	return h.queryAudit(t, "target_id = $1", targetID)
 }
@@ -453,4 +453,34 @@ func eventTypes(rows []auditRow) []string {
 		out[i] = r.EventType
 	}
 	return out
+}
+
+func (b *browser) requestCode(email string) (response, []byte) {
+	b.t.Helper()
+	b.fetchCSRF()
+	return b.do(nethttp.MethodPost, "/api/v1/auth/email-verification/request", map[string]string{"email": email}, nil)
+}
+
+func (b *browser) confirm(challengeID, otp string) (response, []byte) {
+	b.t.Helper()
+	b.fetchCSRF()
+	return b.do(nethttp.MethodPost, "/api/v1/auth/email-verification/confirm", map[string]string{"challenge_id": challengeID, "otp": otp}, nil)
+}
+
+// signUpAndVerify registers email and confirms it with the code the fake mailer received.
+func (b *browser) signUpAndVerify(email, password string) {
+	b.t.Helper()
+	if resp, body := b.register(email, password); resp.StatusCode != nethttp.StatusAccepted {
+		b.t.Fatalf("register = %d %s", resp.StatusCode, body)
+	}
+	mail := b.h.mailer.lastVerification(b.t, email)
+	if resp, body := b.confirm(mail.ChallengeID.String(), mail.OTP.Reveal()); resp.StatusCode != nethttp.StatusNoContent {
+		b.t.Fatalf("confirm = %d %s", resp.StatusCode, body)
+	}
+}
+
+// wrongCode returns a 6-digit code that differs from code.
+func wrongCode(code string) string {
+	first := code[0] - '0'
+	return string(rune('0'+(first+1)%10)) + code[1:]
 }

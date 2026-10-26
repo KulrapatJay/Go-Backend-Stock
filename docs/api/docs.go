@@ -48,6 +48,135 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/v1/auth/email-verification/confirm": {
+            "post": {
+                "description": "Checks the 6-digit code sent by register or by \"send a new code\". A wrong, expired, already used or exhausted code (5 wrong tries) gives the same 400 invalid_verification. Success verifies the email but does not sign in: call POST /api/v1/auth/login next. Needs X-CSRF-Token and the csrf_nonce cookie.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Auth"
+                ],
+                "summary": "Confirm an email address",
+                "operationId": "confirmEmailVerification",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Token from GET /api/v1/auth/csrf",
+                        "name": "X-CSRF-Token",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "description": "challenge_id from the 202 response and the 6 ASCII digits from the email",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/http.ConfirmEmailRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "Email verified"
+                    },
+                    "400": {
+                        "description": "invalid_verification, invalid_input or malformed_json",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "csrf_failed",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
+                    },
+                    "429": {
+                        "description": "rate_limited; wait Retry-After seconds",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        },
+                        "headers": {
+                            "Retry-After": {
+                                "type": "integer",
+                                "description": "Seconds to wait"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/auth/email-verification/request": {
+            "post": {
+                "description": "Sends a new 6-digit code to an account that registered with a password and is not verified yet, and invalidates its previous code. The answer is the same for every email, so it does not reveal whether an account exists; register and this endpoint share one quota per email (one code a minute, five an hour). Needs X-CSRF-Token and the csrf_nonce cookie.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Auth"
+                ],
+                "summary": "Send a new verification code",
+                "operationId": "requestEmailVerification",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Token from GET /api/v1/auth/csrf",
+                        "name": "X-CSRF-Token",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "description": "The email to send a code to",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/http.EmailRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "202": {
+                        "description": "Accepted",
+                        "schema": {
+                            "$ref": "#/definitions/http.OTPAcceptedResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "invalid_input or malformed_json",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "csrf_failed",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
+                    },
+                    "429": {
+                        "description": "rate_limited; wait Retry-After seconds",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        },
+                        "headers": {
+                            "Retry-After": {
+                                "type": "integer",
+                                "description": "Seconds to wait"
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/api/v1/auth/register": {
             "post": {
                 "description": "Creates an unverified account and emails a 6-digit verification code. The answer is the same whether or not the email already has an account: the owner of an existing account gets an email notice instead and nothing changes. The response takes at least about half a second on purpose. Needs the pre-login CSRF flow: call GET /api/v1/auth/csrf first, send its token in X-CSRF-Token, and send the csrf_nonce cookie (a browser does this itself). Then confirm the code with POST /api/v1/auth/email-verification/confirm.",
@@ -198,6 +327,28 @@ const docTemplate = `{
                 "expires_at": {
                     "type": "string",
                     "example": "2026-10-24T10:00:00Z"
+                }
+            }
+        },
+        "http.ConfirmEmailRequest": {
+            "type": "object",
+            "properties": {
+                "challenge_id": {
+                    "type": "string",
+                    "example": "0192f0c1-7a8e-7cc4-9d2b-3f6c1a2b4c5d"
+                },
+                "otp": {
+                    "type": "string",
+                    "example": "042731"
+                }
+            }
+        },
+        "http.EmailRequest": {
+            "type": "object",
+            "properties": {
+                "email": {
+                    "type": "string",
+                    "example": "user@example.com"
                 }
             }
         },

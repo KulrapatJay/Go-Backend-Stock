@@ -13,6 +13,8 @@ var documentedAuthOperations = []struct {
 }{
 	{"get", "/api/v1/auth/csrf", []int{200, 503}},
 	{"post", "/api/v1/auth/register", []int{202, 400, 403, 429, 503}},
+	{"post", "/api/v1/auth/email-verification/request", []int{202, 400, 403, 429}},
+	{"post", "/api/v1/auth/email-verification/confirm", []int{204, 400, 403, 429}},
 }
 
 func TestAuthOperationsAreDocumented(t *testing.T) {

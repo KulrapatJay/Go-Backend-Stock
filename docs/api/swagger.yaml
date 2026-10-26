@@ -9,6 +9,21 @@ definitions:
         example: "2026-10-24T10:00:00Z"
         type: string
     type: object
+  http.ConfirmEmailRequest:
+    properties:
+      challenge_id:
+        example: 0192f0c1-7a8e-7cc4-9d2b-3f6c1a2b4c5d
+        type: string
+      otp:
+        example: "042731"
+        type: string
+    type: object
+  http.EmailRequest:
+    properties:
+      email:
+        example: user@example.com
+        type: string
+    type: object
   http.ErrorBody:
     properties:
       code:
@@ -103,6 +118,101 @@ paths:
           schema:
             $ref: '#/definitions/http.ErrorResponse'
       summary: Get a CSRF token
+      tags:
+      - Auth
+  /api/v1/auth/email-verification/confirm:
+    post:
+      consumes:
+      - application/json
+      description: 'Checks the 6-digit code sent by register or by "send a new code".
+        A wrong, expired, already used or exhausted code (5 wrong tries) gives the
+        same 400 invalid_verification. Success verifies the email but does not sign
+        in: call POST /api/v1/auth/login next. Needs X-CSRF-Token and the csrf_nonce
+        cookie.'
+      operationId: confirmEmailVerification
+      parameters:
+      - description: Token from GET /api/v1/auth/csrf
+        in: header
+        name: X-CSRF-Token
+        required: true
+        type: string
+      - description: challenge_id from the 202 response and the 6 ASCII digits from
+          the email
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/http.ConfirmEmailRequest'
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: Email verified
+        "400":
+          description: invalid_verification, invalid_input or malformed_json
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+        "403":
+          description: csrf_failed
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+        "429":
+          description: rate_limited; wait Retry-After seconds
+          headers:
+            Retry-After:
+              description: Seconds to wait
+              type: integer
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+      summary: Confirm an email address
+      tags:
+      - Auth
+  /api/v1/auth/email-verification/request:
+    post:
+      consumes:
+      - application/json
+      description: Sends a new 6-digit code to an account that registered with a password
+        and is not verified yet, and invalidates its previous code. The answer is
+        the same for every email, so it does not reveal whether an account exists;
+        register and this endpoint share one quota per email (one code a minute, five
+        an hour). Needs X-CSRF-Token and the csrf_nonce cookie.
+      operationId: requestEmailVerification
+      parameters:
+      - description: Token from GET /api/v1/auth/csrf
+        in: header
+        name: X-CSRF-Token
+        required: true
+        type: string
+      - description: The email to send a code to
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/http.EmailRequest'
+      produces:
+      - application/json
+      responses:
+        "202":
+          description: Accepted
+          schema:
+            $ref: '#/definitions/http.OTPAcceptedResponse'
+        "400":
+          description: invalid_input or malformed_json
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+        "403":
+          description: csrf_failed
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+        "429":
+          description: rate_limited; wait Retry-After seconds
+          headers:
+            Retry-After:
+              description: Seconds to wait
+              type: integer
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+      summary: Send a new verification code
       tags:
       - Auth
   /api/v1/auth/register:

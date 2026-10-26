@@ -27,6 +27,7 @@ type PasswordParser interface {
 // docs tests can build the server without it.
 type AuthOptions struct {
 	Service       port.AuthService
+	Verification  port.EmailVerificationService // nil leaves out the email-verification routes
 	Passwords     PasswordParser
 	CSRF          CSRFTokens
 	ClientIP      *ClientIPResolver // nil trusts no proxy header
@@ -35,11 +36,12 @@ type AuthOptions struct {
 }
 
 type authHandlers struct {
-	auth      port.AuthService
-	passwords PasswordParser
-	csrf      CSRFTokens
-	clientIP  *ClientIPResolver
-	cookies   cookieJar
+	auth         port.AuthService
+	verification port.EmailVerificationService
+	passwords    PasswordParser
+	csrf         CSRFTokens
+	clientIP     *ClientIPResolver
+	cookies      cookieJar
 }
 
 // registerAuthRoutes adds the /api/v1/auth routes. Each route lists its middleware explicitly, in
@@ -52,13 +54,20 @@ func registerAuthRoutes(app *fiber.App, opts AuthOptions) {
 	if resolver == nil {
 		resolver = NewClientIPResolver(nil)
 	}
-	h := &authHandlers{auth: opts.Service, passwords: opts.Passwords, csrf: opts.CSRF, clientIP: resolver, cookies: newCookieJar(opts.SecureCookies)}
+	h := &authHandlers{
+		auth: opts.Service, verification: opts.Verification, passwords: opts.Passwords,
+		csrf: opts.CSRF, clientIP: resolver, cookies: newCookieJar(opts.SecureCookies),
+	}
 	session := middleware.ResolveSession(opts.Service, h.cookies.sessionName)
 
 	csrf := middleware.CSRF(opts.CSRF, opts.PublicOrigin, h.cookies.nonceName)
 
 	app.Get("/api/v1/auth/csrf", session, h.csrfToken)
 	app.Post("/api/v1/auth/register", session, csrf, h.register)
+	if opts.Verification != nil {
+		app.Post("/api/v1/auth/email-verification/request", session, csrf, h.requestVerification)
+		app.Post("/api/v1/auth/email-verification/confirm", session, csrf, h.confirmEmail)
+	}
 }
 
 // CSRFToken godoc

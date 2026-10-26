@@ -31,3 +31,14 @@ type OTPAcceptedResponse struct {
 func newOTPAccepted(r domain.OTPReceipt) OTPAcceptedResponse {
 	return OTPAcceptedResponse{Message: otpAcceptedMessage, ChallengeID: r.ChallengeID.String(), ExpiresIn: int(r.ExpiresIn / time.Second)}
 }
+
+// EmailRequest is the body of POST /api/v1/auth/email-verification/request.
+type EmailRequest struct {
+	Email string `json:"email" example:"user@example.com"`
+}
+
+// ConfirmEmailRequest is the body of POST /api/v1/auth/email-verification/confirm.
+type ConfirmEmailRequest struct {
+	ChallengeID string `json:"challenge_id" example:"0192f0c1-7a8e-7cc4-9d2b-3f6c1a2b4c5d"`
+	OTP         string `json:"otp" example:"042731"`
+}

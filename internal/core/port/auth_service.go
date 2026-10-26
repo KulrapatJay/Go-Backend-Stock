@@ -16,3 +16,13 @@ type AuthService interface {
 	// of an existing account that someone tried to register; the answer is the same either way.
 	Register(ctx context.Context, in domain.RegisterInput, meta domain.RequestMeta) (domain.OTPReceipt, error)
 }
+
+// EmailVerificationService confirms that the owner of a local account controls its email address.
+type EmailVerificationService interface {
+	// Request sends a new code to an unverified local account and does nothing for any other email;
+	// the answer is the same either way.
+	Request(ctx context.Context, email domain.Email, meta domain.RequestMeta) (domain.OTPReceipt, error)
+	// Confirm checks the code. A wrong, expired, used or exhausted challenge returns
+	// domain.ErrInvalidVerification; a wrong code is counted and audited before that error returns.
+	Confirm(ctx context.Context, in domain.VerifyEmailInput, meta domain.RequestMeta) error
+}
