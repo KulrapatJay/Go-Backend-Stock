@@ -28,6 +28,7 @@ type Options struct {
 	Logger    *slog.Logger
 	Readiness ReadinessChecker
 	Docs      DocsOptions
+	Auth      AuthOptions
 }
 
 // NewServer builds the Fiber app with the full middleware chain and every route.
@@ -125,6 +126,7 @@ func registerRoutes(app *fiber.App, opts Options) {
 	getAndHead(app, "/healthz", health.Healthz)
 	getAndHead(app, "/readyz", health.Readyz)
 	registerDocs(app, opts.Docs)
+	registerAuthRoutes(app, opts.Auth)
 }
 
 // getAndHead registers handler for GET and HEAD. Fiber's automatic HEAD routes are added at

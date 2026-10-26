@@ -8,6 +8,39 @@
     },
     "basePath": "/",
     "paths": {
+        "/api/v1/auth/csrf": {
+            "get": {
+                "description": "Returns the token to send in the X-CSRF-Token header of every POST. Signed in, the token is bound to the session; signed out, it is bound to a random nonce that this call keeps in the HttpOnly cookie csrf_nonce (__Host-csrf_nonce over HTTPS). Tokens last one hour. Ask for a new token after login and after logout, because the binding changes. Browsers (and Swagger UI) send the cookie by themselves; curl needs a cookie jar (-b/-c).",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Auth"
+                ],
+                "summary": "Get a CSRF token",
+                "operationId": "getCSRFToken",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/http.CSRFResponse"
+                        },
+                        "headers": {
+                            "Set-Cookie": {
+                                "type": "string",
+                                "description": "csrf_nonce=…; Path=/; HttpOnly; SameSite=Lax — only when signed out"
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "dependency_unavailable: the session store could not be reached",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/healthz": {
             "get": {
                 "description": "Returns 200 while the process is running. Does not check the database.",
@@ -70,6 +103,19 @@
         }
     },
     "definitions": {
+        "http.CSRFResponse": {
+            "type": "object",
+            "properties": {
+                "csrf_token": {
+                    "type": "string",
+                    "example": "AQAAAABnHk3QxJ9b3m0z0bH2l9V1cW5qQk1xU2ZtV0RkY0p0dVhQb0xMZ3hQYnpqUkw"
+                },
+                "expires_at": {
+                    "type": "string",
+                    "example": "2026-10-24T10:00:00Z"
+                }
+            }
+        },
         "http.ErrorBody": {
             "type": "object",
             "properties": {
@@ -129,6 +175,10 @@
         {
             "description": "Liveness and readiness probes",
             "name": "Health"
+        },
+        {
+            "description": "Registration, email verification, sessions and CSRF tokens. Every POST needs the X-CSRF-Token header from GET /api/v1/auth/csrf and must come from the API's own origin.",
+            "name": "Auth"
         }
     ]
 }

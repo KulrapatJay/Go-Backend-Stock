@@ -7,6 +7,8 @@
 // @BasePath        /
 // @tag.name        Health
 // @tag.description Liveness and readiness probes
+// @tag.name        Auth
+// @tag.description Registration, email verification, sessions and CSRF tokens. Every POST needs the X-CSRF-Token header from GET /api/v1/auth/csrf and must come from the API's own origin.
 package main
 
 import (
