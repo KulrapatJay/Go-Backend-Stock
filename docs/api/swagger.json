@@ -77,6 +77,17 @@
                     "type": "string",
                     "example": "not_found"
                 },
+                "details": {
+                    "description": "Details lists the rules an input broke, such as password_too_short; only on invalid_input.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "password_too_short",
+                        "password_missing_special"
+                    ]
+                },
                 "message": {
                     "type": "string",
                     "example": "Not Found"

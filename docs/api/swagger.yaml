@@ -5,6 +5,15 @@ definitions:
       code:
         example: not_found
         type: string
+      details:
+        description: Details lists the rules an input broke, such as password_too_short;
+          only on invalid_input.
+        example:
+        - password_too_short
+        - password_missing_special
+        items:
+          type: string
+        type: array
       message:
         example: Not Found
         type: string

@@ -4,6 +4,9 @@ import (
 	"errors"
 	"log/slog"
 	"net"
+	"slices"
+	"strings"
+	"sync"
 	"time"
 
 	"github.com/gofiber/fiber/v3"
@@ -31,8 +34,30 @@ type Options struct {
 func NewServer(opts Options) *fiber.App {
 	app := newApp(opts.Logger)
 	registerRoutes(app, opts)
-	app.Use(middleware.NotFound())
+	app.Use(middleware.NotFound(staticRouteMethods(app)))
 	return app
+}
+
+// staticRouteMethods returns, for a registered path without parameters, the methods it accepts.
+// The table is built on first use, when every route has been registered.
+func staticRouteMethods(app *fiber.App) func(path string) []string {
+	var once sync.Once
+	var table map[string][]string
+	return func(path string) []string {
+		once.Do(func() {
+			table = map[string][]string{}
+			for _, r := range app.GetRoutes(true) {
+				if strings.ContainsAny(r.Path, ":*+") || slices.Contains(table[r.Path], r.Method) {
+					continue
+				}
+				table[r.Path] = append(table[r.Path], r.Method)
+			}
+			for path := range table {
+				slices.Sort(table[path])
+			}
+		})
+		return table[path]
+	}
 }
 
 func newApp(log *slog.Logger) *fiber.App {
