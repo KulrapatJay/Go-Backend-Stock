@@ -102,6 +102,4 @@ func (c *CSRFCodec) mac(binding string, expiry, salt []byte) []byte {
 	return m.Sum(nil)
 }
 
-func csrfFailed() error {
-	return domain.NewError(domain.CodeCSRFFailed, "CSRF token is missing, invalid or expired")
-}
+func csrfFailed() error { return domain.ErrCSRFFailed }
