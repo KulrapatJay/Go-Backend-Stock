@@ -63,31 +63,41 @@ Access log เก็บ method, route template, status และ duration โด
 ต้องตั้งค่าใน `.env` ให้ครบก่อน (`APP_ENV=development`, `PUBLIC_ORIGIN=http://localhost:8080` และ secret สี่ตัวตามหัวข้อก่อนหน้า) แล้ว `docker compose up --build`
 ทุก POST ต้องมี header `Origin` ที่ตรงกับ `PUBLIC_ORIGIN` และ `X-CSRF-Token` จาก `GET /api/v1/auth/csrf`; cookie jar เก็บ `csrf_nonce` และ `session` ให้เอง
 ตัวอย่างนี้ใช้ bash/zsh และอ่านรหัสจาก Mailpit ผ่าน REST API (`http://localhost:8025/api/v1/message/latest` ซึ่งตอบ JSON ที่มีฟิลด์ `Text`)
+ผู้ใช้ zsh ให้รัน `setopt interactive_comments` ก่อนวางบล็อกนี้ (zsh แบบ interactive ไม่ถือ `#` เป็น comment ตามค่าเริ่มต้น) หรือจะบันทึกบล็อกเป็นไฟล์แล้วรันด้วย `bash` ก็ได้
 
 ```bash
 API=http://localhost:8080/api/v1
 JAR=$(mktemp)
 EMAIL=demo-$RANDOM@example.com
+PASSWORD='Zq9!kVx1'
 csrf() { curl -s -b "$JAR" -c "$JAR" "$API/auth/csrf" | sed -E 's/.*"csrf_token":"([^"]+)".*/\1/'; }
 post() { curl -s -b "$JAR" -c "$JAR" -H "Origin: http://localhost:8080" -H "X-CSRF-Token: $(csrf)" \
   -H 'Content-Type: application/json' -w '\nHTTP %{http_code}\n' -d "$2" "$API$1"; }
 
-# 1) สมัคร → 202 พร้อม challenge_id (ตอบแบบเดียวกันแม้อีเมลมีบัญชีแล้ว)
-post /auth/register "{\"email\":\"$EMAIL\",\"password\":\"Zq9!kVx1\"}" | tee /dev/stderr > "$JAR.reg"
+# 1 สมัคร ได้ 202 พร้อม challenge_id และตอบแบบเดียวกันแม้อีเมลมีบัญชีแล้ว
+post /auth/register "{\"email\":\"$EMAIL\",\"password\":\"$PASSWORD\"}" | tee /dev/stderr > "$JAR.reg"
 CHALLENGE=$(sed -nE 's/.*"challenge_id":"([^"]+)".*/\1/p' "$JAR.reg")
 
-# 2) อ่านรหัส 6 หลักจากอีเมลล่าสุดใน Mailpit (ส่งหลังตอบ 202 อาจรอ 1–2 วินาที)
+# 2 อ่านรหัส 6 หลักจากอีเมลล่าสุดใน Mailpit โดยรอ 2 วินาทีเพราะระบบส่งอีเมลหลังตอบ 202
 sleep 2
 OTP=$(curl -s http://localhost:8025/api/v1/message/latest | grep -oE 'รหัสยืนยันของคุณคือ [0-9]{6}' | grep -oE '[0-9]{6}')
 
-# 3) ยืนยันอีเมล → 204
+# 3 ยืนยันอีเมล ได้ 204
 post /auth/email-verification/confirm "{\"challenge_id\":\"$CHALLENGE\",\"otp\":\"$OTP\"}"
 
-# 4) login → 200 และได้ cookie session; 5) ดูบัญชี → 200; 6) logout → 204
-post /auth/login "{\"email\":\"$EMAIL\",\"password\":\"Zq9!kVx1\"}"
+# 4 login ได้ 200 และได้ cookie session
+post /auth/login "{\"email\":\"$EMAIL\",\"password\":\"$PASSWORD\"}"
+
+# 5 ดูบัญชีปัจจุบัน ได้ 200
 curl -s -b "$JAR" -c "$JAR" -w '\nHTTP %{http_code}\n' "$API/auth/me"
+
+# 6 logout ได้ 204
 post /auth/logout ''
-curl -s -b "$JAR" -w '\nHTTP %{http_code}\n' "$API/auth/me"   # 401 หลัง logout
+
+# 7 หลัง logout เรียก me ซ้ำจะได้ 401
+curl -s -b "$JAR" -w '\nHTTP %{http_code}\n' "$API/auth/me"
+
+rm -f "$JAR" "$JAR.reg"
 ```
 
 - ขอรหัสใหม่: `post /auth/email-verification/request "{\"email\":\"$EMAIL\"}"` (เว้น 60 วินาทีจากครั้งก่อน และไม่เกิน 5 ครั้งต่อชั่วโมงต่ออีเมล)
