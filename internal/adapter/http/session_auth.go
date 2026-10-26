@@ -80,14 +80,14 @@ func (h *authHandlers) me(c fiber.Ctx) error {
 // @Header       204  {string}  Set-Cookie  "session=; Path=/; Expires=Tue, 10 Nov 2009 23:00:00 GMT; HttpOnly; SameSite=Lax"
 // @Router       /api/v1/auth/logout [post]
 func (h *authHandlers) logout(c fiber.Ctx) error {
-	h.cookies.clear(c, h.cookies.sessionName)
 	p, _ := middleware.GetPrincipal(c)
 	meta, err := h.requestMeta(c)
 	if err != nil {
 		return err
 	}
 	if err := h.auth.Logout(c.Context(), p, meta); err != nil {
-		return err
+		return err // the session may still be valid: keep the cookie so the browser does not look signed out
 	}
+	h.cookies.clear(c, h.cookies.sessionName) // also for a caller without a session: still 204
 	return c.SendStatus(fiber.StatusNoContent)
 }

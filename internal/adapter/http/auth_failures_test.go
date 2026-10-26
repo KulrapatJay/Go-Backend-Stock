@@ -73,6 +73,45 @@ func TestLoginWithoutItsAuditOpensNoSession(t *testing.T) {
 	}
 }
 
+// A logout whose audit cannot be written rolls the revoke back, so the session is still valid: the
+// browser must keep its cookie, or it would look signed out while the session lives on for days.
+func TestLogoutWithoutItsAuditKeepsTheSession(t *testing.T) {
+	h, failing := failingTwin(t)
+	email := uniqueEmail(t)
+	healthy := h.newBrowser(t)
+	healthy.signUpAndVerify(email, "Zq9!kVx1")
+	if resp, body := healthy.login(email, "Zq9!kVx1"); resp.StatusCode != nethttp.StatusOK {
+		t.Fatalf("login = %d %s", resp.StatusCode, body)
+	}
+	u, _ := h.user(t, email)
+
+	// Both harnesses share the database, so the failing twin accepts the healthy twin's session. Its
+	// CSRF token must be bound to that session, so it fetches its own.
+	b := failing.newBrowser(t)
+	b.jar["session"] = healthy.jar["session"]
+	resp, body := b.logout()
+	requireAuditFailure(t, "logout", resp, body)
+	if b.jar["session"] == "" {
+		t.Error("a logout that failed must not clear the session cookie")
+	}
+	for _, c := range resp.Header.Values("Set-Cookie") {
+		if strings.HasPrefix(c, "session=") {
+			t.Errorf("a failed logout must not touch the session cookie, got Set-Cookie %q", c)
+		}
+	}
+	var live int
+	if err := h.admin.QueryRow(context.Background(),
+		`SELECT count(*) FROM app.sessions WHERE user_id = $1 AND revoked_at IS NULL`, u.ID).Scan(&live); err != nil {
+		t.Fatal(err)
+	}
+	if live != 1 {
+		t.Errorf("%d live sessions after the failed logout, want the 1 session still valid", live)
+	}
+	if resp, _ := healthy.me(); resp.StatusCode != nethttp.StatusOK {
+		t.Errorf("me after the failed logout = %d, want 200", resp.StatusCode)
+	}
+}
+
 func TestMailerFailureDoesNotChangeTheAnswer(t *testing.T) {
 	h := newAuthHarness(t)
 	h.mailer.mu.Lock()
@@ -211,6 +250,8 @@ func TestErrorLogsHoldNoSecrets(t *testing.T) {
 	requireNoSecrets(t, mailLogs, mjar, []string{mailEmail, "Zq9!kVx1"}, []string{mail.OTP.Reveal()})
 }
 
+// With the session store down, the session middleware (Authenticate) already fails with 503 before
+// the logout handler runs, so neither the handler nor the use case touches the cookie or the session.
 func TestSessionStoreOutageIs503NotALogout(t *testing.T) {
 	h := newAuthHarness(t)
 	b := h.newBrowser(t)
