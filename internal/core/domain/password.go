@@ -1,6 +1,8 @@
 package domain
 
 import (
+	"fmt"
+	"log/slog"
 	"strings"
 	"unicode"
 	"unicode/utf8"
@@ -31,19 +33,21 @@ const (
 
 // Password is a password that passed the policy. It prints, formats and marshals as [REDACTED];
 // Reveal returns the real value for hashing only.
-type Password struct{ value string }
+type Password struct{ v secret }
 
-func (Password) String() string   { return redacted }
-func (Password) GoString() string { return redacted }
+func (Password) String() string             { return redacted }
+func (Password) GoString() string           { return redacted }
+func (Password) Format(f fmt.State, _ rune) { writeRedacted(f) }
+func (Password) LogValue() slog.Value       { return slog.StringValue(redacted) }
 
 // MarshalJSON keeps the password out of JSON logs and responses.
 func (Password) MarshalJSON() ([]byte, error) { return []byte(`"` + redacted + `"`), nil }
 
 // Reveal returns the password. Call it only to hash the value.
-func (p Password) Reveal() string { return p.value }
+func (p Password) Reveal() string { return p.v.reveal() }
 
 // IsZero reports whether p is the zero value (no password).
-func (p Password) IsZero() bool { return p.value == "" }
+func (p Password) IsZero() bool { return p.v.reveal() == "" }
 
 // ParsePassword checks raw against every password rule except the common-password list, which
 // needs a data file and is checked by service.PasswordPolicy through ParsePasswordChecked. The
@@ -60,7 +64,7 @@ func ParsePasswordChecked(raw string, email Email, isCommon func(lowercase strin
 	if len(reasons) > 0 {
 		return Password{}, NewReasonsError(CodeInvalidInput, "password does not meet the requirements", reasons...)
 	}
-	return Password{value: raw}, nil
+	return Password{v: newSecret(raw)}, nil
 }
 
 func passwordReasons(raw string, email Email, isCommon func(lowercase string) bool) []string {
