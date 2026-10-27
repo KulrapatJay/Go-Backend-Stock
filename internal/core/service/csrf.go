@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"time"
 
@@ -48,6 +49,9 @@ type CSRFCodec struct {
 
 // NewCSRFCodec returns a codec keyed with secret (at least 32 bytes).
 func NewCSRFCodec(secret []byte, clock port.Clock) (*CSRFCodec, error) {
+	if clock == nil {
+		return nil, errors.New("CSRF codec needs a clock")
+	}
 	s, err := copySecret("CSRF secret", secret)
 	if err != nil {
 		return nil, err
@@ -98,6 +102,4 @@ func (c *CSRFCodec) mac(binding string, expiry, salt []byte) []byte {
 	return m.Sum(nil)
 }
 
-func csrfFailed() error {
-	return domain.NewError(domain.CodeCSRFFailed, "CSRF token is missing, invalid or expired")
-}
+func csrfFailed() error { return domain.ErrCSRFFailed }

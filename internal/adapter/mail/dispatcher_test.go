@@ -44,9 +44,13 @@ type fakeSender struct {
 	block     chan struct{}
 	err       error
 	cancelled atomic.Bool
+	panics    atomic.Int32 // sends that should panic before doing anything
 }
 
 func (f *fakeSender) wait(ctx context.Context) error {
+	if f.panics.Add(-1) >= 0 {
+		panic("sender exploded")
+	}
 	if f.started != nil {
 		f.started <- struct{}{}
 	}
@@ -335,5 +339,28 @@ func TestNewDispatcherValidatesConfig(t *testing.T) {
 		if _, err := NewDispatcher(cfg); err == nil {
 			t.Errorf("%s: NewDispatcher() accepted the config", name)
 		}
+	}
+}
+
+func TestDispatcherSurvivesAPanickingSender(t *testing.T) {
+	sender := &fakeSender{}
+	sender.panics.Store(1)
+	d, logs := newTestDispatcher(t, sender, nil)
+	if err := d.SendEmailVerification(t.Context(), testOTPMail(t)); err != nil {
+		t.Fatal(err)
+	}
+	if err := d.SendEmailVerification(t.Context(), testOTPMail(t)); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	if err := d.Close(ctx); err != nil {
+		t.Fatalf("Close() error = %v: a panic must not stop the worker", err)
+	}
+	if v, _ := sender.counts(); v != 1 {
+		t.Errorf("delivered %d emails after the panic, want 1", v)
+	}
+	if !strings.Contains(logs.String(), `"event":"mail.panic"`) || strings.Contains(logs.String(), "exploded") {
+		t.Errorf("log %q should record mail.panic without the panic text", logs.String())
 	}
 }

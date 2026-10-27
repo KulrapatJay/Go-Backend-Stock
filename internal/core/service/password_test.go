@@ -88,7 +88,7 @@ func TestHashRejectsZeroPassword(t *testing.T) {
 }
 
 func TestHashUsesTheConfirmedFormat(t *testing.T) {
-	h, _ := newHasher(t, DefaultArgon2Params, 1, 0)
+	h, _ := newHasher(t, DefaultArgon2Params(), 1, 0)
 	hash, err := h.Hash(t.Context(), mustPassword(t, "Zq9!kVx1"))
 	if err != nil {
 		t.Fatal(err)
@@ -259,5 +259,52 @@ func TestNewPasswordHasherValidatesConfig(t *testing.T) {
 		if _, err := NewPasswordHasher(cfg); err == nil {
 			t.Errorf("%s: NewPasswordHasher() accepted the config", name)
 		}
+	}
+}
+
+func TestRehashProducesAHashThatVerifies(t *testing.T) {
+	h, _ := newHasher(t, testArgon2Params, 1, 0)
+	hash, err := h.Rehash(t.Context(), domain.NewSecretText("old rules ok"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ok, err := h.Verify(t.Context(), hash, "old rules ok"); err != nil || !ok {
+		t.Errorf("Verify(rehashed) = %v, %v; want true, nil", ok, err)
+	}
+	if need, err := h.NeedsRehash(hash); err != nil || need {
+		t.Errorf("a fresh hash must use the current parameters: need=%v err=%v", need, err)
+	}
+	_, err = h.Rehash(t.Context(), domain.SecretText{})
+	_ = requireCode(t, err, domain.CodeInternal)
+
+	release := hold(t, h)
+	defer release()
+	ctx, cancel := context.WithTimeout(t.Context(), 20*time.Millisecond)
+	defer cancel()
+	_, err = h.Rehash(ctx, domain.NewSecretText("x"))
+	_ = requireCode(t, err, domain.CodeServerBusy)
+}
+
+func TestBusyLogSaysWhyTheCallerStoppedWaiting(t *testing.T) {
+	h, logs := newHasher(t, testArgon2Params, 1, 20*time.Millisecond)
+	release := hold(t, h)
+	defer release()
+
+	_, err := h.Hash(t.Context(), mustPassword(t, "Zq9!kVx1"))
+	_ = requireCode(t, err, domain.CodeServerBusy)
+	if !strings.Contains(logs.String(), `"reason":"timeout"`) {
+		t.Errorf("log %q should say the queue timed out", logs.String())
+	}
+
+	logs.Reset()
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	slow, slowLogs := newHasher(t, testArgon2Params, 1, time.Minute)
+	releaseSlow := hold(t, slow)
+	defer releaseSlow()
+	_, err = slow.Hash(ctx, mustPassword(t, "Zq9!kVx1"))
+	_ = requireCode(t, err, domain.CodeServerBusy)
+	if !strings.Contains(slowLogs.String(), `"reason":"canceled"`) {
+		t.Errorf("log %q should say the caller gave up", slowLogs.String())
 	}
 }

@@ -1,13 +1,463 @@
 {
     "swagger": "2.0",
     "info": {
-        "description": "Records US stock trades and tracks portfolio cost and P\u0026L. It does not place real orders.\nMilestone 1 exposes only the Health endpoints; every other endpoint is not implemented yet.",
+        "description": "Records US stock trades and tracks portfolio cost and P\u0026L. It does not place real orders.\nMilestone 4b exposes Health and the email/password Auth endpoints; Google sign-in, password reset, portfolios and transactions are not implemented yet.",
         "title": "Stock Portfolio Tracker API",
         "contact": {},
         "version": "1.0"
     },
     "basePath": "/",
     "paths": {
+        "/api/v1/auth/csrf": {
+            "get": {
+                "description": "Returns the token to send in the X-CSRF-Token header of every POST. Signed in, the token is bound to the session; signed out, it is bound to a random nonce that this call keeps in the HttpOnly cookie csrf_nonce (__Host-csrf_nonce over HTTPS). Tokens last one hour. Ask for a new token after login and after logout, because the binding changes. Browsers (and Swagger UI) send the cookie by themselves; curl needs a cookie jar (-b/-c).",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Auth"
+                ],
+                "summary": "Get a CSRF token",
+                "operationId": "getCSRFToken",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/http.CSRFResponse"
+                        },
+                        "headers": {
+                            "Set-Cookie": {
+                                "type": "string",
+                                "description": "csrf_nonce=…; Path=/; HttpOnly; SameSite=Lax — only when signed out"
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "dependency_unavailable: the session store could not be reached",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/auth/email-verification/confirm": {
+            "post": {
+                "description": "Checks the 6-digit code sent by register or by \"send a new code\". A wrong, expired, already used or exhausted code (5 wrong tries) gives the same 400 invalid_verification. Success verifies the email but does not sign in: call POST /api/v1/auth/login next. Needs X-CSRF-Token and the csrf_nonce cookie.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Auth"
+                ],
+                "summary": "Confirm an email address",
+                "operationId": "confirmEmailVerification",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Token from GET /api/v1/auth/csrf",
+                        "name": "X-CSRF-Token",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "description": "challenge_id from the 202 response and the 6 ASCII digits from the email",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/http.ConfirmEmailRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "Email verified"
+                    },
+                    "400": {
+                        "description": "invalid_verification, invalid_input or malformed_json",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "csrf_failed",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
+                    },
+                    "429": {
+                        "description": "rate_limited; wait Retry-After seconds",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        },
+                        "headers": {
+                            "Retry-After": {
+                                "type": "integer",
+                                "description": "Seconds to wait"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "audit_write_failed or internal",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "dependency_unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/auth/email-verification/request": {
+            "post": {
+                "description": "Sends a new 6-digit code to an account that registered with a password and is not verified yet, and invalidates its previous code. The answer is the same for every email, so it does not reveal whether an account exists; register and this endpoint share one quota per email (one code a minute, five an hour). Needs X-CSRF-Token and the csrf_nonce cookie.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Auth"
+                ],
+                "summary": "Send a new verification code",
+                "operationId": "requestEmailVerification",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Token from GET /api/v1/auth/csrf",
+                        "name": "X-CSRF-Token",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "description": "The email to send a code to",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/http.EmailRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "202": {
+                        "description": "Accepted",
+                        "schema": {
+                            "$ref": "#/definitions/http.OTPAcceptedResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "invalid_input or malformed_json",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "csrf_failed",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
+                    },
+                    "429": {
+                        "description": "rate_limited; wait Retry-After seconds",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        },
+                        "headers": {
+                            "Retry-After": {
+                                "type": "integer",
+                                "description": "Seconds to wait"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "audit_write_failed or internal",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "dependency_unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/auth/login": {
+            "post": {
+                "description": "Opens a session and sets it in the HttpOnly cookie session (__Host-session over HTTPS; SameSite=Lax, Path=/); the body only describes it. An unknown email, a wrong password and an account that signs in only with Google all give the same 401. The right password of an account whose email is not verified gives 403 email_not_verified. The pre-login csrf_nonce cookie is cleared: call GET /api/v1/auth/csrf again for a token bound to the new session. Needs X-CSRF-Token.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Auth"
+                ],
+                "summary": "Sign in with an email and a password",
+                "operationId": "login",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Token from GET /api/v1/auth/csrf",
+                        "name": "X-CSRF-Token",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "description": "Email and password",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/http.LoginRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/http.SessionResponse"
+                        },
+                        "headers": {
+                            "Set-Cookie": {
+                                "type": "string",
+                                "description": "session=…; Path=/; Expires=…; HttpOnly; SameSite=Lax"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "invalid_input or malformed_json",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "invalid_credentials",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "email_not_verified or csrf_failed",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
+                    },
+                    "429": {
+                        "description": "rate_limited; wait Retry-After seconds",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        },
+                        "headers": {
+                            "Retry-After": {
+                                "type": "integer",
+                                "description": "Seconds to wait"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "audit_write_failed or internal",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "server_busy (wait Retry-After seconds) or dependency_unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        },
+                        "headers": {
+                            "Retry-After": {
+                                "type": "integer",
+                                "description": "Seconds to wait (server_busy)"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/auth/logout": {
+            "post": {
+                "description": "Revokes the current session on the server and clears the session cookie. Without an active session (none, expired or already revoked) it only clears the cookie and still answers 204. Needs X-CSRF-Token: signed in, a token bound to the session; otherwise one bound to the csrf_nonce cookie.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Auth"
+                ],
+                "summary": "Sign out",
+                "operationId": "logout",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Token from GET /api/v1/auth/csrf",
+                        "name": "X-CSRF-Token",
+                        "in": "header",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "Signed out",
+                        "headers": {
+                            "Set-Cookie": {
+                                "type": "string",
+                                "description": "session=; Path=/; Expires=Tue, 10 Nov 2009 23:00:00 GMT; HttpOnly; SameSite=Lax"
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "csrf_failed",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "audit_write_failed or internal",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "dependency_unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/auth/me": {
+            "get": {
+                "description": "Needs the session cookie from POST /api/v1/auth/login.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Auth"
+                ],
+                "summary": "Get the signed-in account",
+                "operationId": "getCurrentUser",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/http.UserResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "unauthenticated",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "dependency_unavailable: the session store could not be reached",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/auth/register": {
+            "post": {
+                "description": "Creates an unverified account and emails a 6-digit verification code. The answer is the same whether or not the email already has an account: the owner of an existing account gets an email notice instead and nothing changes. The response takes at least about half a second on purpose. Needs the pre-login CSRF flow: call GET /api/v1/auth/csrf first, send its token in X-CSRF-Token, and send the csrf_nonce cookie (a browser does this itself). Then confirm the code with POST /api/v1/auth/email-verification/confirm.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Auth"
+                ],
+                "summary": "Register with an email and a password",
+                "operationId": "register",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Token from GET /api/v1/auth/csrf",
+                        "name": "X-CSRF-Token",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "description": "Email, and a password of 6-32 printable ASCII characters without spaces, with a lower-case letter, an upper-case letter and a special character",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/http.RegisterRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "202": {
+                        "description": "Accepted",
+                        "schema": {
+                            "$ref": "#/definitions/http.OTPAcceptedResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "invalid_input (details lists every broken password rule) or malformed_json",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "csrf_failed",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
+                    },
+                    "429": {
+                        "description": "rate_limited; wait Retry-After seconds",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        },
+                        "headers": {
+                            "Retry-After": {
+                                "type": "integer",
+                                "description": "Seconds to wait"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "audit_write_failed or internal",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "server_busy (wait Retry-After seconds) or dependency_unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        },
+                        "headers": {
+                            "Retry-After": {
+                                "type": "integer",
+                                "description": "Seconds to wait"
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/healthz": {
             "get": {
                 "description": "Returns 200 while the process is running. Does not check the database.",
@@ -70,12 +520,75 @@
         }
     },
     "definitions": {
+        "http.CSRFResponse": {
+            "type": "object",
+            "required": [
+                "csrf_token",
+                "expires_at"
+            ],
+            "properties": {
+                "csrf_token": {
+                    "type": "string",
+                    "example": "AQAAAABnHk3QxJ9b3m0z0bH2l9V1cW5qQk1xU2ZtV0RkY0p0dVhQb0xMZ3hQYnpqUkw"
+                },
+                "expires_at": {
+                    "type": "string",
+                    "format": "date-time",
+                    "example": "2026-10-24T10:00:00Z"
+                }
+            }
+        },
+        "http.ConfirmEmailRequest": {
+            "type": "object",
+            "required": [
+                "challenge_id",
+                "otp"
+            ],
+            "properties": {
+                "challenge_id": {
+                    "type": "string",
+                    "example": "0192f0c1-7a8e-7cc4-9d2b-3f6c1a2b4c5d"
+                },
+                "otp": {
+                    "type": "string",
+                    "example": "042731"
+                }
+            }
+        },
+        "http.EmailRequest": {
+            "type": "object",
+            "required": [
+                "email"
+            ],
+            "properties": {
+                "email": {
+                    "type": "string",
+                    "example": "user@example.com"
+                }
+            }
+        },
         "http.ErrorBody": {
             "type": "object",
+            "required": [
+                "code",
+                "message",
+                "request_id"
+            ],
             "properties": {
                 "code": {
                     "type": "string",
                     "example": "not_found"
+                },
+                "details": {
+                    "description": "Details lists the rules an input broke, such as password_too_short; only on invalid_input.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "password_too_short",
+                        "password_missing_special"
+                    ]
                 },
                 "message": {
                     "type": "string",
@@ -89,6 +602,9 @@
         },
         "http.ErrorResponse": {
             "type": "object",
+            "required": [
+                "error"
+            ],
             "properties": {
                 "error": {
                     "$ref": "#/definitions/http.ErrorBody"
@@ -104,6 +620,45 @@
                 }
             }
         },
+        "http.LoginRequest": {
+            "type": "object",
+            "required": [
+                "email",
+                "password"
+            ],
+            "properties": {
+                "email": {
+                    "type": "string",
+                    "example": "user@example.com"
+                },
+                "password": {
+                    "type": "string",
+                    "example": "Zq9!kVx1"
+                }
+            }
+        },
+        "http.OTPAcceptedResponse": {
+            "type": "object",
+            "required": [
+                "challenge_id",
+                "expires_in",
+                "message"
+            ],
+            "properties": {
+                "challenge_id": {
+                    "type": "string",
+                    "example": "0192f0c1-7a8e-7cc4-9d2b-3f6c1a2b4c5d"
+                },
+                "expires_in": {
+                    "type": "integer",
+                    "example": 600
+                },
+                "message": {
+                    "type": "string",
+                    "example": "If this address can receive email, a verification code has been sent. It expires in 10 minutes."
+                }
+            }
+        },
         "http.ReadyResponse": {
             "type": "object",
             "properties": {
@@ -112,12 +667,78 @@
                     "example": "ready"
                 }
             }
+        },
+        "http.RegisterRequest": {
+            "type": "object",
+            "required": [
+                "email",
+                "password"
+            ],
+            "properties": {
+                "email": {
+                    "type": "string",
+                    "example": "user@example.com"
+                },
+                "password": {
+                    "type": "string",
+                    "example": "Zq9!kVx1"
+                }
+            }
+        },
+        "http.SessionResponse": {
+            "type": "object",
+            "required": [
+                "expires_at",
+                "user"
+            ],
+            "properties": {
+                "expires_at": {
+                    "type": "string",
+                    "format": "date-time",
+                    "example": "2026-10-31T09:30:00Z"
+                },
+                "user": {
+                    "$ref": "#/definitions/http.UserResponse"
+                }
+            }
+        },
+        "http.UserResponse": {
+            "type": "object",
+            "required": [
+                "created_at",
+                "email",
+                "email_verified",
+                "id"
+            ],
+            "properties": {
+                "created_at": {
+                    "type": "string",
+                    "format": "date-time",
+                    "example": "2026-10-24T09:30:00Z"
+                },
+                "email": {
+                    "type": "string",
+                    "example": "user@example.com"
+                },
+                "email_verified": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "id": {
+                    "type": "string",
+                    "example": "0192f0c1-7a8e-7cc4-9d2b-3f6c1a2b4c5d"
+                }
+            }
         }
     },
     "tags": [
         {
             "description": "Liveness and readiness probes",
             "name": "Health"
+        },
+        {
+            "description": "Registration, email verification, sessions and CSRF tokens. Every POST needs the X-CSRF-Token header from GET /api/v1/auth/csrf and must come from the API's own origin.",
+            "name": "Auth"
         }
     ]
 }

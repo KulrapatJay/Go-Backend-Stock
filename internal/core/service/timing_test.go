@@ -108,8 +108,23 @@ func TestCryptoJitterStaysInRange(t *testing.T) {
 
 func TestNewPacerIsUsable(t *testing.T) {
 	clock := newFakeClock()
-	pacer := NewPacer(clock, 0, 0)
+	pacer, err := NewPacer(clock, 0, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
 	pacer.Wait(t.Context(), clock.Now()) // must neither panic nor block
+}
+
+func TestNewPacerValidatesItsArguments(t *testing.T) {
+	if _, err := NewPacer(nil, time.Second, 0); err == nil {
+		t.Error("NewPacer() accepted a nil clock")
+	}
+	if _, err := NewPacer(newFakeClock(), -time.Second, 0); err == nil {
+		t.Error("NewPacer() accepted a negative floor")
+	}
+	if _, err := NewPacer(newFakeClock(), 0, -time.Second); err == nil {
+		t.Error("NewPacer() accepted a negative jitter")
+	}
 }
 
 func TestNowForStorageTruncatesToMicroseconds(t *testing.T) {

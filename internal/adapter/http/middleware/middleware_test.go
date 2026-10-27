@@ -133,7 +133,7 @@ func TestAccessLogUsesRouteTemplateAndOmitsSecrets(t *testing.T) {
 func TestNotFoundMarksUnmatchedRoute(t *testing.T) {
 	log, buf := newTestLogger()
 	app := newChainApp(log)
-	app.Use(NotFound())
+	app.Use(NotFound(nil))
 
 	resp, _ := doRequest(t, app, httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/nope/secret-path", nil))
 

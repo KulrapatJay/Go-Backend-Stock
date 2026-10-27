@@ -1,6 +1,8 @@
 package domain
 
 import (
+	"fmt"
+	"log/slog"
 	"strconv"
 	"strings"
 	"time"
@@ -63,16 +65,18 @@ const OTPLength = 6
 
 // OTPCode is a six-digit one-time code. It prints, formats and marshals as [REDACTED]; Reveal
 // returns the digits for hashing and for the email body only.
-type OTPCode struct{ value string }
+type OTPCode struct{ v secret }
 
-func (OTPCode) String() string   { return redacted }
-func (OTPCode) GoString() string { return redacted }
+func (OTPCode) String() string             { return redacted }
+func (OTPCode) GoString() string           { return redacted }
+func (OTPCode) Format(f fmt.State, _ rune) { writeRedacted(f) }
+func (OTPCode) LogValue() slog.Value       { return slog.StringValue(redacted) }
 
 // MarshalJSON keeps the code out of JSON logs and responses.
 func (OTPCode) MarshalJSON() ([]byte, error) { return []byte(`"` + redacted + `"`), nil }
 
 // Reveal returns the digits. Call it only to compute the digest or to write the email.
-func (c OTPCode) Reveal() string { return c.value }
+func (c OTPCode) Reveal() string { return c.v.reveal() }
 
 // ParseOTP accepts exactly six ASCII digits ("0".."9"). Other Unicode digits such as Thai or
 // Arabic-Indic numerals are rejected: they would never match the digest of the issued code.
@@ -85,7 +89,7 @@ func ParseOTP(s string) (OTPCode, error) {
 			return OTPCode{}, invalidInput("otp", "must be 6 digits")
 		}
 	}
-	return OTPCode{value: s}, nil
+	return OTPCode{v: newSecret(s)}, nil
 }
 
 // OTPCodeFromNumber formats a number from 0 to 999999 as six digits with leading zeros. The
@@ -95,5 +99,5 @@ func OTPCodeFromNumber(n int64) (OTPCode, error) {
 		return OTPCode{}, invariant("otp", "number must be between 0 and 999999")
 	}
 	s := strconv.FormatInt(n, 10)
-	return OTPCode{value: strings.Repeat("0", OTPLength-len(s)) + s}, nil
+	return OTPCode{v: newSecret(strings.Repeat("0", OTPLength-len(s)) + s)}, nil
 }

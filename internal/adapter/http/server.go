@@ -4,6 +4,9 @@ import (
 	"errors"
 	"log/slog"
 	"net"
+	"slices"
+	"strings"
+	"sync"
 	"time"
 
 	"github.com/gofiber/fiber/v3"
@@ -25,14 +28,37 @@ type Options struct {
 	Logger    *slog.Logger
 	Readiness ReadinessChecker
 	Docs      DocsOptions
+	Auth      AuthOptions
 }
 
 // NewServer builds the Fiber app with the full middleware chain and every route.
 func NewServer(opts Options) *fiber.App {
 	app := newApp(opts.Logger)
 	registerRoutes(app, opts)
-	app.Use(middleware.NotFound())
+	app.Use(middleware.NotFound(staticRouteMethods(app)))
 	return app
+}
+
+// staticRouteMethods returns, for a registered path without parameters, the methods it accepts.
+// The table is built on first use, when every route has been registered.
+func staticRouteMethods(app *fiber.App) func(path string) []string {
+	var once sync.Once
+	var table map[string][]string
+	return func(path string) []string {
+		once.Do(func() {
+			table = map[string][]string{}
+			for _, r := range app.GetRoutes(true) {
+				if strings.ContainsAny(r.Path, ":*+") || slices.Contains(table[r.Path], r.Method) {
+					continue
+				}
+				table[r.Path] = append(table[r.Path], r.Method)
+			}
+			for path := range table {
+				slices.Sort(table[path])
+			}
+		})
+		return table[path]
+	}
 }
 
 func newApp(log *slog.Logger) *fiber.App {
@@ -100,6 +126,7 @@ func registerRoutes(app *fiber.App, opts Options) {
 	getAndHead(app, "/healthz", health.Healthz)
 	getAndHead(app, "/readyz", health.Readyz)
 	registerDocs(app, opts.Docs)
+	registerAuthRoutes(app, opts.Auth)
 }
 
 // getAndHead registers handler for GET and HEAD. Fiber's automatic HEAD routes are added at

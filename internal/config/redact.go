@@ -3,6 +3,7 @@ package config
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
 )
 
@@ -14,6 +15,9 @@ type Secret string
 
 func (Secret) String() string   { return redactedValue }
 func (Secret) GoString() string { return redactedValue }
+
+// Format makes every fmt verb (%d, %x, %q…) print [REDACTED].
+func (Secret) Format(f fmt.State, _ rune) { _, _ = io.WriteString(f, redactedValue) }
 
 // MarshalJSON keeps the value out of JSON.
 func (Secret) MarshalJSON() ([]byte, error) { return []byte(`"` + redactedValue + `"`), nil }

@@ -1,21 +1,69 @@
 basePath: /
 definitions:
+  http.CSRFResponse:
+    properties:
+      csrf_token:
+        example: AQAAAABnHk3QxJ9b3m0z0bH2l9V1cW5qQk1xU2ZtV0RkY0p0dVhQb0xMZ3hQYnpqUkw
+        type: string
+      expires_at:
+        example: "2026-10-24T10:00:00Z"
+        format: date-time
+        type: string
+    required:
+    - csrf_token
+    - expires_at
+    type: object
+  http.ConfirmEmailRequest:
+    properties:
+      challenge_id:
+        example: 0192f0c1-7a8e-7cc4-9d2b-3f6c1a2b4c5d
+        type: string
+      otp:
+        example: "042731"
+        type: string
+    required:
+    - challenge_id
+    - otp
+    type: object
+  http.EmailRequest:
+    properties:
+      email:
+        example: user@example.com
+        type: string
+    required:
+    - email
+    type: object
   http.ErrorBody:
     properties:
       code:
         example: not_found
         type: string
+      details:
+        description: Details lists the rules an input broke, such as password_too_short;
+          only on invalid_input.
+        example:
+        - password_too_short
+        - password_missing_special
+        items:
+          type: string
+        type: array
       message:
         example: Not Found
         type: string
       request_id:
         example: 0192f0c1-7a8e-7cc4-9d2b-3f6c1a2b4c5d
         type: string
+    required:
+    - code
+    - message
+    - request_id
     type: object
   http.ErrorResponse:
     properties:
       error:
         $ref: '#/definitions/http.ErrorBody'
+    required:
+    - error
     type: object
   http.HealthResponse:
     properties:
@@ -23,20 +71,427 @@ definitions:
         example: ok
         type: string
     type: object
+  http.LoginRequest:
+    properties:
+      email:
+        example: user@example.com
+        type: string
+      password:
+        example: Zq9!kVx1
+        type: string
+    required:
+    - email
+    - password
+    type: object
+  http.OTPAcceptedResponse:
+    properties:
+      challenge_id:
+        example: 0192f0c1-7a8e-7cc4-9d2b-3f6c1a2b4c5d
+        type: string
+      expires_in:
+        example: 600
+        type: integer
+      message:
+        example: If this address can receive email, a verification code has been sent.
+          It expires in 10 minutes.
+        type: string
+    required:
+    - challenge_id
+    - expires_in
+    - message
+    type: object
   http.ReadyResponse:
     properties:
       status:
         example: ready
         type: string
     type: object
+  http.RegisterRequest:
+    properties:
+      email:
+        example: user@example.com
+        type: string
+      password:
+        example: Zq9!kVx1
+        type: string
+    required:
+    - email
+    - password
+    type: object
+  http.SessionResponse:
+    properties:
+      expires_at:
+        example: "2026-10-31T09:30:00Z"
+        format: date-time
+        type: string
+      user:
+        $ref: '#/definitions/http.UserResponse'
+    required:
+    - expires_at
+    - user
+    type: object
+  http.UserResponse:
+    properties:
+      created_at:
+        example: "2026-10-24T09:30:00Z"
+        format: date-time
+        type: string
+      email:
+        example: user@example.com
+        type: string
+      email_verified:
+        example: true
+        type: boolean
+      id:
+        example: 0192f0c1-7a8e-7cc4-9d2b-3f6c1a2b4c5d
+        type: string
+    required:
+    - created_at
+    - email
+    - email_verified
+    - id
+    type: object
 info:
   contact: {}
   description: |-
     Records US stock trades and tracks portfolio cost and P&L. It does not place real orders.
-    Milestone 1 exposes only the Health endpoints; every other endpoint is not implemented yet.
+    Milestone 4b exposes Health and the email/password Auth endpoints; Google sign-in, password reset, portfolios and transactions are not implemented yet.
   title: Stock Portfolio Tracker API
   version: "1.0"
 paths:
+  /api/v1/auth/csrf:
+    get:
+      description: Returns the token to send in the X-CSRF-Token header of every POST.
+        Signed in, the token is bound to the session; signed out, it is bound to a
+        random nonce that this call keeps in the HttpOnly cookie csrf_nonce (__Host-csrf_nonce
+        over HTTPS). Tokens last one hour. Ask for a new token after login and after
+        logout, because the binding changes. Browsers (and Swagger UI) send the cookie
+        by themselves; curl needs a cookie jar (-b/-c).
+      operationId: getCSRFToken
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          headers:
+            Set-Cookie:
+              description: csrf_nonce=…; Path=/; HttpOnly; SameSite=Lax — only when
+                signed out
+              type: string
+          schema:
+            $ref: '#/definitions/http.CSRFResponse'
+        "503":
+          description: 'dependency_unavailable: the session store could not be reached'
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+      summary: Get a CSRF token
+      tags:
+      - Auth
+  /api/v1/auth/email-verification/confirm:
+    post:
+      consumes:
+      - application/json
+      description: 'Checks the 6-digit code sent by register or by "send a new code".
+        A wrong, expired, already used or exhausted code (5 wrong tries) gives the
+        same 400 invalid_verification. Success verifies the email but does not sign
+        in: call POST /api/v1/auth/login next. Needs X-CSRF-Token and the csrf_nonce
+        cookie.'
+      operationId: confirmEmailVerification
+      parameters:
+      - description: Token from GET /api/v1/auth/csrf
+        in: header
+        name: X-CSRF-Token
+        required: true
+        type: string
+      - description: challenge_id from the 202 response and the 6 ASCII digits from
+          the email
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/http.ConfirmEmailRequest'
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: Email verified
+        "400":
+          description: invalid_verification, invalid_input or malformed_json
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+        "403":
+          description: csrf_failed
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+        "429":
+          description: rate_limited; wait Retry-After seconds
+          headers:
+            Retry-After:
+              description: Seconds to wait
+              type: integer
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+        "500":
+          description: audit_write_failed or internal
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+        "503":
+          description: dependency_unavailable
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+      summary: Confirm an email address
+      tags:
+      - Auth
+  /api/v1/auth/email-verification/request:
+    post:
+      consumes:
+      - application/json
+      description: Sends a new 6-digit code to an account that registered with a password
+        and is not verified yet, and invalidates its previous code. The answer is
+        the same for every email, so it does not reveal whether an account exists;
+        register and this endpoint share one quota per email (one code a minute, five
+        an hour). Needs X-CSRF-Token and the csrf_nonce cookie.
+      operationId: requestEmailVerification
+      parameters:
+      - description: Token from GET /api/v1/auth/csrf
+        in: header
+        name: X-CSRF-Token
+        required: true
+        type: string
+      - description: The email to send a code to
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/http.EmailRequest'
+      produces:
+      - application/json
+      responses:
+        "202":
+          description: Accepted
+          schema:
+            $ref: '#/definitions/http.OTPAcceptedResponse'
+        "400":
+          description: invalid_input or malformed_json
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+        "403":
+          description: csrf_failed
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+        "429":
+          description: rate_limited; wait Retry-After seconds
+          headers:
+            Retry-After:
+              description: Seconds to wait
+              type: integer
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+        "500":
+          description: audit_write_failed or internal
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+        "503":
+          description: dependency_unavailable
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+      summary: Send a new verification code
+      tags:
+      - Auth
+  /api/v1/auth/login:
+    post:
+      consumes:
+      - application/json
+      description: 'Opens a session and sets it in the HttpOnly cookie session (__Host-session
+        over HTTPS; SameSite=Lax, Path=/); the body only describes it. An unknown
+        email, a wrong password and an account that signs in only with Google all
+        give the same 401. The right password of an account whose email is not verified
+        gives 403 email_not_verified. The pre-login csrf_nonce cookie is cleared:
+        call GET /api/v1/auth/csrf again for a token bound to the new session. Needs
+        X-CSRF-Token.'
+      operationId: login
+      parameters:
+      - description: Token from GET /api/v1/auth/csrf
+        in: header
+        name: X-CSRF-Token
+        required: true
+        type: string
+      - description: Email and password
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/http.LoginRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          headers:
+            Set-Cookie:
+              description: session=…; Path=/; Expires=…; HttpOnly; SameSite=Lax
+              type: string
+          schema:
+            $ref: '#/definitions/http.SessionResponse'
+        "400":
+          description: invalid_input or malformed_json
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+        "401":
+          description: invalid_credentials
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+        "403":
+          description: email_not_verified or csrf_failed
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+        "429":
+          description: rate_limited; wait Retry-After seconds
+          headers:
+            Retry-After:
+              description: Seconds to wait
+              type: integer
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+        "500":
+          description: audit_write_failed or internal
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+        "503":
+          description: server_busy (wait Retry-After seconds) or dependency_unavailable
+          headers:
+            Retry-After:
+              description: Seconds to wait (server_busy)
+              type: integer
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+      summary: Sign in with an email and a password
+      tags:
+      - Auth
+  /api/v1/auth/logout:
+    post:
+      description: 'Revokes the current session on the server and clears the session
+        cookie. Without an active session (none, expired or already revoked) it only
+        clears the cookie and still answers 204. Needs X-CSRF-Token: signed in, a
+        token bound to the session; otherwise one bound to the csrf_nonce cookie.'
+      operationId: logout
+      parameters:
+      - description: Token from GET /api/v1/auth/csrf
+        in: header
+        name: X-CSRF-Token
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: Signed out
+          headers:
+            Set-Cookie:
+              description: session=; Path=/; Expires=Tue, 10 Nov 2009 23:00:00 GMT;
+                HttpOnly; SameSite=Lax
+              type: string
+        "403":
+          description: csrf_failed
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+        "500":
+          description: audit_write_failed or internal
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+        "503":
+          description: dependency_unavailable
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+      summary: Sign out
+      tags:
+      - Auth
+  /api/v1/auth/me:
+    get:
+      description: Needs the session cookie from POST /api/v1/auth/login.
+      operationId: getCurrentUser
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/http.UserResponse'
+        "401":
+          description: unauthenticated
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+        "503":
+          description: 'dependency_unavailable: the session store could not be reached'
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+      summary: Get the signed-in account
+      tags:
+      - Auth
+  /api/v1/auth/register:
+    post:
+      consumes:
+      - application/json
+      description: 'Creates an unverified account and emails a 6-digit verification
+        code. The answer is the same whether or not the email already has an account:
+        the owner of an existing account gets an email notice instead and nothing
+        changes. The response takes at least about half a second on purpose. Needs
+        the pre-login CSRF flow: call GET /api/v1/auth/csrf first, send its token
+        in X-CSRF-Token, and send the csrf_nonce cookie (a browser does this itself).
+        Then confirm the code with POST /api/v1/auth/email-verification/confirm.'
+      operationId: register
+      parameters:
+      - description: Token from GET /api/v1/auth/csrf
+        in: header
+        name: X-CSRF-Token
+        required: true
+        type: string
+      - description: Email, and a password of 6-32 printable ASCII characters without
+          spaces, with a lower-case letter, an upper-case letter and a special character
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/http.RegisterRequest'
+      produces:
+      - application/json
+      responses:
+        "202":
+          description: Accepted
+          schema:
+            $ref: '#/definitions/http.OTPAcceptedResponse'
+        "400":
+          description: invalid_input (details lists every broken password rule) or
+            malformed_json
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+        "403":
+          description: csrf_failed
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+        "429":
+          description: rate_limited; wait Retry-After seconds
+          headers:
+            Retry-After:
+              description: Seconds to wait
+              type: integer
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+        "500":
+          description: audit_write_failed or internal
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+        "503":
+          description: server_busy (wait Retry-After seconds) or dependency_unavailable
+          headers:
+            Retry-After:
+              description: Seconds to wait
+              type: integer
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+      summary: Register with an email and a password
+      tags:
+      - Auth
   /healthz:
     get:
       description: Returns 200 while the process is running. Does not check the database.
@@ -82,3 +537,7 @@ swagger: "2.0"
 tags:
 - description: Liveness and readiness probes
   name: Health
+- description: Registration, email verification, sessions and CSRF tokens. Every POST
+    needs the X-CSRF-Token header from GET /api/v1/auth/csrf and must come from the
+    API's own origin.
+  name: Auth

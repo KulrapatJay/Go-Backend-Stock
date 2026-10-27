@@ -125,15 +125,26 @@ func (d *Dispatcher) enqueue(kind string, run func(ctx context.Context) error) e
 func (d *Dispatcher) worker() {
 	defer d.wg.Done()
 	for j := range d.jobs {
-		ctx, cancel := context.WithTimeout(d.baseCtx, d.timeout)
-		err := j.run(ctx)
-		cancel()
-		if err != nil {
-			d.log.Error("sending email failed",
-				slog.String("event", "mail.send_failed"),
-				slog.String("kind", j.kind),
-				slog.String("error_class", classifyError(err)))
+		d.run(j)
+	}
+}
+
+// run sends one email. A panic in the sender is logged and the worker carries on: this goroutine
+// is outside Fiber's recover middleware, so an unrecovered panic would stop the whole API.
+func (d *Dispatcher) run(j job) {
+	ctx, cancel := context.WithTimeout(d.baseCtx, d.timeout)
+	defer cancel()
+	defer func() {
+		if r := recover(); r != nil {
+			d.log.Error("email sender panicked",
+				slog.String("event", "mail.panic"), slog.String("kind", j.kind))
 		}
+	}()
+	if err := j.run(ctx); err != nil {
+		d.log.Error("sending email failed",
+			slog.String("event", "mail.send_failed"),
+			slog.String("kind", j.kind),
+			slog.String("error_class", classifyError(err)))
 	}
 }
 

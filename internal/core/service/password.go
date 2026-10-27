@@ -25,8 +25,11 @@ type Argon2Params struct {
 	Parallelism uint8
 }
 
-// DefaultArgon2Params are the confirmed phase 1 parameters (ADR-0005): 19 MiB, 2 passes, 1 lane.
-var DefaultArgon2Params = Argon2Params{MemoryKiB: 19456, Iterations: 2, Parallelism: 1}
+// DefaultArgon2Params returns the confirmed phase 1 parameters (ADR-0005): 19 MiB, 2 passes,
+// 1 lane. It is a function so no package-level state can be changed at run time.
+func DefaultArgon2Params() Argon2Params {
+	return Argon2Params{MemoryKiB: 19456, Iterations: 2, Parallelism: 1}
+}
 
 const (
 	argon2SaltBytes = 16
@@ -115,6 +118,21 @@ func (h *PasswordHasher) Hash(ctx context.Context, password domain.Password) (do
 	return h.hashString(password.Reveal())
 }
 
+// Rehash hashes a password that has just been verified against its stored hash, so login can
+// upgrade a hash made with older parameters. It takes a slot like Hash. The password may not
+// pass today's policy (it was set under older rules), which is why it is not a domain.Password.
+func (h *PasswordHasher) Rehash(ctx context.Context, password domain.SecretText) (domain.PasswordHash, error) {
+	if password.IsZero() {
+		return "", domain.NewError(domain.CodeInternal, "cannot hash an empty password")
+	}
+	release, err := h.acquire(ctx)
+	if err != nil {
+		return "", err
+	}
+	defer release()
+	return h.hashString(password.Reveal())
+}
+
 // Verify reports whether password matches hash, comparing in constant time. A hash that cannot be
 // parsed is an internal error, not a wrong password. It returns server_busy when no slot frees up.
 func (h *PasswordHasher) Verify(ctx context.Context, hash domain.PasswordHash, password string) (bool, error) {
@@ -158,13 +176,16 @@ func (h *PasswordHasher) acquire(ctx context.Context) (release func(), err error
 	}
 	timer := time.NewTimer(h.queueTimeout)
 	defer timer.Stop()
+	reason := "timeout"
 	select {
 	case h.slots <- struct{}{}:
 		return h.release, nil
 	case <-timer.C:
 	case <-ctx.Done():
+		reason = "canceled" // the client went away; not a sign of overload
 	}
-	h.log.Warn("password hashing queue is full", slog.String("event", "auth.hash_busy"))
+	h.log.Warn("password hashing queue is full",
+		slog.String("event", "auth.hash_busy"), slog.String("reason", reason))
 	return nil, domain.NewError(domain.CodeServerBusy, "server is busy, try again shortly")
 }
 

@@ -6,6 +6,8 @@
 // internal errors, because a violation there is a bug rather than bad user input.
 package domain
 
+import "time"
+
 // ErrorCode is a stable machine-readable code shared with the API contract (spec section 11).
 type ErrorCode string
 
@@ -46,6 +48,9 @@ type Error struct {
 	// so a client can point at the exact problem. Optional; the HTTP adapter returns them as
 	// error.details.
 	Reasons []string
+	// RetryAfter is how long the client should wait before trying again. It is set on rate_limited
+	// errors; the HTTP adapter sends it as the Retry-After header.
+	RetryAfter time.Duration
 }
 
 // NewError returns an *Error with the given code and client-safe message.
@@ -57,6 +62,11 @@ func NewError(code ErrorCode, message string) *Error {
 // reasons so the caller may reuse the slice.
 func NewReasonsError(code ErrorCode, message string, reasons ...string) *Error {
 	return &Error{Code: code, Message: message, Reasons: append([]string(nil), reasons...)}
+}
+
+// NewRetryError returns an *Error that tells the client how long to wait, such as rate_limited.
+func NewRetryError(code ErrorCode, message string, retryAfter time.Duration) *Error {
+	return &Error{Code: code, Message: message, RetryAfter: retryAfter}
 }
 
 func (e *Error) Error() string { return string(e.Code) + ": " + e.Message }
@@ -79,6 +89,13 @@ var (
 	ErrIdentityConflict      = NewError(CodeIdentityConflict, "identity is already linked")
 	ErrIdempotencyConflict   = NewError(CodeIdempotencyConflict, "idempotency key was used with a different request")
 	ErrInternal              = NewError(CodeInternal, "internal error")
+
+	// Auth outcomes. Their messages are shown to clients, so they never say which check failed.
+	ErrUnauthenticated     = NewError(CodeUnauthenticated, "authentication required")
+	ErrInvalidCredentials  = NewError(CodeInvalidCredentials, "email or password is incorrect")
+	ErrInvalidVerification = NewError(CodeInvalidVerification, "verification code is invalid or has expired")
+	ErrEmailNotVerified    = NewError(CodeEmailNotVerified, "email address is not verified; ask for a new verification code")
+	ErrCSRFFailed          = NewError(CodeCSRFFailed, "CSRF token is missing, invalid or expired")
 )
 
 // invalidInput reports a rule a client-supplied value broke. field is the API field name.

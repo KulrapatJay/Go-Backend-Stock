@@ -1,6 +1,8 @@
 package domain
 
 import (
+	"fmt"
+	"log/slog"
 	"time"
 	"unicode/utf8"
 )
@@ -24,8 +26,10 @@ type PasswordHash string
 
 const redacted = "[REDACTED]"
 
-func (PasswordHash) String() string   { return redacted }
-func (PasswordHash) GoString() string { return redacted }
+func (PasswordHash) String() string             { return redacted }
+func (PasswordHash) GoString() string           { return redacted }
+func (PasswordHash) Format(f fmt.State, _ rune) { writeRedacted(f) }
+func (PasswordHash) LogValue() slog.Value       { return slog.StringValue(redacted) }
 
 // MarshalJSON keeps the hash out of JSON logs and responses.
 func (PasswordHash) MarshalJSON() ([]byte, error) { return []byte(`"` + redacted + `"`), nil }

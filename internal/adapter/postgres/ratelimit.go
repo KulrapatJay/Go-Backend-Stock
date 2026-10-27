@@ -83,7 +83,7 @@ func (r *RateLimitRepository) Admit(ctx context.Context, rules []domain.RateLimi
 			if err != nil {
 				return mapError(err)
 			}
-			decision = domain.RateLimitDecision{RetryAfter: retryAfter, RecordDenialAudit: claimed > 0}
+			decision = domain.RateLimitDecision{RetryAfter: retryAfter, RecordDenialAudit: claimed > 0, Scope: k.scope}
 			return nil
 		}
 

@@ -86,7 +86,7 @@ func TestAPIErrorIsRenderedAndLoggedWithItsStatus(t *testing.T) {
 	app.Get("/conflict", func(c fiber.Ctx) error {
 		return &APIError{Status: fiber.StatusConflict, Code: "portfolio_name_conflict", Message: "Portfolio name already exists"}
 	})
-	app.Use(middleware.NotFound())
+	app.Use(middleware.NotFound(nil))
 
 	resp, body := doRequest(t, app, httptest.NewRequestWithContext(t.Context(), nethttp.MethodGet, "/conflict", nil))
 
@@ -103,7 +103,7 @@ func TestPanicReturnsGeneric500AndLogsFinalStatus(t *testing.T) {
 	log, logs := newTestLogger()
 	app := newApp(log)
 	app.Get("/boom", func(c fiber.Ctx) error { panic("db password=hunter2 leaked in panic") })
-	app.Use(middleware.NotFound())
+	app.Use(middleware.NotFound(nil))
 
 	resp, body := doRequest(t, app, httptest.NewRequestWithContext(t.Context(), nethttp.MethodGet, "/boom", nil))
 

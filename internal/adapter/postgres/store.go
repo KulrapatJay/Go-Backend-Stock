@@ -20,6 +20,7 @@ type Store struct {
 
 var (
 	_ port.UnitOfWork     = (*Store)(nil)
+	_ port.Repositories   = (*Store)(nil)
 	_ port.TxRepositories = (*txRepositories)(nil)
 )
 

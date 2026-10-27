@@ -7,6 +7,8 @@ import (
 	"net/netip"
 	"strings"
 	"time"
+
+	"go-backend-stock/internal/core/domain"
 )
 
 const (
@@ -99,7 +101,7 @@ func loadAuth(getenv func(string) string, prod bool) (AuthConfig, []error) {
 	add(err)
 	cfg.TrustedProxies, err = parseCIDRs(getenv("TRUSTED_PROXY_CIDRS"))
 	add(err)
-	cfg.OTPMaxAttempts, err = parseIntInRange("OTP_MAX_ATTEMPTS", getenv("OTP_MAX_ATTEMPTS"), 5, 1, 20)
+	cfg.OTPMaxAttempts, err = parseIntInRange("OTP_MAX_ATTEMPTS", getenv("OTP_MAX_ATTEMPTS"), 5, 1, domain.MaxOTPFailedAttemptsCeiling)
 	add(err)
 	cfg.OTPResendCooldown, err = parseDurationInRange("OTP_RESEND_COOLDOWN", getenv("OTP_RESEND_COOLDOWN"), time.Minute, time.Second, time.Hour)
 	add(err)
@@ -207,7 +209,9 @@ func parseCIDRs(raw string) ([]netip.Prefix, error) {
 	var out []netip.Prefix
 	for _, item := range strings.Split(raw, ",") {
 		prefix, err := netip.ParsePrefix(strings.TrimSpace(item))
-		if err != nil || prefix.Bits() == 0 {
+		// An IPv4-mapped prefix (::ffff:10.0.0.0/104) never matches: client addresses are unmapped
+		// before the comparison. Refuse it rather than silently trusting nothing.
+		if err != nil || prefix.Bits() == 0 || prefix.Addr().Is4In6() {
 			return nil, errors.New("TRUSTED_PROXY_CIDRS must be a comma-separated list of CIDR ranges such as 10.0.0.0/8, and must not trust every address")
 		}
 		out = append(out, prefix.Masked())

@@ -1,0 +1,37 @@
+package port
+
+import (
+	"context"
+
+	"go-backend-stock/internal/core/domain"
+)
+
+// AuthService is the inbound port of the auth use cases for the HTTP adapter. Methods are added as
+// each use case is built (milestone 4 design section 3); Google sign-in arrives in plan 4c.
+type AuthService interface {
+	// Authenticate resolves a raw session cookie. An unknown, malformed, expired or revoked token
+	// returns domain.ErrUnauthenticated; a failing session store returns dependency_unavailable.
+	Authenticate(ctx context.Context, token string) (domain.Principal, error)
+	// Register creates an unverified account and sends it a verification code, or tells the owner
+	// of an existing account that someone tried to register; the answer is the same either way.
+	Register(ctx context.Context, in domain.RegisterInput, meta domain.RequestMeta) (domain.OTPReceipt, error)
+	// Login checks the password and opens a session. Every failure that must not reveal the account
+	// returns domain.ErrInvalidCredentials; the right password of an unverified account returns
+	// domain.ErrEmailNotVerified. Failures are audited before the error returns.
+	Login(ctx context.Context, in domain.LoginInput, meta domain.RequestMeta) (domain.SessionGrant, error)
+	// CurrentUser returns the account of p; an account that no longer exists is ErrUnauthenticated.
+	CurrentUser(ctx context.Context, p domain.Principal) (domain.User, error)
+	// Logout revokes p's session. A zero p (no active session) does nothing; a session that was
+	// revoked meanwhile is not audited again.
+	Logout(ctx context.Context, p domain.Principal, meta domain.RequestMeta) error
+}
+
+// EmailVerificationService confirms that the owner of a local account controls its email address.
+type EmailVerificationService interface {
+	// Request sends a new code to an unverified local account and does nothing for any other email;
+	// the answer is the same either way.
+	Request(ctx context.Context, email domain.Email, meta domain.RequestMeta) (domain.OTPReceipt, error)
+	// Confirm checks the code. A wrong, expired, used or exhausted challenge returns
+	// domain.ErrInvalidVerification; a wrong code is counted and audited before that error returns.
+	Confirm(ctx context.Context, in domain.VerifyEmailInput, meta domain.RequestMeta) error
+}
