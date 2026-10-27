@@ -54,6 +54,8 @@ type Provider struct {
 	down       bool
 	jwksDown   bool
 	jwksURL    string
+	discStatus int
+	discBody   string
 	keysDelay  time.Duration
 	tokenFail  int
 	tokenBody  string
@@ -122,6 +124,14 @@ func (p *Provider) SetJWKSURL(u string) {
 	p.jwksURL = u
 }
 
+// SetDiscoveryFailure makes the discovery endpoint answer status with body (status 0 = work
+// normally again).
+func (p *Provider) SetDiscoveryFailure(status int, body string) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.discStatus, p.discBody = status, body
+}
+
 // SetKeysDelay makes the key endpoint wait this long before it answers (0 = no wait).
 func (p *Provider) SetKeysDelay(d time.Duration) {
 	p.mu.Lock()
@@ -176,8 +186,12 @@ func (p *Provider) guard(next http.Handler) http.Handler {
 
 func (p *Provider) discovery(w http.ResponseWriter, _ *http.Request) {
 	p.mu.Lock()
-	jwksURI := p.jwksURL
+	jwksURI, fail, failBody := p.jwksURL, p.discStatus, p.discBody
 	p.mu.Unlock()
+	if fail != 0 {
+		http.Error(w, failBody, fail)
+		return
+	}
 	if jwksURI == "" {
 		jwksURI = p.Issuer() + "/keys"
 	}

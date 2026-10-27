@@ -178,7 +178,8 @@ func (g *Google) discover(ctx context.Context) (*discovered, error) {
 	defer cancel()
 	p, err := oidc.NewProvider(oidc.ClientContext(ctx, g.client), g.cfg.Issuer)
 	if err != nil {
-		return nil, unavailable(err)
+		// go-oidc puts the response body in this error, so its text is not passed on.
+		return nil, unavailable(errors.New("identity provider discovery failed"))
 	}
 	var doc struct {
 		JWKSURI string `json:"jwks_uri"`
@@ -230,6 +231,8 @@ type fetchRecorder struct{ inner oidc.KeySet }
 
 func (r fetchRecorder) VerifySignature(ctx context.Context, jwt string) ([]byte, error) {
 	payload, err := r.inner.VerifySignature(ctx, jwt)
+	// Depends on go-oidc v3.21.0 wrapping only fetch failures with %w (jwks.go "fetching keys %w");
+	// re-check this whenever go-oidc is upgraded.
 	if err != nil && errors.Unwrap(err) != nil {
 		if f, ok := ctx.Value(keyFetchKey{}).(*keyFetchFailure); ok {
 			f.record(err)

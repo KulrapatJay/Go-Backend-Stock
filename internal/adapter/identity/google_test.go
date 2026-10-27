@@ -331,6 +331,23 @@ func TestErrorsNeverCarryTheProviderResponseBody(t *testing.T) {
 	}
 }
 
+func TestDiscoveryErrorsNeverCarryTheProviderResponseBody(t *testing.T) {
+	const marker = "DISCOVERY-BODY-MARKER-QQ77"
+	p := identitytest.New(t)
+	p.SetDiscoveryFailure(http.StatusServiceUnavailable, marker)
+
+	_, err := newTestGoogle(t, p).AuthorizationURL(t.Context(), domain.AuthorizationRequest{State: "s", Nonce: "n", CodeChallenge: "c"})
+	requireUnavailable(t, err)
+	if strings.Contains(err.Error(), marker) {
+		t.Errorf("AuthorizationURL error leaks the discovery body: %v", err)
+	}
+	_, err = newTestGoogle(t, p).Exchange(t.Context(), exchange(validGrant(t, p)))
+	requireUnavailable(t, err)
+	if strings.Contains(err.Error(), marker) {
+		t.Errorf("Exchange error leaks the discovery body: %v", err)
+	}
+}
+
 func TestNewGoogleBoundsASuppliedClientWithoutATimeout(t *testing.T) {
 	supplied := &http.Client{}
 	g, err := NewGoogle(GoogleConfig{
