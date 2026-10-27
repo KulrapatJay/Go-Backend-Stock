@@ -37,6 +37,11 @@ const (
 	CodeServerBusy            ErrorCode = "server_busy"
 	CodeInternal              ErrorCode = "internal"
 	CodeAuditWriteFailed      ErrorCode = "audit_write_failed"
+
+	// CodeIdentityRejected is raised by the identity adapter when the provider or the ID token check
+	// refuses a sign-in. The Google callback turns it into an audited "failed" outcome. It is not
+	// in domainStatus, so it never reaches a client: the HTTP adapter answers with a generic 500.
+	CodeIdentityRejected ErrorCode = "identity_rejected"
 )
 
 // Error is the single domain error type. Message is safe to return to clients: it names the
@@ -100,7 +105,7 @@ var (
 	// Google sign-in. ErrIdentityRejected means the provider or the token check refused the
 	// sign-in; the callback turns it into an audited "failed" outcome, never a client message.
 	ErrFeatureDisabled  = NewError(CodeFeatureDisabled, "this feature is not configured on this server")
-	ErrIdentityRejected = NewError(CodeInvalidCredentials, "the identity provider did not confirm the sign-in")
+	ErrIdentityRejected = NewError(CodeIdentityRejected, "the identity provider did not confirm the sign-in")
 )
 
 // invalidInput reports a rule a client-supplied value broke. field is the API field name.

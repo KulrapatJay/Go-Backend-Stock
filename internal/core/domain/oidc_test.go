@@ -47,7 +47,7 @@ func TestOIDCOutcomesAreTheRedirectValues(t *testing.T) {
 func TestGoogleSentinels(t *testing.T) {
 	for sentinel, code := range map[*domain.Error]domain.ErrorCode{
 		domain.ErrFeatureDisabled:  domain.CodeFeatureDisabled,
-		domain.ErrIdentityRejected: domain.CodeInvalidCredentials,
+		domain.ErrIdentityRejected: domain.CodeIdentityRejected,
 	} {
 		if sentinel.Code != code || sentinel.Message == "" {
 			t.Errorf("sentinel %v has code %s, want %s", sentinel, sentinel.Code, code)
@@ -55,5 +55,17 @@ func TestGoogleSentinels(t *testing.T) {
 		if !errors.Is(fmt.Errorf("wrapped: %w", sentinel), sentinel) {
 			t.Errorf("a wrapped %s must still match", code)
 		}
+	}
+	if string(domain.CodeIdentityRejected) != "identity_rejected" {
+		t.Errorf("CodeIdentityRejected = %q, want identity_rejected", domain.CodeIdentityRejected)
+	}
+}
+
+func TestIdentityRejectedDoesNotMatchPasswordFailure(t *testing.T) {
+	if errors.Is(domain.ErrIdentityRejected, domain.ErrInvalidCredentials) {
+		t.Error("a refused Google sign-in must not match ErrInvalidCredentials")
+	}
+	if errors.Is(domain.ErrInvalidCredentials, domain.ErrIdentityRejected) {
+		t.Error("a failed password login must not match ErrIdentityRejected")
 	}
 }
