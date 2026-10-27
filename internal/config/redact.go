@@ -34,8 +34,9 @@ func (s Secret) Bytes() []byte { return []byte(s) }
 // String summarises the configuration for humans. It leaves out everything that can hold a
 // credential: the database URL, the secrets and the SMTP credentials.
 func (c Config) String() string {
-	return fmt.Sprintf("config{env=%s addr=%s origin=%s docs=%t try_it_out=%t smtp=%s:%d smtp_tls=%s}",
-		c.Env, c.HTTPAddr, c.PublicOrigin, c.DocsEnabled, c.DocsTryItOutEnabled, c.SMTP.Host, c.SMTP.Port, c.SMTP.TLS)
+	return fmt.Sprintf("config{env=%s addr=%s origin=%s docs=%t try_it_out=%t smtp=%s:%d smtp_tls=%s google=%t}",
+		c.Env, c.HTTPAddr, c.PublicOrigin, c.DocsEnabled, c.DocsTryItOutEnabled, c.SMTP.Host, c.SMTP.Port, c.SMTP.TLS,
+		c.Google.Enabled())
 }
 
 // GoString makes %#v print the same safe summary.
@@ -55,5 +56,6 @@ func (c Config) LogValue() slog.Value {
 		slog.String("smtp_host", c.SMTP.Host),
 		slog.Int("smtp_port", c.SMTP.Port),
 		slog.String("smtp_tls", c.SMTP.TLS),
+		slog.Bool("google_enabled", c.Google.Enabled()),
 	)
 }
