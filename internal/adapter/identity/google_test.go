@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"net/url"
 	"strings"
 	"testing"
@@ -201,6 +202,161 @@ func TestGoogleNeverPrintsTheClientSecret(t *testing.T) {
 	} {
 		if strings.Contains(out, "ZQXJ") {
 			t.Errorf("%s leaks the client secret: %s", name, out)
+		}
+	}
+}
+
+func validGrant(t *testing.T, p *identitytest.Provider) string {
+	t.Helper()
+	return p.Authorize(t, identitytest.Grant{Subject: "s", Email: "user@example.com", Nonce: "n", CodeChallenge: identitytest.Challenge(testVerifier)})
+}
+
+func requireUnavailable(t *testing.T, err error) {
+	t.Helper()
+	requireCode(t, err, domain.CodeDependencyUnavailable)
+	if errors.Is(err, domain.ErrIdentityRejected) {
+		t.Error("an outage must not look like a refused sign-in")
+	}
+}
+
+func TestExchangeWhenTheKeyEndpointIsDownIsUnavailableThenRecovers(t *testing.T) {
+	p := identitytest.New(t)
+	g := newTestGoogle(t, p)
+	if _, err := g.AuthorizationURL(t.Context(), domain.AuthorizationRequest{State: "s", Nonce: "n", CodeChallenge: "c"}); err != nil {
+		t.Fatal(err) // discovery worked; the key cache is still empty
+	}
+	p.SetJWKSDown(true)
+	_, err := g.Exchange(t.Context(), exchange(validGrant(t, p)))
+	requireUnavailable(t, err)
+
+	p.SetJWKSDown(false)
+	if _, err := g.Exchange(t.Context(), exchange(validGrant(t, p))); err != nil {
+		t.Errorf("after the key endpoint came back = %v, want success without a restart", err)
+	}
+}
+
+func TestExchangeWhenTheKeyEndpointIsSlowIsUnavailable(t *testing.T) {
+	p := identitytest.New(t)
+	g, err := NewGoogle(GoogleConfig{
+		Issuer: p.Issuer(), ClientID: identitytest.ClientID, ClientSecret: identitytest.ClientSecret,
+		RedirectURL: testRedirect, Timeout: 300 * time.Millisecond,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	p.SetKeysDelay(5 * time.Second)
+	_, err = g.Exchange(t.Context(), exchange(validGrant(t, p)))
+	requireUnavailable(t, err)
+}
+
+func TestExchangeWhenTheKeyEndpointIsUnreachableIsUnavailable(t *testing.T) {
+	p := identitytest.New(t)
+	p.SetJWKSURL("http://127.0.0.1:1/keys") // nothing listens there: connection refused
+	g := newTestGoogle(t, p)
+	_, err := g.Exchange(t.Context(), exchange(validGrant(t, p)))
+	requireUnavailable(t, err)
+}
+
+func TestExchangeRejectsATokenWithoutASubject(t *testing.T) {
+	p := identitytest.New(t)
+	g := newTestGoogle(t, p)
+	code := p.Authorize(t, identitytest.Grant{Email: "user@example.com", Nonce: "n", CodeChallenge: identitytest.Challenge(testVerifier)})
+	if _, err := g.Exchange(t.Context(), exchange(code)); !errors.Is(err, domain.ErrIdentityRejected) {
+		t.Errorf("empty sub = %v, want ErrIdentityRejected", err)
+	}
+}
+
+func TestWrongClientCredentialsAreUnavailableNotRejected(t *testing.T) {
+	p := identitytest.New(t)
+	g, err := NewGoogle(GoogleConfig{
+		Issuer: p.Issuer(), ClientID: identitytest.ClientID, ClientSecret: "not-the-secret",
+		RedirectURL: testRedirect, Timeout: 5 * time.Second,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = g.Exchange(t.Context(), exchange(validGrant(t, p)))
+	requireUnavailable(t, err) // our own credentials are wrong: that is not a user being refused
+}
+
+func TestTokenEndpointStatusClassification(t *testing.T) {
+	for status, wantUnavailable := range map[int]bool{
+		http.StatusBadRequest: false, http.StatusForbidden: false,
+		http.StatusUnauthorized: true, http.StatusRequestTimeout: true, http.StatusTooManyRequests: true,
+		http.StatusInternalServerError: true, http.StatusServiceUnavailable: true,
+	} {
+		t.Run(fmt.Sprint(status), func(t *testing.T) {
+			p := identitytest.New(t)
+			g := newTestGoogle(t, p)
+			p.SetTokenFailure(status, "x")
+			_, err := g.Exchange(t.Context(), exchange(validGrant(t, p)))
+			if wantUnavailable {
+				requireUnavailable(t, err)
+			} else if !errors.Is(err, domain.ErrIdentityRejected) {
+				t.Errorf("status %d = %v, want ErrIdentityRejected", status, err)
+			}
+		})
+	}
+}
+
+func TestARefusedExchangePostsToTheTokenEndpointOnce(t *testing.T) {
+	p := identitytest.New(t)
+	g := newTestGoogle(t, p)
+	wrong := domain.CodeExchange{Code: domain.NewSecretText(validGrant(t, p)), CodeVerifier: domain.NewSecretText(strings.Repeat("w", 43))}
+	if _, err := g.Exchange(t.Context(), wrong); !errors.Is(err, domain.ErrIdentityRejected) {
+		t.Fatalf("wrong verifier = %v", err)
+	}
+	if got := p.TokenCalls(); got != 1 {
+		t.Errorf("token endpoint calls = %d, want 1", got)
+	}
+}
+
+func TestErrorsNeverCarryTheProviderResponseBody(t *testing.T) {
+	const marker = "BODY-MARKER-QQ77"
+	for _, status := range []int{http.StatusBadRequest, http.StatusServiceUnavailable} {
+		p := identitytest.New(t)
+		g := newTestGoogle(t, p)
+		p.SetTokenFailure(status, marker)
+		_, err := g.Exchange(t.Context(), exchange(validGrant(t, p)))
+		if err == nil || strings.Contains(err.Error(), marker) {
+			t.Errorf("status %d: error = %v, want one without the response body", status, err)
+		}
+	}
+	p := identitytest.New(t)
+	g := newTestGoogle(t, p)
+	p.SetJWKSDown(true)
+	_, err := g.Exchange(t.Context(), exchange(validGrant(t, p)))
+	if err == nil || strings.Contains(err.Error(), identitytest.KeysDownBody) {
+		t.Errorf("key endpoint error = %v, want one without the response body", err)
+	}
+}
+
+func TestNewGoogleBoundsASuppliedClientWithoutATimeout(t *testing.T) {
+	supplied := &http.Client{}
+	g, err := NewGoogle(GoogleConfig{
+		Issuer: GoogleIssuer, ClientID: "id", ClientSecret: "secret", RedirectURL: testRedirect,
+		Timeout: 3 * time.Second, HTTPClient: supplied,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if g.client.Timeout != 3*time.Second {
+		t.Errorf("client timeout = %v, want 3s", g.client.Timeout)
+	}
+	if supplied.Timeout != 0 {
+		t.Error("the supplied client must not be modified")
+	}
+}
+
+func TestNormalizeIssuer(t *testing.T) {
+	for _, tc := range []struct{ configured, got, want string }{
+		{GoogleIssuer, "accounts.google.com", GoogleIssuer},
+		{GoogleIssuer, GoogleIssuer, GoogleIssuer},
+		{"https://other.example", "accounts.google.com", "accounts.google.com"},
+		{"https://other.example", "https://other.example", "https://other.example"},
+	} {
+		if got := normalizeIssuer(tc.configured, tc.got); got != tc.want {
+			t.Errorf("normalizeIssuer(%q, %q) = %q, want %q", tc.configured, tc.got, got, tc.want)
 		}
 	}
 }

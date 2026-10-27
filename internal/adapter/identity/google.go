@@ -54,8 +54,15 @@ type Google struct {
 	cfg    GoogleConfig
 	client *http.Client
 
-	mu       sync.Mutex
-	provider *oidc.Provider
+	mu   sync.Mutex
+	disc *discovered
+}
+
+// discovered is what one successful discovery gives: the OAuth client, and one ID token verifier
+// whose key cache every sign-in shares.
+type discovered struct {
+	oauth    *oauth2.Config
+	verifier *oidc.IDTokenVerifier
 }
 
 var _ port.IdentityProvider = (*Google)(nil)
@@ -68,9 +75,18 @@ func NewGoogle(cfg GoogleConfig) (*Google, error) {
 	case cfg.Timeout <= 0:
 		return nil, errors.New("google identity provider timeout must be positive")
 	}
-	client := cfg.HTTPClient
-	if client == nil {
+	var client *http.Client
+	switch {
+	case cfg.HTTPClient == nil:
 		client = &http.Client{Timeout: cfg.Timeout}
+	case cfg.HTTPClient.Timeout == 0:
+		// The key fetch runs on a context that outlives the request, so the client timeout is its
+		// only bound. Copy the client so the caller's one is left alone.
+		c := *cfg.HTTPClient
+		c.Timeout = cfg.Timeout
+		client = &c
+	default:
+		client = cfg.HTTPClient
 	}
 	return &Google{cfg: cfg, client: client}, nil
 }
@@ -85,11 +101,11 @@ func (g *Google) LogValue() slog.Value { return g.cfg.LogValue() }
 
 // AuthorizationURL implements port.IdentityProvider.
 func (g *Google) AuthorizationURL(ctx context.Context, req domain.AuthorizationRequest) (string, error) {
-	p, err := g.discover(ctx)
+	d, err := g.discover(ctx)
 	if err != nil {
 		return "", err
 	}
-	return g.oauth(p).AuthCodeURL(req.State,
+	return d.oauth.AuthCodeURL(req.State,
 		oauth2.SetAuthURLParam("nonce", req.Nonce),
 		oauth2.SetAuthURLParam("code_challenge", req.CodeChallenge),
 		oauth2.SetAuthURLParam("code_challenge_method", "S256"),
@@ -97,9 +113,10 @@ func (g *Google) AuthorizationURL(ctx context.Context, req domain.AuthorizationR
 }
 
 // Exchange implements port.IdentityProvider. go-oidc checks the signature against the provider's
-// published keys, the issuer, the audience (the client ID) and the expiry.
+// published keys, the issuer, the audience (the client ID) and the expiry. A provider outage is
+// reported as unavailable and never as a refused sign-in; messages carry no response bodies.
 func (g *Google) Exchange(ctx context.Context, ex domain.CodeExchange) (domain.VerifiedIdentity, error) {
-	p, err := g.discover(ctx)
+	d, err := g.discover(ctx)
 	if err != nil {
 		return domain.VerifiedIdentity{}, err
 	}
@@ -107,11 +124,15 @@ func (g *Google) Exchange(ctx context.Context, ex domain.CodeExchange) (domain.V
 	defer cancel()
 	ctx = oidc.ClientContext(ctx, g.client)
 
-	tok, err := g.oauth(p).Exchange(ctx, ex.Code.Reveal(), oauth2.VerifierOption(ex.CodeVerifier.Reveal()))
+	tok, err := d.oauth.Exchange(ctx, ex.Code.Reveal(), oauth2.VerifierOption(ex.CodeVerifier.Reveal()))
 	if err != nil {
 		var re *oauth2.RetrieveError
-		if errors.As(err, &re) && re.Response != nil && re.Response.StatusCode < http.StatusInternalServerError {
-			return domain.VerifiedIdentity{}, fmt.Errorf("%w: token endpoint answered %d", domain.ErrIdentityRejected, re.Response.StatusCode)
+		if errors.As(err, &re) && re.Response != nil {
+			status := re.Response.StatusCode
+			if tokenStatusIsOutage(status) {
+				return domain.VerifiedIdentity{}, unavailable(fmt.Errorf("token endpoint answered %d", status))
+			}
+			return domain.VerifiedIdentity{}, fmt.Errorf("%w: token endpoint answered %d", domain.ErrIdentityRejected, status)
 		}
 		return domain.VerifiedIdentity{}, unavailable(err)
 	}
@@ -119,12 +140,19 @@ func (g *Google) Exchange(ctx context.Context, ex domain.CodeExchange) (domain.V
 	if !ok || raw == "" {
 		return domain.VerifiedIdentity{}, fmt.Errorf("%w: no ID token", domain.ErrIdentityRejected)
 	}
-	idt, err := p.Verifier(&oidc.Config{ClientID: g.cfg.ClientID}).Verify(ctx, raw)
+	var fetch keyFetchFailure
+	idt, err := d.verifier.Verify(context.WithValue(ctx, keyFetchKey{}, &fetch), raw)
 	if err != nil {
+		if fetch.failed() {
+			return domain.VerifiedIdentity{}, unavailable(errors.New("could not fetch the provider's signing keys"))
+		}
 		if isNetwork(err) {
 			return domain.VerifiedIdentity{}, unavailable(err)
 		}
 		return domain.VerifiedIdentity{}, fmt.Errorf("%w: %w", domain.ErrIdentityRejected, err)
+	}
+	if idt.Subject == "" {
+		return domain.VerifiedIdentity{}, fmt.Errorf("%w: no subject", domain.ErrIdentityRejected)
 	}
 	var claims struct {
 		Email         string `json:"email"`
@@ -134,16 +162,17 @@ func (g *Google) Exchange(ctx context.Context, ex domain.CodeExchange) (domain.V
 		return domain.VerifiedIdentity{}, fmt.Errorf("%w: unreadable claims", domain.ErrIdentityRejected)
 	}
 	return domain.VerifiedIdentity{
-		Issuer: idt.Issuer, Subject: idt.Subject, Email: claims.Email, EmailVerified: claims.EmailVerified, Nonce: idt.Nonce,
+		Issuer: normalizeIssuer(g.cfg.Issuer, idt.Issuer), Subject: idt.Subject,
+		Email: claims.Email, EmailVerified: claims.EmailVerified, Nonce: idt.Nonce,
 	}, nil
 }
 
-// discover returns the cached provider, or runs discovery once more.
-func (g *Google) discover(ctx context.Context) (*oidc.Provider, error) {
+// discover returns the cached discovery result, or runs discovery once more.
+func (g *Google) discover(ctx context.Context) (*discovered, error) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
-	if g.provider != nil {
-		return g.provider, nil
+	if g.disc != nil {
+		return g.disc, nil
 	}
 	ctx, cancel := context.WithTimeout(ctx, g.cfg.Timeout)
 	defer cancel()
@@ -151,15 +180,77 @@ func (g *Google) discover(ctx context.Context) (*oidc.Provider, error) {
 	if err != nil {
 		return nil, unavailable(err)
 	}
-	g.provider = p
-	return p, nil
+	var doc struct {
+		JWKSURI string `json:"jwks_uri"`
+	}
+	if err := p.Claims(&doc); err != nil || doc.JWKSURI == "" {
+		return nil, unavailable(errors.New("discovery document has no jwks_uri"))
+	}
+	// The key set keeps its own context, so the timeout above does not cut later key fetches; the
+	// client timeout bounds them.
+	keys := oidc.NewRemoteKeySet(oidc.ClientContext(context.Background(), g.client), doc.JWKSURI)
+	endpoint := p.Endpoint()
+	endpoint.AuthStyle = oauth2.AuthStyleInParams
+	g.disc = &discovered{
+		oauth: &oauth2.Config{
+			ClientID: g.cfg.ClientID, ClientSecret: g.cfg.ClientSecret, RedirectURL: g.cfg.RedirectURL,
+			Endpoint: endpoint, Scopes: []string{oidc.ScopeOpenID, "email"},
+		},
+		verifier: oidc.NewVerifier(g.cfg.Issuer, fetchRecorder{keys}, &oidc.Config{
+			ClientID: g.cfg.ClientID, SupportedSigningAlgs: []string{oidc.RS256},
+		}),
+	}
+	return g.disc, nil
 }
 
-func (g *Google) oauth(p *oidc.Provider) *oauth2.Config {
-	return &oauth2.Config{
-		ClientID: g.cfg.ClientID, ClientSecret: g.cfg.ClientSecret, RedirectURL: g.cfg.RedirectURL,
-		Endpoint: p.Endpoint(), Scopes: []string{oidc.ScopeOpenID, "email"},
+type keyFetchKey struct{}
+
+// keyFetchFailure is where fetchRecorder notes that fetching the provider's keys failed.
+// go-oidc flattens the key set's error into text, so the context carries the signal instead.
+type keyFetchFailure struct {
+	mu  sync.Mutex
+	err error
+}
+
+func (f *keyFetchFailure) record(err error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.err = err
+}
+
+func (f *keyFetchFailure) failed() bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.err != nil
+}
+
+// fetchRecorder wraps the remote key set. go-oidc wraps a failed fetch with %w ("fetching keys
+// ..."), while a signature that matches no key is a plain error, so Unwrap tells them apart.
+type fetchRecorder struct{ inner oidc.KeySet }
+
+func (r fetchRecorder) VerifySignature(ctx context.Context, jwt string) ([]byte, error) {
+	payload, err := r.inner.VerifySignature(ctx, jwt)
+	if err != nil && errors.Unwrap(err) != nil {
+		if f, ok := ctx.Value(keyFetchKey{}).(*keyFetchFailure); ok {
+			f.record(err)
+		}
 	}
+	return payload, err
+}
+
+// tokenStatusIsOutage separates a provider or credential problem from a user being refused: 401
+// means our client credentials are wrong, which must not look like a refused sign-in.
+func tokenStatusIsOutage(status int) bool {
+	return status == http.StatusUnauthorized || status == http.StatusRequestTimeout ||
+		status == http.StatusTooManyRequests || status >= http.StatusInternalServerError
+}
+
+// normalizeIssuer maps Google's allowed "accounts.google.com" issuer variant to GoogleIssuer.
+func normalizeIssuer(configured, got string) string {
+	if configured == GoogleIssuer && got == "accounts.google.com" {
+		return GoogleIssuer
+	}
+	return got
 }
 
 func unavailable(err error) error {

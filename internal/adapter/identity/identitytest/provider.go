@@ -24,6 +24,9 @@ const (
 	ClientID     = "test-client.apps.example"
 	ClientSecret = "test-client-secret-ZQXJ"
 	keyID        = "test-key"
+
+	// KeysDownBody is the body of the key endpoint's 503, for tests that check it never leaks.
+	KeysDownBody = "KEYS-DOWN-BODY-MARKER"
 )
 
 // Grant is what one authorization code redeems to. The zero values of the override fields give a
@@ -49,6 +52,11 @@ type Provider struct {
 	key        *rsa.PrivateKey
 	codes      map[string]Grant
 	down       bool
+	jwksDown   bool
+	jwksURL    string
+	keysDelay  time.Duration
+	tokenFail  int
+	tokenBody  string
 	tokenCalls int
 }
 
@@ -99,6 +107,36 @@ func (p *Provider) SetDown(down bool) {
 	p.down = down
 }
 
+// SetJWKSDown makes only the key endpoint answer 503 (down) or work again.
+func (p *Provider) SetJWKSDown(down bool) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.jwksDown = down
+}
+
+// SetJWKSURL makes the discovery document name another key URL (to test an unreachable one).
+// Call it before the first discovery.
+func (p *Provider) SetJWKSURL(u string) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.jwksURL = u
+}
+
+// SetKeysDelay makes the key endpoint wait this long before it answers (0 = no wait).
+func (p *Provider) SetKeysDelay(d time.Duration) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.keysDelay = d
+}
+
+// SetTokenFailure makes the token endpoint answer status with body, after it counted the call
+// (status 0 = work normally again).
+func (p *Provider) SetTokenFailure(status int, body string) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.tokenFail, p.tokenBody = status, body
+}
+
 // TokenCalls is how many times the token endpoint was called.
 func (p *Provider) TokenCalls() int {
 	p.mu.Lock()
@@ -137,18 +175,38 @@ func (p *Provider) guard(next http.Handler) http.Handler {
 }
 
 func (p *Provider) discovery(w http.ResponseWriter, _ *http.Request) {
+	p.mu.Lock()
+	jwksURI := p.jwksURL
+	p.mu.Unlock()
+	if jwksURI == "" {
+		jwksURI = p.Issuer() + "/keys"
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"issuer":                                p.Issuer(),
 		"authorization_endpoint":                p.Issuer() + "/auth",
 		"token_endpoint":                        p.Issuer() + "/token",
-		"jwks_uri":                              p.Issuer() + "/keys",
+		"jwks_uri":                              jwksURI,
 		"response_types_supported":              []string{"code"},
 		"subject_types_supported":               []string{"public"},
 		"id_token_signing_alg_values_supported": []string{"RS256"},
 	})
 }
 
-func (p *Provider) keys(w http.ResponseWriter, _ *http.Request) {
+func (p *Provider) keys(w http.ResponseWriter, r *http.Request) {
+	p.mu.Lock()
+	down, delay := p.jwksDown, p.keysDelay
+	p.mu.Unlock()
+	if delay > 0 {
+		select {
+		case <-time.After(delay):
+		case <-r.Context().Done():
+			return
+		}
+	}
+	if down {
+		http.Error(w, KeysDownBody, http.StatusServiceUnavailable)
+		return
+	}
 	writeJSON(w, http.StatusOK, jose.JSONWebKeySet{Keys: []jose.JSONWebKey{{
 		Key: &p.key.PublicKey, KeyID: keyID, Algorithm: string(jose.RS256), Use: "sig",
 	}}})
@@ -157,7 +215,12 @@ func (p *Provider) keys(w http.ResponseWriter, _ *http.Request) {
 func (p *Provider) token(w http.ResponseWriter, r *http.Request) {
 	p.mu.Lock()
 	p.tokenCalls++
+	fail, failBody := p.tokenFail, p.tokenBody
 	p.mu.Unlock()
+	if fail != 0 {
+		http.Error(w, failBody, fail)
+		return
+	}
 	if err := r.ParseForm(); err != nil {
 		tokenError(w, http.StatusBadRequest, "invalid_request")
 		return
