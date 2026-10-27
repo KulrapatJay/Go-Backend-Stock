@@ -145,10 +145,11 @@
 
 **ข้อส่งต่อจากแผน 4b ไปแผนถัดไป:**
 
-- docs/api: เพิ่ม `format: date-time` และ `required` list ของ DTO ตาม AGENTS.md
+- docs/api: เพิ่ม `format: date-time` และ `required` list ของ DTO ตาม AGENTS.md — **ปิดแล้วในรอบแก้หลังรีวิวทั้ง branch ของ 4b**
 - login ซ้อน (re-login ขณะมี session) ยังไม่ revoke session เดิม
 - สอง login พร้อมกันบนบัญชีที่ hash เก่าอาจได้ 401 หนึ่งครั้ง (fails closed)
-- test `TestConcurrentWrongCodesAreAllCounted` ส่ง 5 คำขอเท่ากับเพดาน ควรเพิ่มเป็น 8
+- test `TestConcurrentWrongCodesAreAllCounted` ส่ง 5 คำขอเท่ากับเพดาน ควรเพิ่มเป็น 8 — **ปิดแล้ว: เปลี่ยนเป็น `TestConcurrentWrongCodesAreSerializedByTheChallengeLock` ส่ง 8 คำขอ**
+- ยอมรับความเสี่ยงการสมัครชิงอีเมล (ตัดสินใจ 2026-10-27): ผู้โจมตีสมัครอีเมลของเหยื่อไว้ก่อนด้วยรหัสของตัวเอง ถ้าเหยื่อกด Resend แล้วยืนยันอีเมล บัญชีจะยืนยันโดยยังใช้รหัสผ่านของผู้โจมตี — คง Resend แบบรับอีเมลอย่างเดียวไว้; ทางแก้คือ forgot-password ใน milestone 5 (reset เปลี่ยนรหัสและ revoke ทุก session) และทบทวนอีกครั้งก่อน deploy
 - ต้อง rotate รหัสผ่านของ dev DB ถ้าแชร์ transcript เพราะ Makefile echo คำสั่งตอนรัน `make test-integration` โดยไม่ใส่ `-s` (การเพิ่ม `@` ใน recipe ไม่อยู่ในงานของ 4b แค่จดไว้)
 
 **ไฟล์หลัก:** `internal/core/service/auth*.go`, `internal/core/service/otp*.go`, `internal/core/service/email_verification*.go`, `internal/adapter/http/auth*.go`, `internal/adapter/http/middleware/`, `internal/adapter/identity/`, `internal/adapter/mail/`
