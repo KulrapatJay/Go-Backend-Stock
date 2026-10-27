@@ -19,6 +19,9 @@ var documentedAuthOperations = []struct {
 	{"post", "/api/v1/auth/login", []int{200, 400, 401, 403, 429, 500, 503}},
 	{"get", "/api/v1/auth/me", []int{200, 401, 503}},
 	{"post", "/api/v1/auth/logout", []int{204, 403, 500, 503}},
+	{"get", "/api/v1/auth/config", []int{200}},
+	{"post", "/api/v1/auth/google/start", []int{200, 403, 429, 500, 503}},
+	{"post", "/api/v1/auth/google/link", []int{200, 401, 403, 429, 500, 503}},
 }
 
 func TestAuthOperationsAreDocumented(t *testing.T) {
@@ -50,6 +53,8 @@ var requiredAuthFields = map[string][]string{
 	"http.UserResponse":        {"created_at", "email", "email_verified", "id"},
 	"http.ErrorResponse":       {"error"},
 	"http.ErrorBody":           {"code", "message", "request_id"},
+	"http.AuthConfigResponse":  {"google_enabled"},
+	"http.GoogleStartResponse": {"authorization_url"},
 }
 
 var dateTimeFields = map[string]string{

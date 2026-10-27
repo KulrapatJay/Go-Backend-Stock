@@ -15,6 +15,27 @@ const docTemplate = `{
     "host": "{{.Host}}",
     "basePath": "{{.BasePath}}",
     "paths": {
+        "/api/v1/auth/config": {
+            "get": {
+                "description": "Tells a client whether Google sign-in is configured. When google_enabled is false, the Google endpoints answer 503 feature_disabled.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Auth"
+                ],
+                "summary": "Get the sign-in options",
+                "operationId": "getAuthConfig",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/http.AuthConfigResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/api/v1/auth/csrf": {
             "get": {
                 "description": "Returns the token to send in the X-CSRF-Token header of every POST. Signed in, the token is bound to the session; signed out, it is bound to a random nonce that this call keeps in the HttpOnly cookie csrf_nonce (__Host-csrf_nonce over HTTPS). Tokens last one hour. Ask for a new token after login and after logout, because the binding changes. Browsers (and Swagger UI) send the cookie by themselves; curl needs a cookie jar (-b/-c).",
@@ -194,6 +215,144 @@ const docTemplate = `{
                     },
                     "503": {
                         "description": "dependency_unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/auth/google/link": {
+            "post": {
+                "description": "Like POST /api/v1/auth/google/start, but the flow belongs to the signed-in user: after Google, the callback adds the Google account to this account (/docs/?google=linked) without opening a new session. The callback must come with the same session. Needs the session cookie and an X-CSRF-Token bound to it.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Auth"
+                ],
+                "summary": "Link Google to the signed-in account",
+                "operationId": "linkGoogleAccount",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Token from GET /api/v1/auth/csrf, fetched while signed in",
+                        "name": "X-CSRF-Token",
+                        "in": "header",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/http.GoogleStartResponse"
+                        },
+                        "headers": {
+                            "Set-Cookie": {
+                                "type": "string",
+                                "description": "oidc_binding=…; Path=/; Expires=…; HttpOnly; SameSite=Lax"
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "unauthenticated",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "csrf_failed",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
+                    },
+                    "429": {
+                        "description": "rate_limited; wait Retry-After seconds",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        },
+                        "headers": {
+                            "Retry-After": {
+                                "type": "integer",
+                                "description": "Seconds to wait"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "internal",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "feature_disabled or dependency_unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/auth/google/start": {
+            "post": {
+                "description": "Returns the Google URL to open in the same browser, and sets the HttpOnly cookie oidc_binding (__Host-oidc_binding over HTTPS) that must come back with the callback; the flow lasts 10 minutes. Google sends the browser to GET /api/v1/auth/google/callback, which ends at /docs/?google=success|link_required|failed. A Google account whose email already belongs to an account is not linked automatically: sign in to that account and use POST /api/v1/auth/google/link. Needs X-CSRF-Token and the csrf_nonce cookie. Swagger UI and curl cannot complete the Google page; open authorization_url in the browser.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Auth"
+                ],
+                "summary": "Start signing in with Google",
+                "operationId": "startGoogleSignIn",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Token from GET /api/v1/auth/csrf",
+                        "name": "X-CSRF-Token",
+                        "in": "header",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/http.GoogleStartResponse"
+                        },
+                        "headers": {
+                            "Set-Cookie": {
+                                "type": "string",
+                                "description": "oidc_binding=…; Path=/; Expires=…; HttpOnly; SameSite=Lax"
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "csrf_failed",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
+                    },
+                    "429": {
+                        "description": "rate_limited; wait Retry-After seconds",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        },
+                        "headers": {
+                            "Retry-After": {
+                                "type": "integer",
+                                "description": "Seconds to wait"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "internal",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "feature_disabled (Google is not configured) or dependency_unavailable (Google cannot be reached)",
                         "schema": {
                             "$ref": "#/definitions/http.ErrorResponse"
                         }
@@ -527,6 +686,18 @@ const docTemplate = `{
         }
     },
     "definitions": {
+        "http.AuthConfigResponse": {
+            "type": "object",
+            "required": [
+                "google_enabled"
+            ],
+            "properties": {
+                "google_enabled": {
+                    "type": "boolean",
+                    "example": true
+                }
+            }
+        },
         "http.CSRFResponse": {
             "type": "object",
             "required": [
@@ -615,6 +786,18 @@ const docTemplate = `{
             "properties": {
                 "error": {
                     "$ref": "#/definitions/http.ErrorBody"
+                }
+            }
+        },
+        "http.GoogleStartResponse": {
+            "type": "object",
+            "required": [
+                "authorization_url"
+            ],
+            "properties": {
+                "authorization_url": {
+                    "type": "string",
+                    "example": "https://accounts.google.com/o/oauth2/v2/auth?client_id=...\u0026code_challenge=...\u0026code_challenge_method=S256\u0026nonce=...\u0026redirect_uri=...\u0026response_type=code\u0026scope=openid+email\u0026state=..."
                 }
             }
         },

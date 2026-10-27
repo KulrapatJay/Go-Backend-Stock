@@ -24,6 +24,8 @@ type AuthDeps struct {
 	Logger         *slog.Logger
 	SessionTTL     time.Duration
 	OTPMaxAttempts int
+	Identity       port.IdentityProvider // nil turns Google sign-in off
+	OIDC           *OIDCCodec            // required when Identity is set
 }
 
 // Auth implements the auth use cases (port.AuthService and, from plan 4b task 10,
@@ -40,6 +42,8 @@ type Auth struct {
 	log            *slog.Logger
 	sessionTTL     time.Duration
 	otpMaxAttempts int
+	identity       port.IdentityProvider
+	oidc           *OIDCCodec
 }
 
 var _ port.AuthService = (*Auth)(nil)
@@ -54,11 +58,14 @@ func NewAuth(d AuthDeps) (*Auth, error) {
 		return nil, errors.New("session lifetime must be positive")
 	case d.OTPMaxAttempts < 1 || d.OTPMaxAttempts > domain.MaxOTPFailedAttemptsCeiling:
 		return nil, fmt.Errorf("OTP attempts must be between 1 and %d", domain.MaxOTPFailedAttemptsCeiling)
+	case d.Identity != nil && d.OIDC == nil:
+		return nil, errors.New("google sign-in needs the OIDC codec")
 	}
 	return &Auth{
 		store: d.Store, uow: d.UnitOfWork, clock: d.Clock, hasher: d.Hasher, otp: d.OTP,
 		limits: d.Limits, pacer: d.Pacer, mailer: d.Mailer, log: d.Logger,
 		sessionTTL: d.SessionTTL, otpMaxAttempts: d.OTPMaxAttempts,
+		identity: d.Identity, oidc: d.OIDC,
 	}, nil
 }
 

@@ -66,3 +66,13 @@ type SessionResponse struct {
 	User      UserResponse `json:"user" validate:"required"`
 	ExpiresAt time.Time    `json:"expires_at" format:"date-time" example:"2026-10-31T09:30:00Z" validate:"required"`
 }
+
+// AuthConfigResponse tells a client which sign-in methods this server offers.
+type AuthConfigResponse struct {
+	GoogleEnabled bool `json:"google_enabled" example:"true" validate:"required"`
+}
+
+// GoogleStartResponse is where to send the browser to sign in with Google.
+type GoogleStartResponse struct {
+	AuthorizationURL string `json:"authorization_url" example:"https://accounts.google.com/o/oauth2/v2/auth?client_id=...&code_challenge=...&code_challenge_method=S256&nonce=...&redirect_uri=...&response_type=code&scope=openid+email&state=..." validate:"required"`
+}

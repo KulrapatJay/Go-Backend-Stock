@@ -124,6 +124,15 @@ type harnessConfig struct {
 	hasher    service.Argon2Params
 	floor     time.Duration
 	failAudit bool
+	identity  port.IdentityProvider // nil = Google sign-in off
+}
+
+// testOIDCSecret keys the PKCE verifiers of every harness, so a flow started on one harness can be
+// completed on another that shares the database.
+const testOIDCSecret = "iiiiiiiiiiiiiiiiiiiiiiiiiiiiiiii"
+
+func withIdentityProvider(p port.IdentityProvider) harnessOption {
+	return func(c *harnessConfig) { c.identity = p }
 }
 
 type harnessOption func(*harnessConfig)
@@ -199,9 +208,12 @@ func newAuthHarness(t *testing.T, opts ...harnessOption) *authHarness {
 	if cfg.failAudit {
 		uow = failingAuditUoW{store}
 	}
+	oidc, err := service.NewOIDCCodec([]byte(testOIDCSecret))
+	must(err)
 	auth, err := service.NewAuth(service.AuthDeps{
 		Store: store, UnitOfWork: uow, Clock: clock, Hasher: hasher, OTP: otp, Limits: limits,
 		Pacer: pacer, Mailer: mailer, Logger: log, SessionTTL: 7 * 24 * time.Hour, OTPMaxAttempts: 5,
+		Identity: cfg.identity, OIDC: oidc,
 	})
 	must(err)
 

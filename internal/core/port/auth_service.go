@@ -24,6 +24,11 @@ type AuthService interface {
 	// Logout revokes p's session. A zero p (no active session) does nothing; a session that was
 	// revoked meanwhile is not audited again.
 	Logout(ctx context.Context, p domain.Principal, meta domain.RequestMeta) error
+	// GoogleEnabled reports whether Google sign-in is configured.
+	GoogleEnabled() bool
+	// StartGoogle begins a Google login or, for a signed-in caller, a link. It returns the provider's
+	// URL and the browser binding for the cookie. Without Google it returns domain.ErrFeatureDisabled.
+	StartGoogle(ctx context.Context, in domain.OIDCStart, meta domain.RequestMeta) (domain.OIDCRedirect, error)
 }
 
 // EmailVerificationService confirms that the owner of a local account controls its email address.

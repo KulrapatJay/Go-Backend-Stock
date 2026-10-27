@@ -1,5 +1,13 @@
 basePath: /
 definitions:
+  http.AuthConfigResponse:
+    properties:
+      google_enabled:
+        example: true
+        type: boolean
+    required:
+    - google_enabled
+    type: object
   http.CSRFResponse:
     properties:
       csrf_token:
@@ -64,6 +72,14 @@ definitions:
         $ref: '#/definitions/http.ErrorBody'
     required:
     - error
+    type: object
+  http.GoogleStartResponse:
+    properties:
+      authorization_url:
+        example: https://accounts.google.com/o/oauth2/v2/auth?client_id=...&code_challenge=...&code_challenge_method=S256&nonce=...&redirect_uri=...&response_type=code&scope=openid+email&state=...
+        type: string
+    required:
+    - authorization_url
     type: object
   http.HealthResponse:
     properties:
@@ -159,6 +175,21 @@ info:
   title: Stock Portfolio Tracker API
   version: "1.0"
 paths:
+  /api/v1/auth/config:
+    get:
+      description: Tells a client whether Google sign-in is configured. When google_enabled
+        is false, the Google endpoints answer 503 feature_disabled.
+      operationId: getAuthConfig
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/http.AuthConfigResponse'
+      summary: Get the sign-in options
+      tags:
+      - Auth
   /api/v1/auth/csrf:
     get:
       description: Returns the token to send in the X-CSRF-Token header of every POST.
@@ -296,6 +327,110 @@ paths:
           schema:
             $ref: '#/definitions/http.ErrorResponse'
       summary: Send a new verification code
+      tags:
+      - Auth
+  /api/v1/auth/google/link:
+    post:
+      description: 'Like POST /api/v1/auth/google/start, but the flow belongs to the
+        signed-in user: after Google, the callback adds the Google account to this
+        account (/docs/?google=linked) without opening a new session. The callback
+        must come with the same session. Needs the session cookie and an X-CSRF-Token
+        bound to it.'
+      operationId: linkGoogleAccount
+      parameters:
+      - description: Token from GET /api/v1/auth/csrf, fetched while signed in
+        in: header
+        name: X-CSRF-Token
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          headers:
+            Set-Cookie:
+              description: oidc_binding=…; Path=/; Expires=…; HttpOnly; SameSite=Lax
+              type: string
+          schema:
+            $ref: '#/definitions/http.GoogleStartResponse'
+        "401":
+          description: unauthenticated
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+        "403":
+          description: csrf_failed
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+        "429":
+          description: rate_limited; wait Retry-After seconds
+          headers:
+            Retry-After:
+              description: Seconds to wait
+              type: integer
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+        "500":
+          description: internal
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+        "503":
+          description: feature_disabled or dependency_unavailable
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+      summary: Link Google to the signed-in account
+      tags:
+      - Auth
+  /api/v1/auth/google/start:
+    post:
+      description: 'Returns the Google URL to open in the same browser, and sets the
+        HttpOnly cookie oidc_binding (__Host-oidc_binding over HTTPS) that must come
+        back with the callback; the flow lasts 10 minutes. Google sends the browser
+        to GET /api/v1/auth/google/callback, which ends at /docs/?google=success|link_required|failed.
+        A Google account whose email already belongs to an account is not linked automatically:
+        sign in to that account and use POST /api/v1/auth/google/link. Needs X-CSRF-Token
+        and the csrf_nonce cookie. Swagger UI and curl cannot complete the Google
+        page; open authorization_url in the browser.'
+      operationId: startGoogleSignIn
+      parameters:
+      - description: Token from GET /api/v1/auth/csrf
+        in: header
+        name: X-CSRF-Token
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          headers:
+            Set-Cookie:
+              description: oidc_binding=…; Path=/; Expires=…; HttpOnly; SameSite=Lax
+              type: string
+          schema:
+            $ref: '#/definitions/http.GoogleStartResponse'
+        "403":
+          description: csrf_failed
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+        "429":
+          description: rate_limited; wait Retry-After seconds
+          headers:
+            Retry-After:
+              description: Seconds to wait
+              type: integer
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+        "500":
+          description: internal
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+        "503":
+          description: feature_disabled (Google is not configured) or dependency_unavailable
+            (Google cannot be reached)
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+      summary: Start signing in with Google
       tags:
       - Auth
   /api/v1/auth/login:
