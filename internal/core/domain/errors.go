@@ -96,6 +96,11 @@ var (
 	ErrInvalidVerification = NewError(CodeInvalidVerification, "verification code is invalid or has expired")
 	ErrEmailNotVerified    = NewError(CodeEmailNotVerified, "email address is not verified; ask for a new verification code")
 	ErrCSRFFailed          = NewError(CodeCSRFFailed, "CSRF token is missing, invalid or expired")
+
+	// Google sign-in. ErrIdentityRejected means the provider or the token check refused the
+	// sign-in; the callback turns it into an audited "failed" outcome, never a client message.
+	ErrFeatureDisabled  = NewError(CodeFeatureDisabled, "this feature is not configured on this server")
+	ErrIdentityRejected = NewError(CodeInvalidCredentials, "the identity provider did not confirm the sign-in")
 )
 
 // invalidInput reports a rule a client-supplied value broke. field is the API field name.
