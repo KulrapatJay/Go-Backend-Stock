@@ -3,7 +3,7 @@
 Go API สำหรับบันทึกรายการซื้อขายหุ้นสหรัฐฯ และติดตามต้นทุน/กำไรขาดทุนของหลายพอร์ต
 ระบบนี้บันทึกการลงทุนที่ทำผ่านช่องทางอื่น ไม่ใช่ระบบส่งคำสั่งซื้อขายจริง
 
-> **สถานะ:** Milestone 4b — สมัครด้วยอีเมล+รหัสผ่าน, ยืนยันอีเมลด้วย OTP, login/logout และ session ฝั่ง server ใช้งานผ่าน API ได้แล้ว; Google login (4c), ลืมรหัสผ่าน (milestone 5), พอร์ตและรายการซื้อขายยังไม่เปิดใช้งาน
+> **สถานะ:** Milestone 4 — สมัครด้วยอีเมล+รหัสผ่าน, ยืนยันอีเมลด้วย OTP, login/logout, session ฝั่ง server และ Google sign-in/เชื่อมบัญชี (เปิดเมื่อตั้งค่า `GOOGLE_*`) ใช้งานผ่าน API ได้แล้ว; ลืมรหัสผ่าน (milestone 5), พอร์ตและรายการซื้อขายยังไม่เปิดใช้งาน
 
 ## เริ่มใช้งาน (dev พร้อม hot reload)
 
@@ -104,6 +104,32 @@ rm -f "$JAR" "$JAR.reg"
 - ถูกจำกัดความถี่จะได้ 429 `rate_limited` พร้อม header `Retry-After` (วินาที)
 - ใน Swagger UI (`http://localhost:8080/docs/`) ให้เรียก `GET /api/v1/auth/csrf` ก่อน แล้วคัดลอก `csrf_token` ไปใส่ช่อง `X-CSRF-Token` ของ POST; browser ส่ง cookie ให้เอง ขอ token ใหม่หลัง login และหลัง logout เพราะ binding เปลี่ยน
 - ข้อความ error ทุกอันมี `request_id` ตรงกับ header `X-Request-ID` ใช้ค้น log ได้
+
+## Google sign-in (ไม่บังคับ)
+
+ถ้าไม่ตั้งค่า Google ระบบยังใช้งานได้ปกติ: `GET /api/v1/auth/config` ตอบ `{"google_enabled":false}` และ endpoint ของ Google ตอบ 503 `feature_disabled`
+
+สร้าง OAuth client (ฟรี ไม่ต้องผูกบัตร):
+
+1. เปิด Google Cloud Console → APIs & Services → OAuth consent screen ตั้งเป็น External และโหมด Testing แล้วเพิ่มอีเมล Google ของตัวเองใน Test users
+2. Credentials → Create credentials → OAuth client ID → Web application
+3. Authorized redirect URIs ใส่ `http://localhost:8080/api/v1/auth/google/callback` (ต้องเท่ากับ `PUBLIC_ORIGIN` + `/api/v1/auth/google/callback` ทุกตัวอักษร)
+4. ใส่ค่าใน `.env` ทั้งสามตัว (ตั้งไม่ครบ API จะไม่เริ่มและบอกว่าขาดตัวไหน) แล้ว `docker compose up -d --build api`
+
+```bash
+GOOGLE_CLIENT_ID=1234-abc.apps.googleusercontent.com
+GOOGLE_CLIENT_SECRET=<client secret จาก Console — ห้าม commit>
+GOOGLE_REDIRECT_URI=http://localhost:8080/api/v1/auth/google/callback
+```
+
+ลองบน browser (curl และ Swagger UI ทำหน้า login ของ Google แทนไม่ได้):
+
+1. เปิด `http://localhost:8080/docs/` เรียก `GET /api/v1/auth/csrf` แล้วคัดลอก `csrf_token`
+2. เรียก `POST /api/v1/auth/google/start` ใส่ token ในช่อง `X-CSRF-Token` แล้วเปิด `authorization_url` ที่ได้ใน**แท็บเดียวกันของ browser เดิม** (cookie `oidc_binding` อยู่ใน browser นี้)
+3. login กับ Google แล้ว browser จะกลับมาที่ `/docs/?google=success` พร้อม cookie `session`; เรียก `GET /api/v1/auth/me` ดูได้
+4. ผลอื่น: `link_required` = อีเมลนี้มีบัญชีอยู่แล้ว ให้ login บัญชีนั้นด้วยรหัสผ่าน แล้วขอ CSRF ใหม่และเรียก `POST /api/v1/auth/google/link` แทน (ได้ `/docs/?google=linked`); `failed` = ยกเลิก, หมดเวลา 10 นาที, เปิด callback ซ้ำหรือคนละ browser
+
+ระบบไม่เชื่อมบัญชีให้อัตโนมัติเพียงเพราะอีเมลตรงกัน และบัญชีที่สร้างจาก Google ไม่มีรหัสผ่าน (login ด้วยรหัสผ่านไม่ได้จนกว่าจะมีลืมรหัสผ่านใน milestone 5)
 
 ## พัฒนาและทดสอบ
 
