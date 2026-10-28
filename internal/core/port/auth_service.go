@@ -29,6 +29,9 @@ type AuthService interface {
 	// StartGoogle begins a Google login or, for a signed-in caller, a link. It returns the provider's
 	// URL and the browser binding for the cookie. Without Google it returns domain.ErrFeatureDisabled.
 	StartGoogle(ctx context.Context, in domain.OIDCStart, meta domain.RequestMeta) (domain.OIDCRedirect, error)
+	// CompleteGoogle ends a flow at the callback. Every refusal is an OIDCResult with outcome
+	// failed (audited when a flow was found); only infrastructure failures return an error.
+	CompleteGoogle(ctx context.Context, in domain.OIDCCallback, meta domain.RequestMeta) (domain.OIDCResult, error)
 }
 
 // EmailVerificationService confirms that the owner of a local account controls its email address.

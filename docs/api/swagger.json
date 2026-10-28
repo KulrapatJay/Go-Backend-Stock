@@ -215,6 +215,66 @@
                 }
             }
         },
+        "/api/v1/auth/google/callback": {
+            "get": {
+                "description": "Google sends the browser here after GET authorization_url. It is not called directly: it needs the state from that URL and the oidc_binding cookie of the browser that started the flow, and it takes no X-CSRF-Token (the state, the binding and the ID token's nonce protect it). It always clears oidc_binding and answers 303 to /docs/?google=success (signed in: the session cookie is set), linked (Google added to the signed-in account), link_required (the email belongs to an account: sign in to it and use POST /api/v1/auth/google/link) or failed (cancelled, expired, replayed, another browser, or refused). Infrastructure failures answer JSON instead.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Auth"
+                ],
+                "summary": "Come back from Google",
+                "operationId": "completeGoogleSignIn",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Authorization code from Google",
+                        "name": "code",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "The state of the flow",
+                        "name": "state",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Set by Google when the user cancelled",
+                        "name": "error",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "303": {
+                        "description": "Redirect to /docs/?google=success|linked|link_required|failed",
+                        "headers": {
+                            "Location": {
+                                "type": "string",
+                                "description": "/docs/?google=success"
+                            },
+                            "Set-Cookie": {
+                                "type": "string",
+                                "description": "oidc_binding=; Expires=Tue, 10 Nov 2009 23:00:00 GMT — and session=… on success"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "audit_write_failed or internal",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "feature_disabled (Google is not configured) or dependency_unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/api/v1/auth/google/link": {
             "post": {
                 "description": "Like POST /api/v1/auth/google/start, but the flow belongs to the signed-in user: after Google, the callback adds the Google account to this account (/docs/?google=linked) without opening a new session. The callback must come with the same session. Needs the session cookie and an X-CSRF-Token bound to it.",

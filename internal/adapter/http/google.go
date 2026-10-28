@@ -1,6 +1,8 @@
 package http
 
 import (
+	"strings"
+
 	"github.com/gofiber/fiber/v3"
 
 	"go-backend-stock/internal/adapter/http/middleware"
@@ -71,4 +73,49 @@ func (h *authHandlers) startGoogle(c fiber.Ctx, purpose domain.OIDCPurpose) erro
 	h.cookies.set(c, h.cookies.bindingName, r.BrowserBinding.Reveal(), r.ExpiresAt)
 	c.Set(fiber.HeaderCacheControl, "no-store")
 	return c.JSON(GoogleStartResponse{AuthorizationURL: r.URL})
+}
+
+// googleResultPath is where every callback ends; the outcome follows. It is fixed (no return URL from
+// the request) and same-origin. It changes when the frontend exists.
+const googleResultPath = "/docs/?google="
+
+// GoogleCallback godoc
+// @Summary      Come back from Google
+// @Description  Google sends the browser here after GET authorization_url. It is not called directly: it needs the state from that URL and the oidc_binding cookie of the browser that started the flow, and it takes no X-CSRF-Token (the state, the binding and the ID token's nonce protect it). It always clears oidc_binding and answers 303 to /docs/?google=success (signed in: the session cookie is set), linked (Google added to the signed-in account), link_required (the email belongs to an account: sign in to it and use POST /api/v1/auth/google/link) or failed (cancelled, expired, replayed, another browser, or refused). Infrastructure failures answer JSON instead.
+// @Tags         Auth
+// @ID           completeGoogleSignIn
+// @Produce      json
+// @Param        code   query  string  false  "Authorization code from Google"
+// @Param        state  query  string  false  "The state of the flow"
+// @Param        error  query  string  false  "Set by Google when the user cancelled"
+// @Success      303  "Redirect to /docs/?google=success|linked|link_required|failed"
+// @Failure      500  {object}  ErrorResponse  "audit_write_failed or internal"
+// @Failure      503  {object}  ErrorResponse  "feature_disabled (Google is not configured) or dependency_unavailable"
+// @Header       303  {string}  Location    "/docs/?google=success"
+// @Header       303  {string}  Set-Cookie  "oidc_binding=; Expires=Tue, 10 Nov 2009 23:00:00 GMT — and session=… on success"
+// @Router       /api/v1/auth/google/callback [get]
+func (h *authHandlers) googleCallback(c fiber.Ctx) error {
+	p, _ := middleware.GetPrincipal(c)
+	in := domain.OIDCCallback{
+		Code:           domain.NewSecretText(strings.Clone(c.Query("code"))),
+		State:          strings.Clone(c.Query("state")),
+		ProviderError:  strings.Clone(c.Query("error")),
+		BrowserBinding: domain.NewSecretText(strings.Clone(c.Cookies(h.cookies.bindingName))),
+		Principal:      p,
+	}
+	meta, err := h.requestMeta(c)
+	if err != nil {
+		return err
+	}
+	h.cookies.clear(c, h.cookies.bindingName) // the flow ends in this browser whatever happens
+	res, err := h.auth.CompleteGoogle(c.Context(), in, meta)
+	if err != nil {
+		return err
+	}
+	if res.Outcome == domain.OIDCOutcomeSuccess {
+		h.cookies.set(c, h.cookies.sessionName, res.Session.Token.Reveal(), res.Session.ExpiresAt)
+		h.cookies.clear(c, h.cookies.nonceName)
+	}
+	c.Set(fiber.HeaderCacheControl, "no-store")
+	return c.Redirect().Status(fiber.StatusSeeOther).To(googleResultPath + string(res.Outcome))
 }

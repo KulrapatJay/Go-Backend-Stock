@@ -70,6 +70,9 @@ func registerAuthRoutes(app *fiber.App, opts AuthOptions) {
 	app.Get("/api/v1/auth/config", h.authConfig)
 	app.Post("/api/v1/auth/google/start", session, csrf, h.googleStart)
 	app.Post("/api/v1/auth/google/link", session, middleware.RequireAuth(), csrf, h.googleLink)
+	// No app CSRF: the browser arrives from Google. The state, the binding cookie and the nonce
+	// protect the callback instead (phase 1 spec section 10).
+	app.Get("/api/v1/auth/google/callback", session, h.googleCallback)
 	if opts.Verification != nil {
 		app.Post("/api/v1/auth/email-verification/request", session, csrf, h.requestVerification)
 		app.Post("/api/v1/auth/email-verification/confirm", session, csrf, h.confirmEmail)

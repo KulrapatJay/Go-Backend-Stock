@@ -55,18 +55,8 @@ func (a *Auth) Login(ctx context.Context, in domain.LoginInput, meta domain.Requ
 	}
 
 	upgraded := a.upgradeHash(ctx, meta, creds.PasswordHash, in.Password)
-	token, tokenHash, err := NewSessionToken()
-	if err != nil {
-		return domain.SessionGrant{}, err
-	}
-	sessionID, err := domain.NewID()
-	if err != nil {
-		return domain.SessionGrant{}, err
-	}
 	now := NowForStorage(a.clock)
-	session, err := domain.NewSession(domain.Session{
-		ID: sessionID, UserID: creds.User.ID, TokenHash: tokenHash, CreatedAt: now, ExpiresAt: now.Add(a.sessionTTL),
-	})
+	session, token, err := a.issueSession(creds.User.ID, now)
 	if err != nil {
 		return domain.SessionGrant{}, err
 	}
@@ -104,7 +94,7 @@ func (a *Auth) Login(ctx context.Context, in domain.LoginInput, meta domain.Requ
 	if err != nil {
 		return domain.SessionGrant{}, err
 	}
-	return domain.SessionGrant{User: creds.User, Token: domain.NewSecretText(token), ExpiresAt: session.ExpiresAt}, nil
+	return domain.SessionGrant{User: creds.User, Token: token, ExpiresAt: session.ExpiresAt}, nil
 }
 
 // upgradeHash returns a new hash when the stored one uses old parameters, or "" to keep it. A busy

@@ -60,7 +60,6 @@ func (f *fakeIdentityProvider) Exchange(_ context.Context, ex domain.CodeExchang
 	return domain.VerifiedIdentity{}, domain.ErrIdentityRejected
 }
 
-//nolint:unused // used by the callback tests of the next tasks of milestone 4c
 func (f *fakeIdentityProvider) setIdentity(subject, email string, verified bool) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -73,14 +72,12 @@ func (f *fakeIdentityProvider) setURLError(err error) {
 	f.urlErr = err
 }
 
-//nolint:unused // used by the callback tests of the next tasks of milestone 4c
 func (f *fakeIdentityProvider) setExchangeError(err error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.exchangeErr = err
 }
 
-//nolint:unused // used by the callback tests of the next tasks of milestone 4c
 func (f *fakeIdentityProvider) forceNonce(nonce string) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -97,7 +94,6 @@ func (f *fakeIdentityProvider) lastRequest(t *testing.T) domain.AuthorizationReq
 	return f.requests[len(f.requests)-1]
 }
 
-//nolint:unused // used by the callback tests of the next tasks of milestone 4c
 func (f *fakeIdentityProvider) exchanges() []domain.CodeExchange {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -116,7 +112,6 @@ func (b *browser) linkGoogle() (response, []byte) {
 	return b.do(nethttp.MethodPost, "/api/v1/auth/google/link", nil, nil)
 }
 
-//nolint:unused // used by the callback tests of the next tasks of milestone 4c
 func (b *browser) googleCallback(q url.Values) (response, []byte) {
 	b.t.Helper()
 	return b.do(nethttp.MethodGet, "/api/v1/auth/google/callback?"+q.Encode(), nil, nil)

@@ -22,6 +22,7 @@ var documentedAuthOperations = []struct {
 	{"get", "/api/v1/auth/config", []int{200}},
 	{"post", "/api/v1/auth/google/start", []int{200, 403, 429, 500, 503}},
 	{"post", "/api/v1/auth/google/link", []int{200, 401, 403, 429, 500, 503}},
+	{"get", "/api/v1/auth/google/callback", []int{303, 500, 503}},
 }
 
 func TestAuthOperationsAreDocumented(t *testing.T) {
