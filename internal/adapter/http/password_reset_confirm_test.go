@@ -69,6 +69,9 @@ func TestResetChangesThePasswordOnceAndRevokesEverySession(t *testing.T) {
 	if rows[0].Actor != u.ID || rows[1].Reason != "password_reset" {
 		t.Errorf("audit rows = %+v", rows)
 	}
+	if rows[1].Actor != u.ID {
+		t.Errorf("sessions_revoked actor = %q, want the user", rows[1].Actor)
+	}
 	if h.mailer.changedCount(email) != 1 {
 		t.Error("the owner must be told the password changed")
 	}
@@ -340,9 +343,10 @@ func TestResetRejectsAWeakPasswordBeforeTheCode(t *testing.T) {
 		!slices.Equal(got.Details, []string{"password_too_short", "password_missing_uppercase", "password_missing_special"}) {
 		t.Fatalf("weak password = %d %s", resp.StatusCode, body)
 	}
-	ch := h.challenges(t, u.ID)
-	if last := ch[len(ch)-1]; !last.Open || last.FailedAttempts != 0 {
-		t.Errorf("challenge = %+v, want it untouched", last)
+	for _, c := range h.challenges(t, u.ID) {
+		if c.ID == mail.ChallengeID.String() && (!c.Open || c.FailedAttempts != 0) {
+			t.Errorf("challenge = %+v, want it untouched", c)
+		}
 	}
 }
 

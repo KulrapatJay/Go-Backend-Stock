@@ -99,6 +99,15 @@ func (r *PasswordReset) Reset(ctx context.Context, in domain.ResetPasswordInput,
 		return err
 	}
 
+	// Hash before looking the challenge up, so a decoy or unknown ID pays the same cost and can
+	// get the same server_busy as a real one: a busy hasher must not show whether the account
+	// exists. The hashes wasted on decoys are bounded by the per-IP limit above. Never inside a
+	// transaction: Argon2id is slow and holds memory.
+	hash, err := a.hasher.Hash(ctx, in.NewPassword)
+	if err != nil {
+		return err
+	}
+
 	found, err := a.store.OTPChallenges().ByID(ctx, domain.OTPPurposePasswordReset, in.ChallengeID)
 	if errors.Is(err, domain.ErrNotFound) {
 		// An unknown or decoy ID, or one issued for email verification (ByID filters by purpose).
@@ -110,8 +119,7 @@ func (r *PasswordReset) Reset(ctx context.Context, in domain.ResetPasswordInput,
 	if err != nil {
 		return err
 	}
-	// The email feeds the password rule and the notice. Both reads and the slow hash stay outside
-	// the transaction so no row lock is held while Argon2id runs.
+	// The email feeds the password rule and the notice; read outside the transaction.
 	user, err := a.store.Users().ByID(ctx, found.UserID)
 	if errors.Is(err, domain.ErrNotFound) {
 		if err := a.recordFailure(ctx, meta, resetFailed(found.ID, "challenge_not_found")); err != nil {
@@ -119,10 +127,6 @@ func (r *PasswordReset) Reset(ctx context.Context, in domain.ResetPasswordInput,
 		}
 		return domain.ErrInvalidReset
 	}
-	if err != nil {
-		return err
-	}
-	hash, err := a.hasher.Hash(ctx, in.NewPassword)
 	if err != nil {
 		return err
 	}

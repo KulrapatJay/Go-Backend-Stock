@@ -283,6 +283,29 @@ func TestResetHashesBeforeTheTransaction(t *testing.T) {
 	}
 }
 
+// A decoy or unknown challenge ID must cost the same hashing as a real one, or a busy hasher would
+// answer server_busy only for real challenges and show that the account exists. With the only
+// slot taken, the decoy path must fail like the real one.
+func TestResetHashesEvenWhenTheChallengeIsUnknown(t *testing.T) {
+	hasher, _ := newHasher(t, testArgon2Params, 1, 20*time.Millisecond)
+	missing := func() (domain.OTPChallenge, error) { return domain.OTPChallenge{}, domain.ErrNotFound }
+	f := newResetFixture(t, &resetChallenges{confirmChallenges: confirmChallenges{byID: missing}},
+		func(d *AuthDeps) { d.Hasher = hasher })
+	hasher.slots <- struct{}{} // another request is hashing
+
+	err := f.auth.PasswordReset().Reset(t.Context(), resetInput(t, "123456"), testMeta(t))
+	if !errors.Is(err, domain.NewError(domain.CodeServerBusy, "")) {
+		t.Fatalf("Reset() error = %v, want server_busy: an unknown ID must hash like a real one", err)
+	}
+	if len(f.uow.tx.audit.events) != 0 {
+		t.Error("nothing is audited when the request is turned away before the lookup")
+	}
+	<-hasher.slots
+	if err := f.auth.PasswordReset().Reset(t.Context(), resetInput(t, "123456"), testMeta(t)); !errors.Is(err, domain.ErrInvalidReset) {
+		t.Errorf("Reset() error = %v, want ErrInvalidReset once the hasher is free", err)
+	}
+}
+
 // newTestOTPCodec is the codec newTestAuth gives Auth, so a test can build a matching digest.
 func newTestOTPCodec(t *testing.T) *OTPCodec {
 	t.Helper()
