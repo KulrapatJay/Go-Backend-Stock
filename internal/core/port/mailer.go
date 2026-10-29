@@ -15,4 +15,8 @@ type Mailer interface {
 	// SendRegistrationAttempt tells the owner of to that someone tried to register with an
 	// address that already has an account. It carries no code.
 	SendRegistrationAttempt(ctx context.Context, to domain.Email) error
+	// SendPasswordReset sends the reset code in mail to mail.To.
+	SendPasswordReset(ctx context.Context, mail domain.OTPMail) error
+	// SendPasswordChanged tells the owner of to that the password was changed. It carries no code.
+	SendPasswordChanged(ctx context.Context, to domain.Email) error
 }

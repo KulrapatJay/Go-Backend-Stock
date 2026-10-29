@@ -3,7 +3,7 @@
 Go API สำหรับบันทึกรายการซื้อขายหุ้นสหรัฐฯ และติดตามต้นทุน/กำไรขาดทุนของหลายพอร์ต
 ระบบนี้บันทึกการลงทุนที่ทำผ่านช่องทางอื่น ไม่ใช่ระบบส่งคำสั่งซื้อขายจริง
 
-> **สถานะ:** Milestone 4b — สมัครด้วยอีเมล+รหัสผ่าน, ยืนยันอีเมลด้วย OTP, login/logout และ session ฝั่ง server ใช้งานผ่าน API ได้แล้ว; Google login (4c), ลืมรหัสผ่าน (milestone 5), พอร์ตและรายการซื้อขายยังไม่เปิดใช้งาน
+> **สถานะ:** Milestone 5 — สมัครด้วยอีเมล+รหัสผ่าน, ยืนยันอีเมลด้วย OTP, login/logout, session ฝั่ง server, ลืมรหัสผ่านด้วย OTP และ Google sign-in/เชื่อมบัญชี (เปิดเมื่อตั้งค่า `GOOGLE_*`) ใช้งานผ่าน API ได้แล้ว; พอร์ตและรายการซื้อขายยังไม่เปิดใช้งาน
 
 ## เริ่มใช้งาน (dev พร้อม hot reload)
 
@@ -56,7 +56,7 @@ Access log เก็บ method, route template, status และ duration โด
 
 ตัวแปรอื่นมีค่าเริ่มต้นสำหรับ dev จึงไม่ต้องตั้ง: `SESSION_TTL` (168h), `PASSWORD_HASH_CONCURRENCY` (4), `AUTH_RESPONSE_FLOOR`/`AUTH_RESPONSE_JITTER` (500ms/100ms), `OTP_MAX_ATTEMPTS` (5), `OTP_RESEND_COOLDOWN` (60s), `OTP_REQUESTS_PER_HOUR_EMAIL`/`_IP` (5/20), `LOGIN_ATTEMPTS_PER_EMAIL`/`_IP` (10/30 ต่อ 15 นาที), `TRUSTED_PROXY_CIDRS` (ว่าง = ไม่เชื่อ `X-Forwarded-For`), `SMTP_HOST`/`SMTP_PORT`/`SMTP_FROM`/`SMTP_TLS`/`MAIL_SEND_TIMEOUT` (10s; compose ชี้ไป Mailpit ที่ `mailpit:1025` แบบไม่เข้ารหัส) production ต้องตั้ง `SMTP_HOST`, `SMTP_PORT`, `SMTP_FROM` และ `SMTP_TLS` เป็น `starttls` หรือ `tls` เอง
 
-อีเมลที่ระบบส่ง (รหัสยืนยัน และแจ้งว่ามีบัญชีอยู่แล้ว) เป็นภาษาไทย ส่งแบบ UTF-8 + quoted-printable โดยหัวเรื่อง encode ตาม RFC 2047
+อีเมลที่ระบบส่ง (รหัสยืนยัน, แจ้งว่ามีบัญชีอยู่แล้ว, รหัสรีเซ็ตรหัสผ่าน และแจ้งว่าเปลี่ยนรหัสผ่านแล้ว) เป็นภาษาไทย ส่งแบบ UTF-8 + quoted-printable โดยหัวเรื่อง encode ตาม RFC 2047
 
 ## ลอง flow ของ auth ด้วย curl
 
@@ -97,13 +97,56 @@ post /auth/logout ''
 # 7 หลัง logout เรียก me ซ้ำจะได้ 401
 curl -s -b "$JAR" -w '\nHTTP %{http_code}\n' "$API/auth/me"
 
-rm -f "$JAR" "$JAR.reg"
+# 8 ลืมรหัสผ่าน: ขอรหัส ได้ 202 พร้อม challenge_id และตอบแบบเดียวกันแม้ไม่มีบัญชีหรือเป็นบัญชี Google-only
+post /auth/password-reset/request "{\"email\":\"$EMAIL\"}" | tee /dev/stderr > "$JAR.reset"
+RESET_CHALLENGE=$(sed -nE 's/.*"challenge_id":"([^"]+)".*/\1/p' "$JAR.reset")
+
+# 9 อ่านรหัส 6 หลักของการรีเซ็ตจาก Mailpit http://localhost:8025 (ระบบส่งอีเมลหลังตอบ 202 จึงรอ 2 วินาที)
+sleep 2
+RESET_OTP=$(curl -s http://localhost:8025/api/v1/message/latest | grep -oE 'ใหม่ของคุณคือ [0-9]{6}' | grep -oE '[0-9]{6}')
+
+# 10 ตั้งรหัสผ่านใหม่ ได้ 204; ยืนยันอีเมลให้ด้วยและ session เดิมทุกเครื่องถูกออกจากระบบ
+NEW_PASSWORD='Hn4#pLw8'
+post /auth/password-reset/confirm "{\"challenge_id\":\"$RESET_CHALLENGE\",\"otp\":\"$RESET_OTP\",\"new_password\":\"$NEW_PASSWORD\"}"
+
+# 11 login ด้วยรหัสเก่าได้ 401 แล้ว login ด้วยรหัสใหม่ได้ 200
+post /auth/login "{\"email\":\"$EMAIL\",\"password\":\"$PASSWORD\"}"
+post /auth/login "{\"email\":\"$EMAIL\",\"password\":\"$NEW_PASSWORD\"}"
+
+rm -f "$JAR" "$JAR.reg" "$JAR.reset"
 ```
 
 - ขอรหัสใหม่: `post /auth/email-verification/request "{\"email\":\"$EMAIL\"}"` (เว้น 60 วินาทีจากครั้งก่อน และไม่เกิน 5 ครั้งต่อชั่วโมงต่ออีเมล)
 - ถูกจำกัดความถี่จะได้ 429 `rate_limited` พร้อม header `Retry-After` (วินาที)
+- ลืมรหัสผ่าน (ขั้น 8–11): รหัสใช้ได้ 10 นาที กรอกผิดได้ 5 ครั้งต่อรหัส; เมื่อสำเร็จ session เดิมทุกเครื่องของบัญชีถูกออกจากระบบ, มีอีเมลแจ้งว่าเปลี่ยนรหัสผ่านใน Mailpit และ login ใหม่ด้วยรหัสผ่านใหม่
 - ใน Swagger UI (`http://localhost:8080/docs/`) ให้เรียก `GET /api/v1/auth/csrf` ก่อน แล้วคัดลอก `csrf_token` ไปใส่ช่อง `X-CSRF-Token` ของ POST; browser ส่ง cookie ให้เอง ขอ token ใหม่หลัง login และหลัง logout เพราะ binding เปลี่ยน
 - ข้อความ error ทุกอันมี `request_id` ตรงกับ header `X-Request-ID` ใช้ค้น log ได้
+
+## Google sign-in (ไม่บังคับ)
+
+ถ้าไม่ตั้งค่า Google ระบบยังใช้งานได้ปกติ: `GET /api/v1/auth/config` ตอบ `{"google_enabled":false}` และ endpoint ของ Google ตอบ 503 `feature_disabled`
+
+สร้าง OAuth client (ฟรี ไม่ต้องผูกบัตร):
+
+1. เปิด Google Cloud Console → APIs & Services → OAuth consent screen ตั้งเป็น External และโหมด Testing แล้วเพิ่มอีเมล Google ของตัวเองใน Test users
+2. Credentials → Create credentials → OAuth client ID → Web application
+3. Authorized redirect URIs ใส่ `http://localhost:8080/api/v1/auth/google/callback` (ต้องเท่ากับ `PUBLIC_ORIGIN` + `/api/v1/auth/google/callback` ทุกตัวอักษร)
+4. ใส่ค่าใน `.env` ทั้งสามตัว (ตั้งไม่ครบ API จะไม่เริ่มและบอกว่าขาดตัวไหน) แล้ว `docker compose up -d --build api`
+
+```bash
+GOOGLE_CLIENT_ID=1234-abc.apps.googleusercontent.com
+GOOGLE_CLIENT_SECRET=<client secret จาก Console — ห้าม commit>
+GOOGLE_REDIRECT_URI=http://localhost:8080/api/v1/auth/google/callback
+```
+
+ลองบน browser (curl และ Swagger UI ทำหน้า login ของ Google แทนไม่ได้):
+
+1. เปิด `http://localhost:8080/docs/` เรียก `GET /api/v1/auth/csrf` แล้วคัดลอก `csrf_token`
+2. เรียก `POST /api/v1/auth/google/start` ใส่ token ในช่อง `X-CSRF-Token` แล้วเปิด `authorization_url` ที่ได้ใน**แท็บเดียวกันของ browser เดิม** (cookie `oidc_binding` อยู่ใน browser นี้)
+3. login กับ Google แล้ว browser จะกลับมาที่ `/docs/?google=success` พร้อม cookie `session`; เรียก `GET /api/v1/auth/me` ดูได้
+4. ผลอื่น: `link_required` = อีเมลนี้มีบัญชีอยู่แล้ว ให้ login บัญชีนั้นด้วยรหัสผ่าน แล้วขอ CSRF ใหม่และเรียก `POST /api/v1/auth/google/link` แทน (ได้ `/docs/?google=linked`); `failed` = ยกเลิก, หมดเวลา 10 นาที, เปิด callback ซ้ำหรือคนละ browser
+
+ระบบไม่เชื่อมบัญชีให้อัตโนมัติเพียงเพราะอีเมลตรงกัน และบัญชีที่สร้างจาก Google ไม่มีรหัสผ่าน: login ได้ด้วย Google เท่านั้น และ "ลืมรหัสผ่าน" ไม่ส่งรหัสให้บัญชีชนิดนี้
 
 ## พัฒนาและทดสอบ
 

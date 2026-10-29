@@ -1,5 +1,13 @@
 basePath: /
 definitions:
+  http.AuthConfigResponse:
+    properties:
+      google_enabled:
+        example: true
+        type: boolean
+    required:
+    - google_enabled
+    type: object
   http.CSRFResponse:
     properties:
       csrf_token:
@@ -65,6 +73,14 @@ definitions:
     required:
     - error
     type: object
+  http.GoogleStartResponse:
+    properties:
+      authorization_url:
+        example: https://accounts.google.com/o/oauth2/v2/auth?client_id=...&code_challenge=...&code_challenge_method=S256&nonce=...&redirect_uri=...&response_type=code&scope=openid+email&state=...
+        type: string
+    required:
+    - authorization_url
+    type: object
   http.HealthResponse:
     properties:
       status:
@@ -92,8 +108,8 @@ definitions:
         example: 600
         type: integer
       message:
-        example: If this address can receive email, a verification code has been sent.
-          It expires in 10 minutes.
+        example: If this address can receive email, a code has been sent. It expires
+          in 10 minutes.
         type: string
     required:
     - challenge_id
@@ -117,6 +133,22 @@ definitions:
     required:
     - email
     - password
+    type: object
+  http.ResetPasswordRequest:
+    properties:
+      challenge_id:
+        example: 0192f0c1-7a8e-7cc4-9d2b-3f6c1a2b4c5d
+        type: string
+      new_password:
+        example: Zq9!kVx1
+        type: string
+      otp:
+        example: "042731"
+        type: string
+    required:
+    - challenge_id
+    - new_password
+    - otp
     type: object
   http.SessionResponse:
     properties:
@@ -155,10 +187,25 @@ info:
   contact: {}
   description: |-
     Records US stock trades and tracks portfolio cost and P&L. It does not place real orders.
-    Milestone 4b exposes Health and the email/password Auth endpoints; Google sign-in, password reset, portfolios and transactions are not implemented yet.
+    Milestone 5 exposes Health and the Auth endpoints (email and password, email verification, password reset, Google sign-in and linking); portfolios and transactions are not implemented yet.
   title: Stock Portfolio Tracker API
   version: "1.0"
 paths:
+  /api/v1/auth/config:
+    get:
+      description: Tells a client whether Google sign-in is configured. When google_enabled
+        is false, the Google endpoints answer 503 feature_disabled.
+      operationId: getAuthConfig
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/http.AuthConfigResponse'
+      summary: Get the sign-in options
+      tags:
+      - Auth
   /api/v1/auth/csrf:
     get:
       description: Returns the token to send in the X-CSRF-Token header of every POST.
@@ -298,6 +345,159 @@ paths:
       summary: Send a new verification code
       tags:
       - Auth
+  /api/v1/auth/google/callback:
+    get:
+      description: 'Google sends the browser here after GET authorization_url. It
+        is not called directly: it needs the state from that URL and the oidc_binding
+        cookie of the browser that started the flow, and it takes no X-CSRF-Token
+        (the state, the binding and the ID token''s nonce protect it). It always clears
+        oidc_binding and answers 303 to /docs/?google=success (signed in: the session
+        cookie is set), linked (Google added to the signed-in account), link_required
+        (the email belongs to an account: sign in to it and use POST /api/v1/auth/google/link)
+        or failed (cancelled, expired, replayed, another browser, or refused). Infrastructure
+        failures answer JSON instead.'
+      operationId: completeGoogleSignIn
+      parameters:
+      - description: Authorization code from Google
+        in: query
+        name: code
+        type: string
+      - description: The state of the flow
+        in: query
+        name: state
+        type: string
+      - description: Set by Google when the user cancelled
+        in: query
+        name: error
+        type: string
+      produces:
+      - application/json
+      responses:
+        "303":
+          description: Redirect to /docs/?google=success|linked|link_required|failed
+          headers:
+            Location:
+              description: /docs/?google=success
+              type: string
+            Set-Cookie:
+              description: oidc_binding=; Expires=Tue, 10 Nov 2009 23:00:00 GMT —
+                and session=… on success
+              type: string
+        "500":
+          description: audit_write_failed or internal
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+        "503":
+          description: feature_disabled (Google is not configured) or dependency_unavailable
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+      summary: Come back from Google
+      tags:
+      - Auth
+  /api/v1/auth/google/link:
+    post:
+      description: 'Like POST /api/v1/auth/google/start, but the flow belongs to the
+        signed-in user: after Google, the callback adds the Google account to this
+        account (/docs/?google=linked) without opening a new session. The callback
+        must come with the same session. Needs the session cookie and an X-CSRF-Token
+        bound to it.'
+      operationId: linkGoogleAccount
+      parameters:
+      - description: Token from GET /api/v1/auth/csrf, fetched while signed in
+        in: header
+        name: X-CSRF-Token
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          headers:
+            Set-Cookie:
+              description: oidc_binding=…; Path=/; Expires=…; HttpOnly; SameSite=Lax
+              type: string
+          schema:
+            $ref: '#/definitions/http.GoogleStartResponse'
+        "401":
+          description: unauthenticated
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+        "403":
+          description: csrf_failed
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+        "429":
+          description: rate_limited; wait Retry-After seconds
+          headers:
+            Retry-After:
+              description: Seconds to wait
+              type: integer
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+        "500":
+          description: internal
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+        "503":
+          description: feature_disabled or dependency_unavailable
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+      summary: Link Google to the signed-in account
+      tags:
+      - Auth
+  /api/v1/auth/google/start:
+    post:
+      description: 'Returns the Google URL to open in the same browser, and sets the
+        HttpOnly cookie oidc_binding (__Host-oidc_binding over HTTPS) that must come
+        back with the callback; the flow lasts 10 minutes. Google sends the browser
+        to GET /api/v1/auth/google/callback, which ends at /docs/?google=success|link_required|failed.
+        A Google account whose email already belongs to an account is not linked automatically:
+        sign in to that account and use POST /api/v1/auth/google/link. Needs X-CSRF-Token
+        and the csrf_nonce cookie. Swagger UI and curl cannot complete the Google
+        page; open authorization_url in the browser.'
+      operationId: startGoogleSignIn
+      parameters:
+      - description: Token from GET /api/v1/auth/csrf
+        in: header
+        name: X-CSRF-Token
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          headers:
+            Set-Cookie:
+              description: oidc_binding=…; Path=/; Expires=…; HttpOnly; SameSite=Lax
+              type: string
+          schema:
+            $ref: '#/definitions/http.GoogleStartResponse'
+        "403":
+          description: csrf_failed
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+        "429":
+          description: rate_limited; wait Retry-After seconds
+          headers:
+            Retry-After:
+              description: Seconds to wait
+              type: integer
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+        "500":
+          description: internal
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+        "503":
+          description: feature_disabled (Google is not configured) or dependency_unavailable
+            (Google cannot be reached)
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+      summary: Start signing in with Google
+      tags:
+      - Auth
   /api/v1/auth/login:
     post:
       consumes:
@@ -426,6 +626,128 @@ paths:
           schema:
             $ref: '#/definitions/http.ErrorResponse'
       summary: Get the signed-in account
+      tags:
+      - Auth
+  /api/v1/auth/password-reset/confirm:
+    post:
+      consumes:
+      - application/json
+      description: 'Checks the 6-digit code sent by "ask for a password reset code"
+        and replaces the password. A code works once and may be tried wrong 5 times;
+        a wrong, expired, already used, exhausted or unknown code all give the same
+        400 invalid_reset. The new password follows the same rules as register; the
+        rule that it must not contain the part of the email before "@" is checked
+        only after the code is right, so a wrong code never reveals anything about
+        the account. Each IP address can try 20 times in 15 minutes. Success verifies
+        the email, signs the account out on every device, sends a notice email and
+        does not sign in: call POST /api/v1/auth/login next. Needs X-CSRF-Token and
+        the csrf_nonce cookie.'
+      operationId: confirmPasswordReset
+      parameters:
+      - description: Token from GET /api/v1/auth/csrf
+        in: header
+        name: X-CSRF-Token
+        required: true
+        type: string
+      - description: challenge_id from the 202 response, the 6 ASCII digits from the
+          email and the new password
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/http.ResetPasswordRequest'
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: Password changed
+        "400":
+          description: invalid_reset, invalid_input (password rules, details lists
+            the reasons) or malformed_json
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+        "403":
+          description: csrf_failed
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+        "429":
+          description: rate_limited; wait Retry-After seconds
+          headers:
+            Retry-After:
+              description: Seconds to wait
+              type: integer
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+        "500":
+          description: audit_write_failed or internal
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+        "503":
+          description: dependency_unavailable or server_busy
+          headers:
+            Retry-After:
+              description: Seconds to wait
+              type: integer
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+      summary: Set a new password with the reset code
+      tags:
+      - Auth
+  /api/v1/auth/password-reset/request:
+    post:
+      consumes:
+      - application/json
+      description: Sends a 6-digit code, valid for 10 minutes, to an account that
+        has a password, and invalidates the code sent before. The answer is the same
+        for every email, so it does not reveal whether an account exists; an account
+        that signed up only with Google has no password and gets no code. Each email
+        can ask once a minute and five times an hour, and each IP address 20 times
+        an hour. Needs X-CSRF-Token and the csrf_nonce cookie.
+      operationId: requestPasswordReset
+      parameters:
+      - description: Token from GET /api/v1/auth/csrf
+        in: header
+        name: X-CSRF-Token
+        required: true
+        type: string
+      - description: The email to send a code to
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/http.EmailRequest'
+      produces:
+      - application/json
+      responses:
+        "202":
+          description: Accepted
+          schema:
+            $ref: '#/definitions/http.OTPAcceptedResponse'
+        "400":
+          description: invalid_input or malformed_json
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+        "403":
+          description: csrf_failed
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+        "429":
+          description: rate_limited; wait Retry-After seconds
+          headers:
+            Retry-After:
+              description: Seconds to wait
+              type: integer
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+        "500":
+          description: audit_write_failed or internal
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+        "503":
+          description: dependency_unavailable
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+      summary: Ask for a password reset code
       tags:
       - Auth
   /api/v1/auth/register:

@@ -18,6 +18,8 @@ import (
 const (
 	wantVerificationSubject        = "รหัสยืนยันอีเมลของคุณ"
 	wantRegistrationAttemptSubject = "มีผู้พยายามสมัครสมาชิกด้วยอีเมลของคุณ"
+	wantPasswordResetSubject       = "รหัสสำหรับตั้งรหัสผ่านใหม่"
+	wantPasswordChangedSubject     = "รหัสผ่านของคุณถูกเปลี่ยนแล้ว"
 )
 
 // parsedMail is a received message after the transfer and header encodings are undone.
@@ -269,6 +271,37 @@ func TestBodies(t *testing.T) {
 
 	if verificationSubject != wantVerificationSubject || registrationAttemptSubject != wantRegistrationAttemptSubject {
 		t.Errorf("subjects = %q, %q", verificationSubject, registrationAttemptSubject)
+	}
+}
+
+func TestPasswordResetBodyCarriesTheCodeAndReference(t *testing.T) {
+	mail := testOTPMail(t)
+	body := passwordResetBody(mail)
+	want := "รหัสสำหรับตั้งรหัสผ่านใหม่ของคุณคือ 042731\n\n" +
+		"รหัสนี้ใช้ได้ครั้งเดียวถึง 2026-10-22 16:10 น. (เวลาประเทศไทย) ห้ามบอกรหัสนี้กับผู้อื่น\n\n" +
+		"รหัสอ้างอิง: " + mail.ChallengeID.String() + "\n\n" +
+		"หากคุณไม่ได้ขอตั้งรหัสผ่านใหม่ ไม่ต้องทำอะไร รหัสผ่านเดิมยังใช้ได้\n"
+	if body != want {
+		t.Errorf("password reset body:\n got %q\nwant %q", body, want)
+	}
+	if passwordResetSubject != wantPasswordResetSubject {
+		t.Errorf("password reset subject = %q", passwordResetSubject)
+	}
+}
+
+func TestPasswordChangedBodyHasNoCode(t *testing.T) {
+	body := passwordChangedBody()
+	want := "รหัสผ่านของบัญชีนี้เพิ่งถูกเปลี่ยน และทุกอุปกรณ์ที่เข้าสู่ระบบอยู่ถูกออกจากระบบแล้ว\n\n" +
+		"หากเป็นคุณ ให้เข้าสู่ระบบด้วยรหัสผ่านใหม่\n" +
+		"หากไม่ใช่คุณ ให้ใช้ \"ลืมรหัสผ่าน\" ตั้งรหัสใหม่ทันที\n"
+	if body != want {
+		t.Errorf("password changed body:\n got %q\nwant %q", body, want)
+	}
+	if sixDigitCode.MatchString(body) {
+		t.Errorf("password changed body must carry no code:\n%s", body)
+	}
+	if passwordChangedSubject != wantPasswordChangedSubject {
+		t.Errorf("password changed subject = %q", passwordChangedSubject)
 	}
 }
 

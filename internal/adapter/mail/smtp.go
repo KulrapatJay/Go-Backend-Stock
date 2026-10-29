@@ -108,6 +108,16 @@ func (m *SMTPMailer) SendRegistrationAttempt(ctx context.Context, to domain.Emai
 	return m.send(ctx, to.String(), registrationAttemptSubject, registrationAttemptBody())
 }
 
+// SendPasswordReset implements port.Mailer.
+func (m *SMTPMailer) SendPasswordReset(ctx context.Context, mail domain.OTPMail) error {
+	return m.send(ctx, mail.To.String(), passwordResetSubject, passwordResetBody(mail))
+}
+
+// SendPasswordChanged implements port.Mailer.
+func (m *SMTPMailer) SendPasswordChanged(ctx context.Context, to domain.Email) error {
+	return m.send(ctx, to.String(), passwordChangedSubject, passwordChangedBody())
+}
+
 func (m *SMTPMailer) send(ctx context.Context, to, subject, body string) error {
 	id, err := newMessageID(m.cfg.From)
 	if err != nil {

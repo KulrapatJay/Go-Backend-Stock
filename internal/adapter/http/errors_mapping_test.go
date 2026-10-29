@@ -40,6 +40,7 @@ func TestErrorHandlerMapsDomainErrors(t *testing.T) {
 		{"rate limited waits at least a second", domain.NewRetryError(domain.CodeRateLimited, "too many requests", 10*time.Millisecond), 429, "rate_limited", "", "1", nil},
 		{"rate limited without a wait defaults to a second", domain.NewError(domain.CodeRateLimited, "too many requests"), 429, "rate_limited", "", "1", nil},
 		{"server busy", domain.NewError(domain.CodeServerBusy, "server is busy, try again shortly"), 503, "server_busy", "", "1", nil},
+		{"identity rejected never reaches the client", domain.ErrIdentityRejected, 500, "internal", "Internal server error", "", nil},
 		{"dependency unavailable", domain.NewError(domain.CodeDependencyUnavailable, "session store is unavailable"), 503, "dependency_unavailable", "", "", nil},
 		{"internal hides its message", domain.NewError(domain.CodeInternal, "stored password hash is malformed"), 500, "internal", "Internal server error", "", nil},
 		{"audit write failure hides its cause", fmt.Errorf("%w: %w", domain.NewError(domain.CodeAuditWriteFailed, "could not record the audit event"), errors.New("connection reset")),

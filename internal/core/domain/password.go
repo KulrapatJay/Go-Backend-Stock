@@ -105,6 +105,13 @@ func passwordReasons(raw string, email Email, isCommon func(lowercase string) bo
 	return reasons
 }
 
+// PasswordContainsEmail reports whether p contains the part of email before "@" under the same
+// rule ParsePassword applies. A reset uses it to refuse the new password after the account's email
+// is known from the challenge. The zero email matches nothing.
+func PasswordContainsEmail(p Password, email Email) bool {
+	return containsEmailLocalPart(strings.ToLower(p.Reveal()), email)
+}
+
 // containsEmailLocalPart reports whether lower contains the part of the email before "@", when
 // that part is long enough to be meaningful. Email is already lower case.
 func containsEmailLocalPart(lower string, email Email) bool {

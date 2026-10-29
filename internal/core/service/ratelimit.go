@@ -18,6 +18,8 @@ const (
 	googleStartPerHourIP    = 20
 	verificationConfirmIP   = 20 // per loginWindow
 	verificationConfirmSpan = loginWindow
+	resetConfirmIP          = 20 // per loginWindow
+	resetConfirmSpan        = loginWindow
 )
 
 // RateLimitKeys turns an email or an IP address into the opaque key stored in rate_limit_keys, so
@@ -94,6 +96,21 @@ func (p *RateLimitPolicy) EmailVerificationRequest(email domain.Email, ip netip.
 // EmailVerificationConfirm limits guessing codes from one client IP.
 func (p *RateLimitPolicy) EmailVerificationConfirm(ip netip.Addr) ([]domain.RateLimitRule, error) {
 	return p.build(p.spec(domain.RateLimitEmailVerificationConfirmIP, ipValue(ip), verificationConfirmIP, verificationConfirmSpan))
+}
+
+// PasswordResetRequest limits asking for a reset code. Its email rules use their own scope, so
+// reset requests and verification requests for one address do not share a quota.
+func (p *RateLimitPolicy) PasswordResetRequest(email domain.Email, ip netip.Addr) ([]domain.RateLimitRule, error) {
+	return p.build(
+		p.spec(domain.RateLimitPasswordResetRequestEmail, email.String(), 1, p.cfg.OTPResendCooldown),
+		p.spec(domain.RateLimitPasswordResetRequestEmail, email.String(), p.cfg.OTPRequestsPerHourEmail, hourWindow),
+		p.spec(domain.RateLimitPasswordResetRequestIP, ipValue(ip), p.cfg.OTPRequestsPerHourIP, hourWindow),
+	)
+}
+
+// PasswordResetConfirm limits guessing reset codes from one client IP.
+func (p *RateLimitPolicy) PasswordResetConfirm(ip netip.Addr) ([]domain.RateLimitRule, error) {
+	return p.build(p.spec(domain.RateLimitPasswordResetConfirmIP, ipValue(ip), resetConfirmIP, resetConfirmSpan))
 }
 
 // GoogleStart limits starting a Google sign-in from one client IP.

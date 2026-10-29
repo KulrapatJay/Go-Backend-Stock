@@ -15,6 +15,27 @@ const docTemplate = `{
     "host": "{{.Host}}",
     "basePath": "{{.BasePath}}",
     "paths": {
+        "/api/v1/auth/config": {
+            "get": {
+                "description": "Tells a client whether Google sign-in is configured. When google_enabled is false, the Google endpoints answer 503 feature_disabled.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Auth"
+                ],
+                "summary": "Get the sign-in options",
+                "operationId": "getAuthConfig",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/http.AuthConfigResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/api/v1/auth/csrf": {
             "get": {
                 "description": "Returns the token to send in the X-CSRF-Token header of every POST. Signed in, the token is bound to the session; signed out, it is bound to a random nonce that this call keeps in the HttpOnly cookie csrf_nonce (__Host-csrf_nonce over HTTPS). Tokens last one hour. Ask for a new token after login and after logout, because the binding changes. Browsers (and Swagger UI) send the cookie by themselves; curl needs a cookie jar (-b/-c).",
@@ -194,6 +215,204 @@ const docTemplate = `{
                     },
                     "503": {
                         "description": "dependency_unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/auth/google/callback": {
+            "get": {
+                "description": "Google sends the browser here after GET authorization_url. It is not called directly: it needs the state from that URL and the oidc_binding cookie of the browser that started the flow, and it takes no X-CSRF-Token (the state, the binding and the ID token's nonce protect it). It always clears oidc_binding and answers 303 to /docs/?google=success (signed in: the session cookie is set), linked (Google added to the signed-in account), link_required (the email belongs to an account: sign in to it and use POST /api/v1/auth/google/link) or failed (cancelled, expired, replayed, another browser, or refused). Infrastructure failures answer JSON instead.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Auth"
+                ],
+                "summary": "Come back from Google",
+                "operationId": "completeGoogleSignIn",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Authorization code from Google",
+                        "name": "code",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "The state of the flow",
+                        "name": "state",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Set by Google when the user cancelled",
+                        "name": "error",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "303": {
+                        "description": "Redirect to /docs/?google=success|linked|link_required|failed",
+                        "headers": {
+                            "Location": {
+                                "type": "string",
+                                "description": "/docs/?google=success"
+                            },
+                            "Set-Cookie": {
+                                "type": "string",
+                                "description": "oidc_binding=; Expires=Tue, 10 Nov 2009 23:00:00 GMT — and session=… on success"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "audit_write_failed or internal",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "feature_disabled (Google is not configured) or dependency_unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/auth/google/link": {
+            "post": {
+                "description": "Like POST /api/v1/auth/google/start, but the flow belongs to the signed-in user: after Google, the callback adds the Google account to this account (/docs/?google=linked) without opening a new session. The callback must come with the same session. Needs the session cookie and an X-CSRF-Token bound to it.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Auth"
+                ],
+                "summary": "Link Google to the signed-in account",
+                "operationId": "linkGoogleAccount",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Token from GET /api/v1/auth/csrf, fetched while signed in",
+                        "name": "X-CSRF-Token",
+                        "in": "header",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/http.GoogleStartResponse"
+                        },
+                        "headers": {
+                            "Set-Cookie": {
+                                "type": "string",
+                                "description": "oidc_binding=…; Path=/; Expires=…; HttpOnly; SameSite=Lax"
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "unauthenticated",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "csrf_failed",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
+                    },
+                    "429": {
+                        "description": "rate_limited; wait Retry-After seconds",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        },
+                        "headers": {
+                            "Retry-After": {
+                                "type": "integer",
+                                "description": "Seconds to wait"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "internal",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "feature_disabled or dependency_unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/auth/google/start": {
+            "post": {
+                "description": "Returns the Google URL to open in the same browser, and sets the HttpOnly cookie oidc_binding (__Host-oidc_binding over HTTPS) that must come back with the callback; the flow lasts 10 minutes. Google sends the browser to GET /api/v1/auth/google/callback, which ends at /docs/?google=success|link_required|failed. A Google account whose email already belongs to an account is not linked automatically: sign in to that account and use POST /api/v1/auth/google/link. Needs X-CSRF-Token and the csrf_nonce cookie. Swagger UI and curl cannot complete the Google page; open authorization_url in the browser.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Auth"
+                ],
+                "summary": "Start signing in with Google",
+                "operationId": "startGoogleSignIn",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Token from GET /api/v1/auth/csrf",
+                        "name": "X-CSRF-Token",
+                        "in": "header",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/http.GoogleStartResponse"
+                        },
+                        "headers": {
+                            "Set-Cookie": {
+                                "type": "string",
+                                "description": "oidc_binding=…; Path=/; Expires=…; HttpOnly; SameSite=Lax"
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "csrf_failed",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
+                    },
+                    "429": {
+                        "description": "rate_limited; wait Retry-After seconds",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        },
+                        "headers": {
+                            "Retry-After": {
+                                "type": "integer",
+                                "description": "Seconds to wait"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "internal",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "feature_disabled (Google is not configured) or dependency_unavailable (Google cannot be reached)",
                         "schema": {
                             "$ref": "#/definitions/http.ErrorResponse"
                         }
@@ -381,6 +600,165 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/v1/auth/password-reset/confirm": {
+            "post": {
+                "description": "Checks the 6-digit code sent by \"ask for a password reset code\" and replaces the password. A code works once and may be tried wrong 5 times; a wrong, expired, already used, exhausted or unknown code all give the same 400 invalid_reset. The new password follows the same rules as register; the rule that it must not contain the part of the email before \"@\" is checked only after the code is right, so a wrong code never reveals anything about the account. Each IP address can try 20 times in 15 minutes. Success verifies the email, signs the account out on every device, sends a notice email and does not sign in: call POST /api/v1/auth/login next. Needs X-CSRF-Token and the csrf_nonce cookie.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Auth"
+                ],
+                "summary": "Set a new password with the reset code",
+                "operationId": "confirmPasswordReset",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Token from GET /api/v1/auth/csrf",
+                        "name": "X-CSRF-Token",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "description": "challenge_id from the 202 response, the 6 ASCII digits from the email and the new password",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/http.ResetPasswordRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "Password changed"
+                    },
+                    "400": {
+                        "description": "invalid_reset, invalid_input (password rules, details lists the reasons) or malformed_json",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "csrf_failed",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
+                    },
+                    "429": {
+                        "description": "rate_limited; wait Retry-After seconds",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        },
+                        "headers": {
+                            "Retry-After": {
+                                "type": "integer",
+                                "description": "Seconds to wait"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "audit_write_failed or internal",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "dependency_unavailable or server_busy",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        },
+                        "headers": {
+                            "Retry-After": {
+                                "type": "integer",
+                                "description": "Seconds to wait"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/auth/password-reset/request": {
+            "post": {
+                "description": "Sends a 6-digit code, valid for 10 minutes, to an account that has a password, and invalidates the code sent before. The answer is the same for every email, so it does not reveal whether an account exists; an account that signed up only with Google has no password and gets no code. Each email can ask once a minute and five times an hour, and each IP address 20 times an hour. Needs X-CSRF-Token and the csrf_nonce cookie.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Auth"
+                ],
+                "summary": "Ask for a password reset code",
+                "operationId": "requestPasswordReset",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Token from GET /api/v1/auth/csrf",
+                        "name": "X-CSRF-Token",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "description": "The email to send a code to",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/http.EmailRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "202": {
+                        "description": "Accepted",
+                        "schema": {
+                            "$ref": "#/definitions/http.OTPAcceptedResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "invalid_input or malformed_json",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "csrf_failed",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
+                    },
+                    "429": {
+                        "description": "rate_limited; wait Retry-After seconds",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        },
+                        "headers": {
+                            "Retry-After": {
+                                "type": "integer",
+                                "description": "Seconds to wait"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "audit_write_failed or internal",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "dependency_unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/api/v1/auth/register": {
             "post": {
                 "description": "Creates an unverified account and emails a 6-digit verification code. The answer is the same whether or not the email already has an account: the owner of an existing account gets an email notice instead and nothing changes. The response takes at least about half a second on purpose. Needs the pre-login CSRF flow: call GET /api/v1/auth/csrf first, send its token in X-CSRF-Token, and send the csrf_nonce cookie (a browser does this itself). Then confirm the code with POST /api/v1/auth/email-verification/confirm.",
@@ -527,6 +905,18 @@ const docTemplate = `{
         }
     },
     "definitions": {
+        "http.AuthConfigResponse": {
+            "type": "object",
+            "required": [
+                "google_enabled"
+            ],
+            "properties": {
+                "google_enabled": {
+                    "type": "boolean",
+                    "example": true
+                }
+            }
+        },
         "http.CSRFResponse": {
             "type": "object",
             "required": [
@@ -618,6 +1008,18 @@ const docTemplate = `{
                 }
             }
         },
+        "http.GoogleStartResponse": {
+            "type": "object",
+            "required": [
+                "authorization_url"
+            ],
+            "properties": {
+                "authorization_url": {
+                    "type": "string",
+                    "example": "https://accounts.google.com/o/oauth2/v2/auth?client_id=...\u0026code_challenge=...\u0026code_challenge_method=S256\u0026nonce=...\u0026redirect_uri=...\u0026response_type=code\u0026scope=openid+email\u0026state=..."
+                }
+            }
+        },
         "http.HealthResponse": {
             "type": "object",
             "properties": {
@@ -662,7 +1064,7 @@ const docTemplate = `{
                 },
                 "message": {
                     "type": "string",
-                    "example": "If this address can receive email, a verification code has been sent. It expires in 10 minutes."
+                    "example": "If this address can receive email, a code has been sent. It expires in 10 minutes."
                 }
             }
         },
@@ -689,6 +1091,28 @@ const docTemplate = `{
                 "password": {
                     "type": "string",
                     "example": "Zq9!kVx1"
+                }
+            }
+        },
+        "http.ResetPasswordRequest": {
+            "type": "object",
+            "required": [
+                "challenge_id",
+                "new_password",
+                "otp"
+            ],
+            "properties": {
+                "challenge_id": {
+                    "type": "string",
+                    "example": "0192f0c1-7a8e-7cc4-9d2b-3f6c1a2b4c5d"
+                },
+                "new_password": {
+                    "type": "string",
+                    "example": "Zq9!kVx1"
+                },
+                "otp": {
+                    "type": "string",
+                    "example": "042731"
                 }
             }
         },
@@ -757,7 +1181,7 @@ var SwaggerInfo = &swag.Spec{
 	BasePath:         "/",
 	Schemes:          []string{},
 	Title:            "Stock Portfolio Tracker API",
-	Description:      "Records US stock trades and tracks portfolio cost and P&L. It does not place real orders.\nMilestone 4b exposes Health and the email/password Auth endpoints; Google sign-in, password reset, portfolios and transactions are not implemented yet.",
+	Description:      "Records US stock trades and tracks portfolio cost and P&L. It does not place real orders.\nMilestone 5 exposes Health and the Auth endpoints (email and password, email verification, password reset, Google sign-in and linking); portfolios and transactions are not implemented yet.",
 	InfoInstanceName: "swagger",
 	SwaggerTemplate:  docTemplate,
 	LeftDelim:        "{{",

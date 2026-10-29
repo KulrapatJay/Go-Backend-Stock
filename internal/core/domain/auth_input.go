@@ -20,3 +20,12 @@ type VerifyEmailInput struct {
 	ChallengeID ID
 	OTP         OTPCode
 }
+
+// ResetPasswordInput finishes a password reset: the code that was sent to the account's email and
+// the new password, which passed every password rule except the one about the email, which Reset
+// checks after the code is verified.
+type ResetPasswordInput struct {
+	ChallengeID ID
+	OTP         OTPCode
+	NewPassword Password
+}

@@ -56,11 +56,16 @@ type fakeMailer struct {
 	mu            sync.Mutex
 	verifications map[string][]domain.OTPMail
 	attempts      map[string]int
+	resets        map[string][]domain.OTPMail
+	changed       map[string]int
 	err           error
 }
 
 func newFakeMailer() *fakeMailer {
-	return &fakeMailer{verifications: map[string][]domain.OTPMail{}, attempts: map[string]int{}}
+	return &fakeMailer{
+		verifications: map[string][]domain.OTPMail{}, attempts: map[string]int{},
+		resets: map[string][]domain.OTPMail{}, changed: map[string]int{},
+	}
 }
 
 func (m *fakeMailer) SendEmailVerification(_ context.Context, mail domain.OTPMail) error {
@@ -75,6 +80,43 @@ func (m *fakeMailer) SendRegistrationAttempt(_ context.Context, to domain.Email)
 	defer m.mu.Unlock()
 	m.attempts[to.String()]++
 	return m.err
+}
+
+func (m *fakeMailer) SendPasswordReset(_ context.Context, mail domain.OTPMail) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.resets[mail.To.String()] = append(m.resets[mail.To.String()], mail)
+	return m.err
+}
+
+func (m *fakeMailer) SendPasswordChanged(_ context.Context, to domain.Email) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.changed[to.String()]++
+	return m.err
+}
+
+func (m *fakeMailer) lastReset(t *testing.T, email string) domain.OTPMail {
+	t.Helper()
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	mails := m.resets[email]
+	if len(mails) == 0 {
+		t.Fatalf("no password reset email was sent to %s", email)
+	}
+	return mails[len(mails)-1]
+}
+
+func (m *fakeMailer) resetCount(email string) int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return len(m.resets[email])
+}
+
+func (m *fakeMailer) changedCount(email string) int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.changed[email]
 }
 
 func (m *fakeMailer) lastVerification(t *testing.T, email string) domain.OTPMail {
@@ -124,6 +166,18 @@ type harnessConfig struct {
 	hasher    service.Argon2Params
 	floor     time.Duration
 	failAudit bool
+	identity  port.IdentityProvider // nil = Google sign-in off
+}
+
+// testOTPSecret keys the OTP digests of every harness, so a test can build the digest of a code.
+const testOTPSecret = "oooooooooooooooooooooooooooooooo"
+
+// testOIDCSecret keys the PKCE verifiers of every harness, so a flow started on one harness can be
+// completed on another that shares the database.
+const testOIDCSecret = "iiiiiiiiiiiiiiiiiiiiiiiiiiiiiiii"
+
+func withIdentityProvider(p port.IdentityProvider) harnessOption {
+	return func(c *harnessConfig) { c.identity = p }
 }
 
 type harnessOption func(*harnessConfig)
@@ -181,7 +235,7 @@ func newAuthHarness(t *testing.T, opts ...harnessOption) *authHarness {
 	must(err)
 	policy, err := service.NewPasswordPolicy(blocklist)
 	must(err)
-	otp, err := service.NewOTPCodec([]byte(strings.Repeat("o", 32)))
+	otp, err := service.NewOTPCodec([]byte(testOTPSecret))
 	must(err)
 	csrf, err := service.NewCSRFCodec([]byte(strings.Repeat("c", 32)), clock)
 	must(err)
@@ -199,14 +253,17 @@ func newAuthHarness(t *testing.T, opts ...harnessOption) *authHarness {
 	if cfg.failAudit {
 		uow = failingAuditUoW{store}
 	}
+	oidc, err := service.NewOIDCCodec([]byte(testOIDCSecret))
+	must(err)
 	auth, err := service.NewAuth(service.AuthDeps{
 		Store: store, UnitOfWork: uow, Clock: clock, Hasher: hasher, OTP: otp, Limits: limits,
 		Pacer: pacer, Mailer: mailer, Logger: log, SessionTTL: 7 * 24 * time.Hour, OTPMaxAttempts: 5,
+		Identity: cfg.identity, OIDC: oidc,
 	})
 	must(err)
 
 	app := NewServer(Options{Logger: log, Readiness: pool, Auth: AuthOptions{
-		Service: auth, Verification: auth, Passwords: policy, CSRF: csrf,
+		Service: auth, Verification: auth, PasswordReset: auth.PasswordReset(), Passwords: policy, CSRF: csrf,
 		ClientIP: NewClientIPResolver(testTrustedProxies), PublicOrigin: testOrigin,
 	}})
 	return &authHarness{app: app, pool: pool, admin: admin, store: store, mailer: mailer, clock: clock, logs: logs, origin: testOrigin}
@@ -461,10 +518,23 @@ func (b *browser) requestCode(email string) (response, []byte) {
 	return b.do(nethttp.MethodPost, "/api/v1/auth/email-verification/request", map[string]string{"email": email}, nil)
 }
 
+func (b *browser) requestReset(email string) (response, []byte) {
+	b.t.Helper()
+	b.fetchCSRF()
+	return b.do(nethttp.MethodPost, "/api/v1/auth/password-reset/request", map[string]string{"email": email}, nil)
+}
+
 func (b *browser) confirm(challengeID, otp string) (response, []byte) {
 	b.t.Helper()
 	b.fetchCSRF()
 	return b.do(nethttp.MethodPost, "/api/v1/auth/email-verification/confirm", map[string]string{"challenge_id": challengeID, "otp": otp}, nil)
+}
+
+func (b *browser) confirmReset(challengeID, otp, newPassword string) (response, []byte) {
+	b.t.Helper()
+	b.fetchCSRF()
+	return b.do(nethttp.MethodPost, "/api/v1/auth/password-reset/confirm",
+		map[string]string{"challenge_id": challengeID, "otp": otp, "new_password": newPassword}, nil)
 }
 
 // signUpAndVerify registers email and confirms it with the code the fake mailer received (it

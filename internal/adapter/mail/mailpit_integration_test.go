@@ -201,3 +201,38 @@ func TestMailpitReceivesTheRegistrationAttemptEmail(t *testing.T) {
 	}
 	assertThaiTransport(t, raw)
 }
+
+func TestMailpitReceivesThePasswordResetEmail(t *testing.T) {
+	mailer, apiURL := mailpitMailer(t)
+	mail := testOTPMail(t)
+	mail.To = uniqueRecipient(t)
+
+	if err := mailer.SendPasswordReset(t.Context(), mail); err != nil {
+		t.Fatalf("SendPasswordReset() error = %v", err)
+	}
+	msg, text, raw := waitForMessage(t, apiURL, mail.To.String())
+	if msg.Subject != passwordResetSubject {
+		t.Errorf("Subject = %q, want %q", msg.Subject, passwordResetSubject)
+	}
+	if !strings.Contains(text, "042731") || !strings.Contains(text, mail.ChallengeID.String()) || !strings.Contains(text, "รหัสสำหรับตั้งรหัสผ่านใหม่ของคุณคือ 042731") {
+		t.Errorf("body lacks the code or the reference:\n%s", text)
+	}
+	assertThaiTransport(t, raw)
+}
+
+func TestMailpitReceivesThePasswordChangedEmail(t *testing.T) {
+	mailer, apiURL := mailpitMailer(t)
+	to := uniqueRecipient(t)
+
+	if err := mailer.SendPasswordChanged(t.Context(), to); err != nil {
+		t.Fatalf("SendPasswordChanged() error = %v", err)
+	}
+	msg, text, raw := waitForMessage(t, apiURL, to.String())
+	if msg.Subject != passwordChangedSubject {
+		t.Errorf("Subject = %q, want %q", msg.Subject, passwordChangedSubject)
+	}
+	if sixDigitCode.MatchString(text) {
+		t.Errorf("the password changed email must carry no 6-digit code:\n%s", text)
+	}
+	assertThaiTransport(t, raw)
+}
