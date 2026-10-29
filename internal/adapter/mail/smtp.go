@@ -108,6 +108,16 @@ func (m *SMTPMailer) SendRegistrationAttempt(ctx context.Context, to domain.Emai
 	return m.send(ctx, to.String(), registrationAttemptSubject, registrationAttemptBody())
 }
 
+// SendPasswordReset is a stub until the reset email is written.
+func (m *SMTPMailer) SendPasswordReset(context.Context, domain.OTPMail) error {
+	return errors.New("not implemented")
+}
+
+// SendPasswordChanged is a stub until the notice email is written.
+func (m *SMTPMailer) SendPasswordChanged(context.Context, domain.Email) error {
+	return errors.New("not implemented")
+}
+
 func (m *SMTPMailer) send(ctx context.Context, to, subject, body string) error {
 	id, err := newMessageID(m.cfg.From)
 	if err != nil {

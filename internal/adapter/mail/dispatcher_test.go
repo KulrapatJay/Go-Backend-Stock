@@ -86,6 +86,11 @@ func (f *fakeSender) SendRegistrationAttempt(ctx context.Context, to domain.Emai
 	return f.err
 }
 
+// SendPasswordReset and SendPasswordChanged are stubs until the dispatcher queues them.
+func (f *fakeSender) SendPasswordReset(context.Context, domain.OTPMail) error { return nil }
+
+func (f *fakeSender) SendPasswordChanged(context.Context, domain.Email) error { return nil }
+
 func (f *fakeSender) counts() (verifications, attempts int) {
 	f.mu.Lock()
 	defer f.mu.Unlock()

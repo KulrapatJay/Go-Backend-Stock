@@ -77,6 +77,11 @@ func (m *fakeMailer) SendRegistrationAttempt(_ context.Context, to domain.Email)
 	return m.err
 }
 
+// SendPasswordReset and SendPasswordChanged are stubs until the reset handlers are tested.
+func (m *fakeMailer) SendPasswordReset(context.Context, domain.OTPMail) error { return nil }
+
+func (m *fakeMailer) SendPasswordChanged(context.Context, domain.Email) error { return nil }
+
 func (m *fakeMailer) lastVerification(t *testing.T, email string) domain.OTPMail {
 	t.Helper()
 	m.mu.Lock()

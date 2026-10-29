@@ -104,6 +104,16 @@ func (d *Dispatcher) SendRegistrationAttempt(_ context.Context, to domain.Email)
 	})
 }
 
+// SendPasswordReset is a stub until the reset email is written.
+func (d *Dispatcher) SendPasswordReset(context.Context, domain.OTPMail) error {
+	return errors.New("not implemented")
+}
+
+// SendPasswordChanged is a stub until the notice email is written.
+func (d *Dispatcher) SendPasswordChanged(context.Context, domain.Email) error {
+	return errors.New("not implemented")
+}
+
 func (d *Dispatcher) enqueue(kind string, run func(ctx context.Context) error) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()

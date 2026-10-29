@@ -99,6 +99,7 @@ var (
 	ErrUnauthenticated     = NewError(CodeUnauthenticated, "authentication required")
 	ErrInvalidCredentials  = NewError(CodeInvalidCredentials, "email or password is incorrect")
 	ErrInvalidVerification = NewError(CodeInvalidVerification, "verification code is invalid or has expired")
+	ErrInvalidReset        = NewError(CodeInvalidReset, "reset code is invalid or has expired")
 	ErrEmailNotVerified    = NewError(CodeEmailNotVerified, "email address is not verified; ask for a new verification code")
 	ErrCSRFFailed          = NewError(CodeCSRFFailed, "CSRF token is missing, invalid or expired")
 
