@@ -602,7 +602,7 @@ const docTemplate = `{
         },
         "/api/v1/auth/password-reset/confirm": {
             "post": {
-                "description": "Checks the 6-digit code sent by \"ask for a password reset code\" and replaces the password. A code works once and may be tried wrong 5 times; a wrong, expired, already used, exhausted or unknown code all give the same 400 invalid_reset. The new password follows the same rules as register; the rule that it must not contain the part of the email before \"@\" is checked only after the code is right, so a wrong code never reveals anything about the account. Success verifies the email, signs the account out on every device, sends a notice email and does not sign in: call POST /api/v1/auth/login next. Needs X-CSRF-Token and the csrf_nonce cookie.",
+                "description": "Checks the 6-digit code sent by \"ask for a password reset code\" and replaces the password. A code works once and may be tried wrong 5 times; a wrong, expired, already used, exhausted or unknown code all give the same 400 invalid_reset. The new password follows the same rules as register; the rule that it must not contain the part of the email before \"@\" is checked only after the code is right, so a wrong code never reveals anything about the account. Each IP address can try 20 times in 15 minutes. Success verifies the email, signs the account out on every device, sends a notice email and does not sign in: call POST /api/v1/auth/login next. Needs X-CSRF-Token and the csrf_nonce cookie.",
                 "consumes": [
                     "application/json"
                 ],
@@ -683,7 +683,7 @@ const docTemplate = `{
         },
         "/api/v1/auth/password-reset/request": {
             "post": {
-                "description": "Sends a 6-digit code, valid for 10 minutes, to an account that has a password, and invalidates the code sent before. The answer is the same for every email, so it does not reveal whether an account exists; an account that signed up only with Google has no password and gets no code. Each email can ask once a minute and five times an hour. Needs X-CSRF-Token and the csrf_nonce cookie.",
+                "description": "Sends a 6-digit code, valid for 10 minutes, to an account that has a password, and invalidates the code sent before. The answer is the same for every email, so it does not reveal whether an account exists; an account that signed up only with Google has no password and gets no code. Each email can ask once a minute and five times an hour, and each IP address 20 times an hour. Needs X-CSRF-Token and the csrf_nonce cookie.",
                 "consumes": [
                     "application/json"
                 ],
@@ -1064,7 +1064,7 @@ const docTemplate = `{
                 },
                 "message": {
                     "type": "string",
-                    "example": "If this address can receive email, a verification code has been sent. It expires in 10 minutes."
+                    "example": "If this address can receive email, a code has been sent. It expires in 10 minutes."
                 }
             }
         },

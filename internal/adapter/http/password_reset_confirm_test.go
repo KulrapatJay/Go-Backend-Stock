@@ -100,8 +100,13 @@ func TestResetVerifiesAnUnverifiedAccount(t *testing.T) {
 	}
 
 	mail := resetCode(t, h, b, email)
-	if resp, body := b.confirmReset(mail.ChallengeID.String(), mail.OTP.Reveal(), "Nw7#pLq2"); resp.StatusCode != nethttp.StatusNoContent {
+	resp, body := b.confirmReset(mail.ChallengeID.String(), mail.OTP.Reveal(), "Nw7#pLq2")
+	if resp.StatusCode != nethttp.StatusNoContent {
 		t.Fatalf("confirm = %d %s", resp.StatusCode, body)
+	}
+	// The account had no session, so there is nothing to revoke and no auth.sessions_revoked.
+	if got := eventTypes(h.auditFor(t, resp.Header.Get("X-Request-ID"))); !slices.Equal(got, []string{"auth.password_reset_succeeded"}) {
+		t.Errorf("audit = %v, want only auth.password_reset_succeeded", got)
 	}
 	if after, _ := h.user(t, email); !after.Verified {
 		t.Error("the email must be verified by the reset")

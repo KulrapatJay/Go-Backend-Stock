@@ -13,7 +13,7 @@ type CSRFResponse struct {
 }
 
 // otpAcceptedMessage is the same for every outcome, so it reveals nothing about the account.
-const otpAcceptedMessage = "If this address can receive email, a verification code has been sent. It expires in 10 minutes."
+const otpAcceptedMessage = "If this address can receive email, a code has been sent. It expires in 10 minutes."
 
 // RegisterRequest is the body of POST /api/v1/auth/register.
 type RegisterRequest struct {
@@ -23,7 +23,7 @@ type RegisterRequest struct {
 
 // OTPAcceptedResponse answers register and "send the code again" with the same shape every time.
 type OTPAcceptedResponse struct {
-	Message     string `json:"message" example:"If this address can receive email, a verification code has been sent. It expires in 10 minutes." validate:"required"`
+	Message     string `json:"message" example:"If this address can receive email, a code has been sent. It expires in 10 minutes." validate:"required"`
 	ChallengeID string `json:"challenge_id" example:"0192f0c1-7a8e-7cc4-9d2b-3f6c1a2b4c5d" validate:"required"`
 	ExpiresIn   int    `json:"expires_in" example:"600" validate:"required"`
 }

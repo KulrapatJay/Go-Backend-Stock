@@ -2,6 +2,7 @@ package http
 
 import (
 	nethttp "net/http"
+	"regexp"
 	"strings"
 	"sync"
 	"testing"
@@ -268,8 +269,7 @@ func TestResetLogsHoldNoSecrets(t *testing.T) {
 		t.Fatal("the access log must be captured, or this test proves nothing")
 	}
 	secrets := map[string]string{
-		"otp": mail.OTP.Reveal(), "new password": newPassword, "old password": "Zq9!kVx1",
-		"old session": oldSession, "email": email,
+		"new password": newPassword, "old password": "Zq9!kVx1", "old session": oldSession, "email": email,
 	}
 	for name, secret := range secrets {
 		if secret == "" {
@@ -277,5 +277,13 @@ func TestResetLogsHoldNoSecrets(t *testing.T) {
 		} else if strings.Contains(logs, secret) {
 			t.Errorf("logs contain the %s", name)
 		}
+	}
+	// Six digits also occur inside timestamps and UUIDs, so the code only counts as leaked when it
+	// stands alone: not next to another digit, letter, "-", "." or ":".
+	code := mail.OTP.Reveal()
+	if code == "" {
+		t.Error("the otp is empty, so its check proves nothing")
+	} else if regexp.MustCompile(`(?:^|[^0-9A-Za-z_.:-])` + regexp.QuoteMeta(code) + `(?:[^0-9A-Za-z_.:-]|$)`).MatchString(logs) {
+		t.Error("logs contain the otp")
 	}
 }

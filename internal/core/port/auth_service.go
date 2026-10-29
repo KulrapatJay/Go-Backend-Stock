@@ -47,7 +47,7 @@ type EmailVerificationService interface {
 // PasswordResetService lets the owner of a local account choose a new password with a code sent to
 // its email.
 type PasswordResetService interface {
-	// Request sends a reset code to a verified local account and does nothing for any other email;
+	// Request sends a reset code to a local account with a password and does nothing for any other email;
 	// the answer is the same either way.
 	Request(ctx context.Context, email domain.Email, meta domain.RequestMeta) (domain.OTPReceipt, error)
 	// Reset checks the code, replaces the password and revokes every session of the account in one

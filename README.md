@@ -56,7 +56,7 @@ Access log เก็บ method, route template, status และ duration โด
 
 ตัวแปรอื่นมีค่าเริ่มต้นสำหรับ dev จึงไม่ต้องตั้ง: `SESSION_TTL` (168h), `PASSWORD_HASH_CONCURRENCY` (4), `AUTH_RESPONSE_FLOOR`/`AUTH_RESPONSE_JITTER` (500ms/100ms), `OTP_MAX_ATTEMPTS` (5), `OTP_RESEND_COOLDOWN` (60s), `OTP_REQUESTS_PER_HOUR_EMAIL`/`_IP` (5/20), `LOGIN_ATTEMPTS_PER_EMAIL`/`_IP` (10/30 ต่อ 15 นาที), `TRUSTED_PROXY_CIDRS` (ว่าง = ไม่เชื่อ `X-Forwarded-For`), `SMTP_HOST`/`SMTP_PORT`/`SMTP_FROM`/`SMTP_TLS`/`MAIL_SEND_TIMEOUT` (10s; compose ชี้ไป Mailpit ที่ `mailpit:1025` แบบไม่เข้ารหัส) production ต้องตั้ง `SMTP_HOST`, `SMTP_PORT`, `SMTP_FROM` และ `SMTP_TLS` เป็น `starttls` หรือ `tls` เอง
 
-อีเมลที่ระบบส่ง (รหัสยืนยัน และแจ้งว่ามีบัญชีอยู่แล้ว) เป็นภาษาไทย ส่งแบบ UTF-8 + quoted-printable โดยหัวเรื่อง encode ตาม RFC 2047
+อีเมลที่ระบบส่ง (รหัสยืนยัน, แจ้งว่ามีบัญชีอยู่แล้ว, รหัสรีเซ็ตรหัสผ่าน และแจ้งว่าเปลี่ยนรหัสผ่านแล้ว) เป็นภาษาไทย ส่งแบบ UTF-8 + quoted-printable โดยหัวเรื่อง encode ตาม RFC 2047
 
 ## ลอง flow ของ auth ด้วย curl
 
@@ -109,7 +109,8 @@ RESET_OTP=$(curl -s http://localhost:8025/api/v1/message/latest | grep -oE 'ใ�
 NEW_PASSWORD='Hn4#pLw8'
 post /auth/password-reset/confirm "{\"challenge_id\":\"$RESET_CHALLENGE\",\"otp\":\"$RESET_OTP\",\"new_password\":\"$NEW_PASSWORD\"}"
 
-# 11 login ด้วยรหัสใหม่ได้ 200 (รหัสเก่าใช้ไม่ได้แล้ว)
+# 11 login ด้วยรหัสเก่าได้ 401 แล้ว login ด้วยรหัสใหม่ได้ 200
+post /auth/login "{\"email\":\"$EMAIL\",\"password\":\"$PASSWORD\"}"
 post /auth/login "{\"email\":\"$EMAIL\",\"password\":\"$NEW_PASSWORD\"}"
 
 rm -f "$JAR" "$JAR.reg" "$JAR.reset"
