@@ -80,8 +80,143 @@ func (r *PasswordReset) Request(ctx context.Context, email domain.Email, meta do
 	return domain.OTPReceipt{ChallengeID: challenge.ID, ExpiresIn: otpLifetime}, nil
 }
 
-// Reset is a placeholder until plan 5 task 4 implements it; it only keeps PasswordReset a
-// port.PasswordResetService. Nothing routes to it yet.
-func (r *PasswordReset) Reset(context.Context, domain.ResetPasswordInput, domain.RequestMeta) error {
-	return errors.New("not implemented")
+// Reset implements port.PasswordResetService. The code is checked before the new password is
+// judged against the account's email, so a caller who guesses a challenge ID learns nothing about
+// the account from a password rule. A failed attempt is audited and, for a wrong code, counted in
+// the same transaction, which commits before the error is returned. A success replaces the
+// password, verifies the email (its owner just proved it), closes the open verification code and
+// revokes every session, all in one transaction with their audit events.
+func (r *PasswordReset) Reset(ctx context.Context, in domain.ResetPasswordInput, meta domain.RequestMeta) error {
+	a := r.a
+	// A decoy challenge ID and a real one cost different amounts of work: the floor hides which.
+	defer a.pacer.Wait(ctx, a.clock.Now())
+
+	rules, err := a.limits.PasswordResetConfirm(meta.ClientIP)
+	if err != nil {
+		return err
+	}
+	if err := a.admit(ctx, rules, meta, domain.ID{}); err != nil {
+		return err
+	}
+
+	found, err := a.store.OTPChallenges().ByID(ctx, domain.OTPPurposePasswordReset, in.ChallengeID)
+	if errors.Is(err, domain.ErrNotFound) {
+		// An unknown or decoy ID, or one issued for email verification (ByID filters by purpose).
+		if err := a.recordFailure(ctx, meta, resetFailed(in.ChallengeID, "challenge_not_found")); err != nil {
+			return err
+		}
+		return domain.ErrInvalidReset
+	}
+	if err != nil {
+		return err
+	}
+	// The email feeds the password rule and the notice. Both reads and the slow hash stay outside
+	// the transaction so no row lock is held while Argon2id runs.
+	user, err := a.store.Users().ByID(ctx, found.UserID)
+	if errors.Is(err, domain.ErrNotFound) {
+		if err := a.recordFailure(ctx, meta, resetFailed(found.ID, "challenge_not_found")); err != nil {
+			return err
+		}
+		return domain.ErrInvalidReset
+	}
+	if err != nil {
+		return err
+	}
+	hash, err := a.hasher.Hash(ctx, in.NewPassword)
+	if err != nil {
+		return err
+	}
+
+	var failure string
+	var weak bool
+	err = a.uow.WithinTransaction(ctx, func(tx port.TxRepositories) error {
+		// A transaction may run again: start from a clean result.
+		failure, weak = "", false
+		// Lock order: user, then challenge — the same as every other use case on these rows.
+		if _, err := tx.Users().Lock(ctx, found.UserID); err != nil {
+			return err
+		}
+		c, err := tx.OTPChallenges().Lock(ctx, domain.OTPPurposePasswordReset, found.ID)
+		if errors.Is(err, domain.ErrNotFound) {
+			// Deleted between ByID and Lock: the same refusal as an unknown ID, audited and committed.
+			failure = "challenge_not_found"
+			return a.appendAudit(ctx, tx, meta, resetFailed(found.ID, failure))
+		}
+		if err != nil {
+			return err
+		}
+		now := NowForStorage(a.clock)
+		switch {
+		case c.ConsumedAt != nil || c.InvalidatedAt != nil:
+			failure = "challenge_closed"
+		case !now.Before(c.ExpiresAt):
+			failure = "challenge_expired"
+		case c.FailedAttempts >= a.otpMaxAttempts:
+			failure = "too_many_attempts"
+		case !a.otp.Verify(c.OTPHash, domain.OTPPurposePasswordReset, c.ID, c.UserID, in.OTP):
+			failure = "otp_mismatch"
+			if err := tx.OTPChallenges().RecordFailure(ctx, domain.OTPPurposePasswordReset, c.ID); err != nil {
+				return err
+			}
+		}
+		if failure != "" {
+			return a.appendAudit(ctx, tx, meta, resetFailed(c.ID, failure))
+		}
+		if domain.PasswordContainsEmail(in.NewPassword, user.Email) {
+			// The code was right, so this is the owner: tell them, but write nothing and spend
+			// neither the code nor an attempt, so they can choose another password.
+			weak = true
+			return nil
+		}
+		if err := tx.OTPChallenges().Consume(ctx, domain.OTPPurposePasswordReset, c.ID, now); err != nil {
+			return err
+		}
+		if err := tx.Users().SetPassword(ctx, c.UserID, hash, now); err != nil {
+			return err
+		}
+		// Receiving the code proves the owner reads this mailbox, so an account someone else
+		// registered first is taken back, and its pending verification code stops working.
+		if err := tx.Users().MarkEmailVerified(ctx, c.UserID, now); err != nil {
+			return err
+		}
+		if err := tx.OTPChallenges().InvalidateOpen(ctx, c.UserID, domain.OTPPurposeEmailVerification, now); err != nil {
+			return err
+		}
+		revoked, err := tx.Sessions().RevokeAll(ctx, c.UserID, now, domain.RevokeReasonPasswordReset)
+		if err != nil {
+			return err
+		}
+		if err := a.appendAudit(ctx, tx, meta, auditSpec{
+			Type: domain.EventAuthPasswordResetSucceeded, Outcome: domain.AuditOutcomeSuccess,
+			Actor: c.UserID, TargetType: "user", TargetID: c.UserID.String(),
+		}); err != nil {
+			return err
+		}
+		if revoked == 0 {
+			return nil
+		}
+		return a.appendAudit(ctx, tx, meta, auditSpec{
+			Type: domain.EventAuthSessionsRevoked, Outcome: domain.AuditOutcomeSuccess,
+			Actor: c.UserID, TargetType: "user", TargetID: c.UserID.String(), Reason: string(domain.RevokeReasonPasswordReset),
+		})
+	})
+	if err != nil {
+		return err
+	}
+	switch {
+	case failure != "":
+		return domain.ErrInvalidReset
+	case weak:
+		return domain.NewReasonsError(domain.CodeInvalidInput, "password does not meet the requirements",
+			string(domain.PasswordReasonContainsEmail))
+	}
+	a.send(meta, "password_changed", func() error { return a.mailer.SendPasswordChanged(ctx, user.Email) })
+	return nil
+}
+
+func resetFailed(challengeID domain.ID, reason string) auditSpec {
+	return auditSpec{
+		Type: domain.EventAuthOTPVerificationFailed, Outcome: domain.AuditOutcomeFailure,
+		TargetType: "otp_challenge", TargetID: challengeID.String(), Reason: reason,
+	}
 }

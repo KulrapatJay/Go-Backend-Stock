@@ -135,10 +135,16 @@ func (u *fakeUoW) WithinTransaction(_ context.Context, fn func(port.TxRepositori
 
 type fakeMailer struct{ port.Mailer }
 
-// recordingMailer keeps the password reset emails a use case hands over.
+// recordingMailer keeps the password reset emails and password-changed notices a use case hands over.
 type recordingMailer struct {
 	port.Mailer
-	resets []domain.OTPMail
+	resets  []domain.OTPMail
+	changed []domain.Email
+}
+
+func (m *recordingMailer) SendPasswordChanged(_ context.Context, to domain.Email) error {
+	m.changed = append(m.changed, to)
+	return nil
 }
 
 func (m *recordingMailer) SendPasswordReset(_ context.Context, mail domain.OTPMail) error {

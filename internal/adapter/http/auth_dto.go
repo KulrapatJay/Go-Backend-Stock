@@ -43,6 +43,13 @@ type ConfirmEmailRequest struct {
 	OTP         string `json:"otp" example:"042731" validate:"required"`
 }
 
+// ResetPasswordRequest is the body of POST /api/v1/auth/password-reset/confirm.
+type ResetPasswordRequest struct {
+	ChallengeID string `json:"challenge_id" example:"0192f0c1-7a8e-7cc4-9d2b-3f6c1a2b4c5d" validate:"required"`
+	OTP         string `json:"otp" example:"042731" validate:"required"`
+	NewPassword string `json:"new_password" example:"Zq9!kVx1" validate:"required"`
+}
+
 // LoginRequest is the body of POST /api/v1/auth/login.
 type LoginRequest struct {
 	Email    string `json:"email" example:"user@example.com" validate:"required"`

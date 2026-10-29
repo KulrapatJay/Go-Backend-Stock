@@ -134,6 +134,22 @@ definitions:
     - email
     - password
     type: object
+  http.ResetPasswordRequest:
+    properties:
+      challenge_id:
+        example: 0192f0c1-7a8e-7cc4-9d2b-3f6c1a2b4c5d
+        type: string
+      new_password:
+        example: Zq9!kVx1
+        type: string
+      otp:
+        example: "042731"
+        type: string
+    required:
+    - challenge_id
+    - new_password
+    - otp
+    type: object
   http.SessionResponse:
     properties:
       expires_at:
@@ -610,6 +626,70 @@ paths:
           schema:
             $ref: '#/definitions/http.ErrorResponse'
       summary: Get the signed-in account
+      tags:
+      - Auth
+  /api/v1/auth/password-reset/confirm:
+    post:
+      consumes:
+      - application/json
+      description: 'Checks the 6-digit code sent by "ask for a password reset code"
+        and replaces the password. A code works once and may be tried wrong 5 times;
+        a wrong, expired, already used, exhausted or unknown code all give the same
+        400 invalid_reset. The new password follows the same rules as register; the
+        rule that it must not contain the part of the email before "@" is checked
+        only after the code is right, so a wrong code never reveals anything about
+        the account. Success verifies the email, signs the account out on every device,
+        sends a notice email and does not sign in: call POST /api/v1/auth/login next.
+        Needs X-CSRF-Token and the csrf_nonce cookie.'
+      operationId: confirmPasswordReset
+      parameters:
+      - description: Token from GET /api/v1/auth/csrf
+        in: header
+        name: X-CSRF-Token
+        required: true
+        type: string
+      - description: challenge_id from the 202 response, the 6 ASCII digits from the
+          email and the new password
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/http.ResetPasswordRequest'
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: Password changed
+        "400":
+          description: invalid_reset, invalid_input (password rules, details lists
+            the reasons) or malformed_json
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+        "403":
+          description: csrf_failed
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+        "429":
+          description: rate_limited; wait Retry-After seconds
+          headers:
+            Retry-After:
+              description: Seconds to wait
+              type: integer
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+        "500":
+          description: audit_write_failed or internal
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+        "503":
+          description: dependency_unavailable or server_busy
+          headers:
+            Retry-After:
+              description: Seconds to wait
+              type: integer
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+      summary: Set a new password with the reset code
       tags:
       - Auth
   /api/v1/auth/password-reset/request:

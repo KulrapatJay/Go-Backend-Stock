@@ -593,6 +593,87 @@
                 }
             }
         },
+        "/api/v1/auth/password-reset/confirm": {
+            "post": {
+                "description": "Checks the 6-digit code sent by \"ask for a password reset code\" and replaces the password. A code works once and may be tried wrong 5 times; a wrong, expired, already used, exhausted or unknown code all give the same 400 invalid_reset. The new password follows the same rules as register; the rule that it must not contain the part of the email before \"@\" is checked only after the code is right, so a wrong code never reveals anything about the account. Success verifies the email, signs the account out on every device, sends a notice email and does not sign in: call POST /api/v1/auth/login next. Needs X-CSRF-Token and the csrf_nonce cookie.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Auth"
+                ],
+                "summary": "Set a new password with the reset code",
+                "operationId": "confirmPasswordReset",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Token from GET /api/v1/auth/csrf",
+                        "name": "X-CSRF-Token",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "description": "challenge_id from the 202 response, the 6 ASCII digits from the email and the new password",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/http.ResetPasswordRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "Password changed"
+                    },
+                    "400": {
+                        "description": "invalid_reset, invalid_input (password rules, details lists the reasons) or malformed_json",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "csrf_failed",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
+                    },
+                    "429": {
+                        "description": "rate_limited; wait Retry-After seconds",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        },
+                        "headers": {
+                            "Retry-After": {
+                                "type": "integer",
+                                "description": "Seconds to wait"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "audit_write_failed or internal",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "dependency_unavailable or server_busy",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        },
+                        "headers": {
+                            "Retry-After": {
+                                "type": "integer",
+                                "description": "Seconds to wait"
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/api/v1/auth/password-reset/request": {
             "post": {
                 "description": "Sends a 6-digit code, valid for 10 minutes, to an account that has a password, and invalidates the code sent before. The answer is the same for every email, so it does not reveal whether an account exists; an account that signed up only with Google has no password and gets no code. Each email can ask once a minute and five times an hour. Needs X-CSRF-Token and the csrf_nonce cookie.",
@@ -1003,6 +1084,28 @@
                 "password": {
                     "type": "string",
                     "example": "Zq9!kVx1"
+                }
+            }
+        },
+        "http.ResetPasswordRequest": {
+            "type": "object",
+            "required": [
+                "challenge_id",
+                "new_password",
+                "otp"
+            ],
+            "properties": {
+                "challenge_id": {
+                    "type": "string",
+                    "example": "0192f0c1-7a8e-7cc4-9d2b-3f6c1a2b4c5d"
+                },
+                "new_password": {
+                    "type": "string",
+                    "example": "Zq9!kVx1"
+                },
+                "otp": {
+                    "type": "string",
+                    "example": "042731"
                 }
             }
         },

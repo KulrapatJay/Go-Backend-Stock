@@ -169,6 +169,9 @@ type harnessConfig struct {
 	identity  port.IdentityProvider // nil = Google sign-in off
 }
 
+// testOTPSecret keys the OTP digests of every harness, so a test can build the digest of a code.
+const testOTPSecret = "oooooooooooooooooooooooooooooooo"
+
 // testOIDCSecret keys the PKCE verifiers of every harness, so a flow started on one harness can be
 // completed on another that shares the database.
 const testOIDCSecret = "iiiiiiiiiiiiiiiiiiiiiiiiiiiiiiii"
@@ -232,7 +235,7 @@ func newAuthHarness(t *testing.T, opts ...harnessOption) *authHarness {
 	must(err)
 	policy, err := service.NewPasswordPolicy(blocklist)
 	must(err)
-	otp, err := service.NewOTPCodec([]byte(strings.Repeat("o", 32)))
+	otp, err := service.NewOTPCodec([]byte(testOTPSecret))
 	must(err)
 	csrf, err := service.NewCSRFCodec([]byte(strings.Repeat("c", 32)), clock)
 	must(err)
@@ -525,6 +528,13 @@ func (b *browser) confirm(challengeID, otp string) (response, []byte) {
 	b.t.Helper()
 	b.fetchCSRF()
 	return b.do(nethttp.MethodPost, "/api/v1/auth/email-verification/confirm", map[string]string{"challenge_id": challengeID, "otp": otp}, nil)
+}
+
+func (b *browser) confirmReset(challengeID, otp, newPassword string) (response, []byte) {
+	b.t.Helper()
+	b.fetchCSRF()
+	return b.do(nethttp.MethodPost, "/api/v1/auth/password-reset/confirm",
+		map[string]string{"challenge_id": challengeID, "otp": otp, "new_password": newPassword}, nil)
 }
 
 // signUpAndVerify registers email and confirms it with the code the fake mailer received (it
