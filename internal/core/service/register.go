@@ -37,7 +37,7 @@ func (a *Auth) Register(ctx context.Context, in domain.RegisterInput, meta domai
 	if err != nil {
 		return domain.OTPReceipt{}, err
 	}
-	code, challenge, err := a.newVerificationChallenge(userID, now)
+	code, challenge, err := a.newOTPChallenge(domain.OTPPurposeEmailVerification, userID, now)
 	if err != nil {
 		return domain.OTPReceipt{}, err
 	}
@@ -81,8 +81,8 @@ func (a *Auth) Register(ctx context.Context, in domain.RegisterInput, meta domai
 	return domain.OTPReceipt{ChallengeID: challenge.ID, ExpiresIn: otpLifetime}, nil
 }
 
-// newVerificationChallenge draws a code and builds the challenge that stores only its digest.
-func (a *Auth) newVerificationChallenge(userID domain.ID, now time.Time) (domain.OTPCode, domain.OTPChallenge, error) {
+// newOTPChallenge draws a code and builds the challenge for purpose that stores only its digest.
+func (a *Auth) newOTPChallenge(purpose domain.OTPPurpose, userID domain.ID, now time.Time) (domain.OTPCode, domain.OTPChallenge, error) {
 	id, err := domain.NewID()
 	if err != nil {
 		return domain.OTPCode{}, domain.OTPChallenge{}, err
@@ -92,8 +92,8 @@ func (a *Auth) newVerificationChallenge(userID domain.ID, now time.Time) (domain
 		return domain.OTPCode{}, domain.OTPChallenge{}, err
 	}
 	challenge, err := domain.NewOTPChallenge(domain.OTPChallenge{
-		ID: id, UserID: userID, Purpose: domain.OTPPurposeEmailVerification,
-		OTPHash:   a.otp.Digest(domain.OTPPurposeEmailVerification, id, userID, code),
+		ID: id, UserID: userID, Purpose: purpose,
+		OTPHash:   a.otp.Digest(purpose, id, userID, code),
 		CreatedAt: now, ExpiresAt: now.Add(otpLifetime),
 	})
 	if err != nil {

@@ -16,6 +16,7 @@ var documentedAuthOperations = []struct {
 	{"post", "/api/v1/auth/register", []int{202, 400, 403, 429, 500, 503}},
 	{"post", "/api/v1/auth/email-verification/request", []int{202, 400, 403, 429, 500, 503}},
 	{"post", "/api/v1/auth/email-verification/confirm", []int{204, 400, 403, 429, 500, 503}},
+	{"post", "/api/v1/auth/password-reset/request", []int{202, 400, 403, 429, 500, 503}},
 	{"post", "/api/v1/auth/login", []int{200, 400, 401, 403, 429, 500, 503}},
 	{"get", "/api/v1/auth/me", []int{200, 401, 503}},
 	{"post", "/api/v1/auth/logout", []int{204, 403, 500, 503}},

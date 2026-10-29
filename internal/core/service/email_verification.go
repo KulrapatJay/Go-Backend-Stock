@@ -40,7 +40,7 @@ func (a *Auth) Request(ctx context.Context, email domain.Email, meta domain.Requ
 	}
 
 	now := NowForStorage(a.clock)
-	code, challenge, err := a.newVerificationChallenge(creds.User.ID, now)
+	code, challenge, err := a.newOTPChallenge(domain.OTPPurposeEmailVerification, creds.User.ID, now)
 	if err != nil {
 		return domain.OTPReceipt{}, err
 	}

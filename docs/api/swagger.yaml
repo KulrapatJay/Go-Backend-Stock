@@ -612,6 +612,63 @@ paths:
       summary: Get the signed-in account
       tags:
       - Auth
+  /api/v1/auth/password-reset/request:
+    post:
+      consumes:
+      - application/json
+      description: Sends a 6-digit code, valid for 10 minutes, to an account that
+        has a password, and invalidates the code sent before. The answer is the same
+        for every email, so it does not reveal whether an account exists; an account
+        that signed up only with Google has no password and gets no code. Each email
+        can ask once a minute and five times an hour. Needs X-CSRF-Token and the csrf_nonce
+        cookie.
+      operationId: requestPasswordReset
+      parameters:
+      - description: Token from GET /api/v1/auth/csrf
+        in: header
+        name: X-CSRF-Token
+        required: true
+        type: string
+      - description: The email to send a code to
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/http.EmailRequest'
+      produces:
+      - application/json
+      responses:
+        "202":
+          description: Accepted
+          schema:
+            $ref: '#/definitions/http.OTPAcceptedResponse'
+        "400":
+          description: invalid_input or malformed_json
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+        "403":
+          description: csrf_failed
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+        "429":
+          description: rate_limited; wait Retry-After seconds
+          headers:
+            Retry-After:
+              description: Seconds to wait
+              type: integer
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+        "500":
+          description: audit_write_failed or internal
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+        "503":
+          description: dependency_unavailable
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+      summary: Ask for a password reset code
+      tags:
+      - Auth
   /api/v1/auth/register:
     post:
       consumes:

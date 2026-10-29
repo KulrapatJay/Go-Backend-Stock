@@ -50,6 +50,16 @@ type fakeUsers struct {
 	credentials map[string]domain.UserCredentials
 }
 
+// Lock answers with the user a test registered, whatever its email.
+func (f *fakeUsers) Lock(_ context.Context, id domain.ID) (domain.User, error) {
+	for _, c := range f.credentials {
+		if c.User.ID == id {
+			return c.User, nil
+		}
+	}
+	return domain.User{}, domain.ErrNotFound
+}
+
 func (f *fakeUsers) CredentialsByEmail(_ context.Context, email domain.Email) (domain.UserCredentials, error) {
 	c, ok := f.credentials[email.String()]
 	if !ok {
@@ -83,24 +93,58 @@ func (a *fakeAudit) Append(_ context.Context, e domain.AuditEvent) error {
 	return nil
 }
 
-type fakeTx struct {
-	port.TxRepositories
-	audit *fakeAudit
+// fakeChallenges records what a use case writes to otp_challenges.
+type fakeChallenges struct {
+	port.OTPChallengeRepository
+	invalidated []domain.OTPPurpose
+	inserted    []domain.OTPChallenge
 }
 
-func (t fakeTx) Audit() port.AuditRepository { return t.audit }
+func (f *fakeChallenges) InvalidateOpen(_ context.Context, _ domain.ID, purpose domain.OTPPurpose, _ time.Time) error {
+	f.invalidated = append(f.invalidated, purpose)
+	return nil
+}
+
+func (f *fakeChallenges) Insert(_ context.Context, c domain.OTPChallenge) error {
+	f.inserted = append(f.inserted, c)
+	return nil
+}
+
+type fakeTx struct {
+	port.TxRepositories
+	audit      *fakeAudit
+	users      *fakeUsers
+	challenges *fakeChallenges
+}
+
+func (t fakeTx) Audit() port.AuditRepository                { return t.audit }
+func (t fakeTx) Users() port.UserRepository                 { return t.users }
+func (t fakeTx) OTPChallenges() port.OTPChallengeRepository { return t.challenges }
 
 type fakeUoW struct {
-	audit *fakeAudit
-	runs  int
+	audit      *fakeAudit
+	users      *fakeUsers
+	challenges *fakeChallenges
+	runs       int
 }
 
 func (u *fakeUoW) WithinTransaction(_ context.Context, fn func(port.TxRepositories) error) error {
 	u.runs++
-	return fn(fakeTx{audit: u.audit})
+	return fn(fakeTx{audit: u.audit, users: u.users, challenges: u.challenges})
 }
 
 type fakeMailer struct{ port.Mailer }
+
+// recordingMailer keeps the password reset emails a use case hands over.
+type recordingMailer struct {
+	port.Mailer
+	resets []domain.OTPMail
+}
+
+func (m *recordingMailer) SendPasswordReset(_ context.Context, mail domain.OTPMail) error {
+	m.resets = append(m.resets, mail)
+	return nil
+}
 
 type testAuth struct {
 	auth  *Auth
@@ -118,7 +162,7 @@ func newTestAuth(t *testing.T, mutate func(*AuthDeps)) testAuth {
 		limits:   &fakeRateLimits{decision: domain.RateLimitDecision{Allowed: true}},
 		users:    &fakeUsers{credentials: map[string]domain.UserCredentials{}},
 	}
-	uow := &fakeUoW{audit: &fakeAudit{}}
+	uow := &fakeUoW{audit: &fakeAudit{}, users: repos.users, challenges: &fakeChallenges{}}
 	hasher, _ := newHasher(t, testArgon2Params, 2, 0)
 	otp, err := NewOTPCodec(bytes.Repeat([]byte("o"), 32))
 	if err != nil {

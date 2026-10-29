@@ -600,6 +600,84 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/v1/auth/password-reset/request": {
+            "post": {
+                "description": "Sends a 6-digit code, valid for 10 minutes, to an account that has a password, and invalidates the code sent before. The answer is the same for every email, so it does not reveal whether an account exists; an account that signed up only with Google has no password and gets no code. Each email can ask once a minute and five times an hour. Needs X-CSRF-Token and the csrf_nonce cookie.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Auth"
+                ],
+                "summary": "Ask for a password reset code",
+                "operationId": "requestPasswordReset",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Token from GET /api/v1/auth/csrf",
+                        "name": "X-CSRF-Token",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "description": "The email to send a code to",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/http.EmailRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "202": {
+                        "description": "Accepted",
+                        "schema": {
+                            "$ref": "#/definitions/http.OTPAcceptedResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "invalid_input or malformed_json",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "csrf_failed",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
+                    },
+                    "429": {
+                        "description": "rate_limited; wait Retry-After seconds",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        },
+                        "headers": {
+                            "Retry-After": {
+                                "type": "integer",
+                                "description": "Seconds to wait"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "audit_write_failed or internal",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "dependency_unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/api/v1/auth/register": {
             "post": {
                 "description": "Creates an unverified account and emails a 6-digit verification code. The answer is the same whether or not the email already has an account: the owner of an existing account gets an email notice instead and nothing changes. The response takes at least about half a second on purpose. Needs the pre-login CSRF flow: call GET /api/v1/auth/csrf first, send its token in X-CSRF-Token, and send the csrf_nonce cookie (a browser does this itself). Then confirm the code with POST /api/v1/auth/email-verification/confirm.",
