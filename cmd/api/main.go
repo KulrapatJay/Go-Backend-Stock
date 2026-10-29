@@ -3,7 +3,7 @@
 // @title           Stock Portfolio Tracker API
 // @version         1.0
 // @description     Records US stock trades and tracks portfolio cost and P&L. It does not place real orders.
-// @description     Milestone 4 exposes Health and the Auth endpoints (email and password, email verification, Google sign-in and linking); password reset, portfolios and transactions are not implemented yet.
+// @description     Milestone 5 exposes Health and the Auth endpoints (email and password, email verification, password reset, Google sign-in and linking); portfolios and transactions are not implemented yet.
 // @BasePath        /
 // @tag.name        Health
 // @tag.description Liveness and readiness probes

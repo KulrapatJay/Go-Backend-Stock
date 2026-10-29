@@ -143,7 +143,7 @@ func buildAuth(cfg config.Config, pool *pgxpool.Pool, log *slog.Logger) (authPar
 	}
 	return authParts{
 		options: httpadapter.AuthOptions{
-			Service: auth, Verification: auth, Passwords: passwords, CSRF: csrf,
+			Service: auth, Verification: auth, PasswordReset: auth.PasswordReset(), Passwords: passwords, CSRF: csrf,
 			ClientIP:     httpadapter.NewClientIPResolver(cfg.Auth.TrustedProxies),
 			PublicOrigin: cfg.PublicOrigin, SecureCookies: secureCookies(cfg.PublicOrigin),
 		},

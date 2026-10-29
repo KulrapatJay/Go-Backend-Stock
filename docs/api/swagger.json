@@ -1,7 +1,7 @@
 {
     "swagger": "2.0",
     "info": {
-        "description": "Records US stock trades and tracks portfolio cost and P\u0026L. It does not place real orders.\nMilestone 4 exposes Health and the Auth endpoints (email and password, email verification, Google sign-in and linking); password reset, portfolios and transactions are not implemented yet.",
+        "description": "Records US stock trades and tracks portfolio cost and P\u0026L. It does not place real orders.\nMilestone 5 exposes Health and the Auth endpoints (email and password, email verification, password reset, Google sign-in and linking); portfolios and transactions are not implemented yet.",
         "title": "Stock Portfolio Tracker API",
         "contact": {},
         "version": "1.0"

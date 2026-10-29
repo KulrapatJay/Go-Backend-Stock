@@ -56,7 +56,7 @@ func TestBuildAuthServesTheAuthRoutes(t *testing.T) {
 	}
 	defer func() { _ = parts.mail.Close(context.Background()) }()
 	o := parts.options
-	if o.Service == nil || o.Verification == nil || o.Passwords == nil || o.CSRF == nil || o.ClientIP == nil ||
+	if o.Service == nil || o.Verification == nil || o.Passwords == nil || o.PasswordReset == nil || o.CSRF == nil || o.ClientIP == nil ||
 		o.PublicOrigin != "http://localhost:8080" || o.SecureCookies {
 		t.Fatalf("options = %+v", o)
 	}

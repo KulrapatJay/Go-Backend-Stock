@@ -202,7 +202,7 @@ scripts/                   build_blocklist.go (สร้างไฟล์ block
 
 ## 10. นอกขอบเขต
 
-- password reset และอีเมลแจ้งเปลี่ยนรหัสผ่าน (milestone 5)
+- password reset และอีเมลแจ้งเปลี่ยนรหัสผ่าน (milestone 5) — ทำแล้วใน [แผน 5](../plans/2026-10-29-milestone-5-password-reset.md)
 - endpoints ของพอร์ตและรายการซื้อขาย (milestone 6–7)
 - เชื่อม Google จริงใน CI; ทดสอบกับ Google จริงทำด้วยมือเมื่อผู้ใช้มี credentials
 - frontend และการเปลี่ยนปลายทาง redirect หลัง Google (เมื่อเริ่ม Next.js)

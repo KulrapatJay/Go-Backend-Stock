@@ -3,7 +3,7 @@
 Go API สำหรับบันทึกรายการซื้อขายหุ้นสหรัฐฯ และติดตามต้นทุน/กำไรขาดทุนของหลายพอร์ต
 ระบบนี้บันทึกการลงทุนที่ทำผ่านช่องทางอื่น ไม่ใช่ระบบส่งคำสั่งซื้อขายจริง
 
-> **สถานะ:** Milestone 4 — สมัครด้วยอีเมล+รหัสผ่าน, ยืนยันอีเมลด้วย OTP, login/logout, session ฝั่ง server และ Google sign-in/เชื่อมบัญชี (เปิดเมื่อตั้งค่า `GOOGLE_*`) ใช้งานผ่าน API ได้แล้ว; ลืมรหัสผ่าน (milestone 5), พอร์ตและรายการซื้อขายยังไม่เปิดใช้งาน
+> **สถานะ:** Milestone 5 — สมัครด้วยอีเมล+รหัสผ่าน, ยืนยันอีเมลด้วย OTP, login/logout, session ฝั่ง server, ลืมรหัสผ่านด้วย OTP และ Google sign-in/เชื่อมบัญชี (เปิดเมื่อตั้งค่า `GOOGLE_*`) ใช้งานผ่าน API ได้แล้ว; พอร์ตและรายการซื้อขายยังไม่เปิดใช้งาน
 
 ## เริ่มใช้งาน (dev พร้อม hot reload)
 
@@ -97,11 +97,27 @@ post /auth/logout ''
 # 7 หลัง logout เรียก me ซ้ำจะได้ 401
 curl -s -b "$JAR" -w '\nHTTP %{http_code}\n' "$API/auth/me"
 
-rm -f "$JAR" "$JAR.reg"
+# 8 ลืมรหัสผ่าน: ขอรหัส ได้ 202 พร้อม challenge_id และตอบแบบเดียวกันแม้ไม่มีบัญชีหรือเป็นบัญชี Google-only
+post /auth/password-reset/request "{\"email\":\"$EMAIL\"}" | tee /dev/stderr > "$JAR.reset"
+RESET_CHALLENGE=$(sed -nE 's/.*"challenge_id":"([^"]+)".*/\1/p' "$JAR.reset")
+
+# 9 อ่านรหัส 6 หลักของการรีเซ็ตจาก Mailpit http://localhost:8025 (ระบบส่งอีเมลหลังตอบ 202 จึงรอ 2 วินาที)
+sleep 2
+RESET_OTP=$(curl -s http://localhost:8025/api/v1/message/latest | grep -oE 'ใหม่ของคุณคือ [0-9]{6}' | grep -oE '[0-9]{6}')
+
+# 10 ตั้งรหัสผ่านใหม่ ได้ 204; ยืนยันอีเมลให้ด้วยและ session เดิมทุกเครื่องถูกออกจากระบบ
+NEW_PASSWORD='Hn4#pLw8'
+post /auth/password-reset/confirm "{\"challenge_id\":\"$RESET_CHALLENGE\",\"otp\":\"$RESET_OTP\",\"new_password\":\"$NEW_PASSWORD\"}"
+
+# 11 login ด้วยรหัสใหม่ได้ 200 (รหัสเก่าใช้ไม่ได้แล้ว)
+post /auth/login "{\"email\":\"$EMAIL\",\"password\":\"$NEW_PASSWORD\"}"
+
+rm -f "$JAR" "$JAR.reg" "$JAR.reset"
 ```
 
 - ขอรหัสใหม่: `post /auth/email-verification/request "{\"email\":\"$EMAIL\"}"` (เว้น 60 วินาทีจากครั้งก่อน และไม่เกิน 5 ครั้งต่อชั่วโมงต่ออีเมล)
 - ถูกจำกัดความถี่จะได้ 429 `rate_limited` พร้อม header `Retry-After` (วินาที)
+- ลืมรหัสผ่าน (ขั้น 8–11): รหัสใช้ได้ 10 นาที กรอกผิดได้ 5 ครั้งต่อรหัส; เมื่อสำเร็จ session เดิมทุกเครื่องของบัญชีถูกออกจากระบบ, มีอีเมลแจ้งว่าเปลี่ยนรหัสผ่านใน Mailpit และ login ใหม่ด้วยรหัสผ่านใหม่
 - ใน Swagger UI (`http://localhost:8080/docs/`) ให้เรียก `GET /api/v1/auth/csrf` ก่อน แล้วคัดลอก `csrf_token` ไปใส่ช่อง `X-CSRF-Token` ของ POST; browser ส่ง cookie ให้เอง ขอ token ใหม่หลัง login และหลัง logout เพราะ binding เปลี่ยน
 - ข้อความ error ทุกอันมี `request_id` ตรงกับ header `X-Request-ID` ใช้ค้น log ได้
 
@@ -129,7 +145,7 @@ GOOGLE_REDIRECT_URI=http://localhost:8080/api/v1/auth/google/callback
 3. login กับ Google แล้ว browser จะกลับมาที่ `/docs/?google=success` พร้อม cookie `session`; เรียก `GET /api/v1/auth/me` ดูได้
 4. ผลอื่น: `link_required` = อีเมลนี้มีบัญชีอยู่แล้ว ให้ login บัญชีนั้นด้วยรหัสผ่าน แล้วขอ CSRF ใหม่และเรียก `POST /api/v1/auth/google/link` แทน (ได้ `/docs/?google=linked`); `failed` = ยกเลิก, หมดเวลา 10 นาที, เปิด callback ซ้ำหรือคนละ browser
 
-ระบบไม่เชื่อมบัญชีให้อัตโนมัติเพียงเพราะอีเมลตรงกัน และบัญชีที่สร้างจาก Google ไม่มีรหัสผ่าน (login ด้วยรหัสผ่านไม่ได้จนกว่าจะมีลืมรหัสผ่านใน milestone 5)
+ระบบไม่เชื่อมบัญชีให้อัตโนมัติเพียงเพราะอีเมลตรงกัน และบัญชีที่สร้างจาก Google ไม่มีรหัสผ่าน: login ได้ด้วย Google เท่านั้น และ "ลืมรหัสผ่าน" ไม่ส่งรหัสให้บัญชีชนิดนี้
 
 ## พัฒนาและทดสอบ
 
