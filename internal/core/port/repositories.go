@@ -10,5 +10,6 @@ type Repositories interface {
 	OTPChallenges() OTPChallengeRepository
 	RateLimits() RateLimitRepository
 	Identities() IdentityRepository
+	Portfolios() PortfolioRepository
 	OIDCFlows() OIDCFlowRepository // Consume is one conditional UPDATE, so it needs no transaction
 }
