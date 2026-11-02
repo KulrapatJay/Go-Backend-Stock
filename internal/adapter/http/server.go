@@ -39,30 +39,73 @@ type Options struct {
 func NewServer(opts Options) *fiber.App {
 	app := newApp(opts.Logger)
 	registerRoutes(app, opts)
-	app.Use(middleware.NotFound(staticRouteMethods(app)))
+	app.Use(middleware.NotFound(routeMethods(app)))
 	return app
 }
 
-// staticRouteMethods returns, for a registered path without parameters, the methods it accepts.
-// The table is built on first use, when every route has been registered.
-func staticRouteMethods(app *fiber.App) func(path string) []string {
+// routeMethods returns, for a request path, the methods of the registered routes that match it.
+// A route segment starting with ':' matches any non-empty segment of the same position, so
+// /api/v1/portfolios/<id> is found through /api/v1/portfolios/:portfolio_id. Routes with a
+// wildcard ('*' or '+') are left out. The table is built on first use, when every route has been
+// registered; methods are sorted and unique.
+func routeMethods(app *fiber.App) func(path string) []string {
+	type route struct {
+		segments []string
+		methods  []string
+	}
 	var once sync.Once
-	var table map[string][]string
+	var routes []*route
 	return func(path string) []string {
 		once.Do(func() {
-			table = map[string][]string{}
+			byPath := map[string]*route{}
 			for _, r := range app.GetRoutes(true) {
-				if strings.ContainsAny(r.Path, ":*+") || slices.Contains(table[r.Path], r.Method) {
+				if strings.ContainsAny(r.Path, "*+") {
 					continue
 				}
-				table[r.Path] = append(table[r.Path], r.Method)
-			}
-			for path := range table {
-				slices.Sort(table[path])
+				entry := byPath[r.Path]
+				if entry == nil {
+					entry = &route{segments: strings.Split(r.Path, "/")}
+					byPath[r.Path] = entry
+					routes = append(routes, entry)
+				}
+				if !slices.Contains(entry.methods, r.Method) {
+					entry.methods = append(entry.methods, r.Method)
+				}
 			}
 		})
-		return table[path]
+		segments := strings.Split(path, "/")
+		var methods []string
+		for _, r := range routes {
+			if matchSegments(r.segments, segments) {
+				for _, m := range r.methods {
+					if !slices.Contains(methods, m) {
+						methods = append(methods, m)
+					}
+				}
+			}
+		}
+		slices.Sort(methods)
+		return methods
 	}
+}
+
+// matchSegments reports whether a concrete path matches a route pattern, segment by segment.
+func matchSegments(pattern, path []string) bool {
+	if len(pattern) != len(path) {
+		return false
+	}
+	for i, seg := range pattern {
+		if strings.HasPrefix(seg, ":") {
+			if path[i] == "" {
+				return false
+			}
+			continue
+		}
+		if seg != path[i] {
+			return false
+		}
+	}
+	return true
 }
 
 func newApp(log *slog.Logger) *fiber.App {
@@ -145,7 +188,7 @@ func registerRoutes(app *fiber.App, opts Options) {
 // getAndHead registers handler for GET and HEAD. Fiber's automatic HEAD routes are added at
 // startup, after the catch-all NotFound middleware, so they would never match; fasthttp drops
 // the body of HEAD responses itself.
-func getAndHead(app *fiber.App, path string, handler fiber.Handler) {
-	app.Get(path, handler)
-	app.Head(path, handler)
+func getAndHead(app *fiber.App, path string, handler any, handlers ...any) {
+	app.Get(path, handler, handlers...)
+	app.Head(path, handler, handlers...)
 }

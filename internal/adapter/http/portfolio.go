@@ -30,8 +30,8 @@ func registerPortfolioRoutes(app *fiber.App, opts PortfolioOptions, chain authCh
 	require := middleware.RequireAuth()
 
 	app.Post("/api/v1/portfolios", chain.session, require, chain.csrf, h.create)
-	app.Get("/api/v1/portfolios", chain.session, require, h.list)
-	app.Get("/api/v1/portfolios/:portfolio_id", chain.session, require, h.get)
+	getAndHead(app, "/api/v1/portfolios", chain.session, require, h.list)
+	getAndHead(app, "/api/v1/portfolios/:portfolio_id", chain.session, require, h.get)
 	app.Put("/api/v1/portfolios/:portfolio_id", chain.session, require, chain.csrf, h.update)
 	app.Delete("/api/v1/portfolios/:portfolio_id", chain.session, require, chain.csrf, h.delete)
 }

@@ -197,7 +197,7 @@
 
 - [x] ตั้ง `lock_timeout`/`statement_timeout` ที่ pool และ context deadline ต่อคำขอ ตอนนี้ `LockOwned` รอ row lock ได้ไม่จำกัด และ `DB_MAX_CONNS` ต่ำ การรอค้างอาจกิน connection ทั้งหมด (พบจากการอ่านโค้ด ยังไม่ได้ทดสอบกับ PostgreSQL จริง)
 - [x] แปลง `40P01` (deadlock) และ `40001` เป็น error ที่ลองใหม่ได้แทน 500 และตัดสินใจเรื่องลำดับ lock เมื่อสลับชื่อพอร์ตสองใบพร้อมกัน (พบจากการอ่านโค้ด `mapError` ยังไม่ได้ทดสอบ)
-- [ ] method ที่ไม่รองรับบน `/api/v1/portfolios/{portfolio_id}` ตอบ 404 แทน 405 และ `HEAD` ตอบ 404 เพราะ route ของ GET ไม่ใช้ `getAndHead`; ตัดสินใจว่าจะทำทั้งระบบพร้อม route ของ transactions
+- [x] method ที่ไม่รองรับบน `/api/v1/portfolios/{portfolio_id}` ตอบ 404 แทน 405 และ `HEAD` ตอบ 404 เพราะ route ของ GET ไม่ใช้ `getAndHead`; ตัดสินใจว่าจะทำทั้งระบบพร้อม route ของ transactions
 
 ### 7. Transactions + replay validation + concurrency/idempotency
 
