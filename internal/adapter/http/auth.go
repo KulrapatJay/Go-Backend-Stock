@@ -46,23 +46,38 @@ type authHandlers struct {
 	cookies      cookieJar
 }
 
-// registerAuthRoutes adds the /api/v1/auth routes. Each route lists its middleware explicitly, in
-// the order of phase 1 spec section 5: resolve session → require auth → CSRF/Origin → handler.
-func registerAuthRoutes(app *fiber.App, opts AuthOptions) {
-	if opts.Service == nil {
-		return
-	}
+// authChain is the middleware every API route shares: resolving the session, checking CSRF and
+// Origin, and the resolver of the client IP. It is built once so the auth and portfolio routes
+// cannot drift apart.
+type authChain struct {
+	session  fiber.Handler
+	csrf     fiber.Handler
+	clientIP *ClientIPResolver
+	cookies  cookieJar
+}
+
+func newAuthChain(opts AuthOptions) authChain {
 	resolver := opts.ClientIP
 	if resolver == nil {
 		resolver = NewClientIPResolver(nil)
 	}
+	cookies := newCookieJar(opts.SecureCookies)
+	return authChain{
+		session:  middleware.ResolveSession(opts.Service, cookies.sessionName),
+		csrf:     middleware.CSRF(opts.CSRF, opts.PublicOrigin, cookies.nonceName),
+		clientIP: resolver,
+		cookies:  cookies,
+	}
+}
+
+// registerAuthRoutes adds the /api/v1/auth routes. Each route lists its middleware explicitly, in
+// the order of phase 1 spec section 5: resolve session → require auth → CSRF/Origin → handler.
+func registerAuthRoutes(app *fiber.App, opts AuthOptions, chain authChain) {
 	h := &authHandlers{
 		auth: opts.Service, verification: opts.Verification, reset: opts.PasswordReset, passwords: opts.Passwords,
-		csrf: opts.CSRF, clientIP: resolver, cookies: newCookieJar(opts.SecureCookies),
+		csrf: opts.CSRF, clientIP: chain.clientIP, cookies: chain.cookies,
 	}
-	session := middleware.ResolveSession(opts.Service, h.cookies.sessionName)
-
-	csrf := middleware.CSRF(opts.CSRF, opts.PublicOrigin, h.cookies.nonceName)
+	session, csrf := chain.session, chain.csrf
 
 	app.Get("/api/v1/auth/csrf", session, h.csrfToken)
 	app.Post("/api/v1/auth/register", session, csrf, h.register)

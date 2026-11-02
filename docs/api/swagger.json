@@ -836,6 +836,205 @@
                 }
             }
         },
+        "/api/v1/portfolios": {
+            "get": {
+                "description": "Newest first. Pass the next_cursor of a page as cursor to get the following page; next_cursor is null on the last page. A cursor is opaque and only valid for the user it was issued to. Other users' portfolios never appear.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Portfolios"
+                ],
+                "summary": "List the portfolios of the signed-in user",
+                "operationId": "listPortfolios",
+                "parameters": [
+                    {
+                        "maximum": 100,
+                        "minimum": 1,
+                        "type": "integer",
+                        "default": 20,
+                        "description": "Page size, 1-100 (default 20)",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "next_cursor of the previous page",
+                        "name": "cursor",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/http.PortfolioPageResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "invalid_input: bad limit or cursor",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "unauthenticated",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "dependency_unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "description": "Adds a portfolio for the signed-in user. A user can have many portfolios (for example long term, short term and speculative); every portfolio uses USD. The name is trimmed, must be 1-100 characters and must not repeat another portfolio name of the same user, ignoring letter case (409 portfolio_name_conflict); another user may use the same name. The ETag header carries the version to send in If-Match when you change or delete the portfolio. Needs the session cookie and X-CSRF-Token.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Portfolios"
+                ],
+                "summary": "Create a portfolio",
+                "operationId": "createPortfolio",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Token from GET /api/v1/auth/csrf",
+                        "name": "X-CSRF-Token",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "description": "Name and optional description",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/http.PortfolioRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/http.PortfolioResponse"
+                        },
+                        "headers": {
+                            "ETag": {
+                                "type": "string",
+                                "description": "The portfolio version in quotes, for example \\\"1\\"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "invalid_input or malformed_json",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "unauthenticated",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "csrf_failed",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "portfolio_name_conflict",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "audit_write_failed or internal",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "dependency_unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/portfolios/{portfolio_id}": {
+            "get": {
+                "description": "A portfolio that belongs to someone else gets exactly the same 404 as one that does not exist. The ETag header carries the version to send in If-Match.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Portfolios"
+                ],
+                "summary": "Get one portfolio",
+                "operationId": "getPortfolio",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "format": "uuid",
+                        "description": "Portfolio ID",
+                        "name": "portfolio_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/http.PortfolioResponse"
+                        },
+                        "headers": {
+                            "ETag": {
+                                "type": "string",
+                                "description": "The portfolio version in quotes, for example \\\"1\\"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "invalid_input: portfolio_id is not a UUID",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "unauthenticated",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "not_found",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "dependency_unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/healthz": {
             "get": {
                 "description": "Returns 200 while the process is running. Does not check the database.",
@@ -1061,6 +1260,92 @@
                 }
             }
         },
+        "http.PortfolioPageResponse": {
+            "type": "object",
+            "required": [
+                "data",
+                "next_cursor"
+            ],
+            "properties": {
+                "data": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/http.PortfolioResponse"
+                    }
+                },
+                "next_cursor": {
+                    "type": "string",
+                    "x-nullable": true,
+                    "example": "eyJrIjoicG9ydGZvbGlvcyJ9"
+                }
+            }
+        },
+        "http.PortfolioRequest": {
+            "type": "object",
+            "required": [
+                "name"
+            ],
+            "properties": {
+                "description": {
+                    "type": "string",
+                    "maxLength": 1000,
+                    "example": "Buy and hold, reviewed once a year."
+                },
+                "name": {
+                    "type": "string",
+                    "maxLength": 100,
+                    "minLength": 1,
+                    "example": "Long term"
+                }
+            }
+        },
+        "http.PortfolioResponse": {
+            "type": "object",
+            "required": [
+                "created_at",
+                "currency",
+                "description",
+                "id",
+                "name",
+                "updated_at",
+                "version"
+            ],
+            "properties": {
+                "created_at": {
+                    "type": "string",
+                    "format": "date-time",
+                    "example": "2026-10-29T09:30:00Z"
+                },
+                "currency": {
+                    "type": "string",
+                    "enum": [
+                        "USD"
+                    ],
+                    "example": "USD"
+                },
+                "description": {
+                    "type": "string",
+                    "example": "Buy and hold, reviewed once a year."
+                },
+                "id": {
+                    "type": "string",
+                    "example": "0192f0c1-7a8e-7cc4-9d2b-3f6c1a2b4c5d"
+                },
+                "name": {
+                    "type": "string",
+                    "example": "Long term"
+                },
+                "updated_at": {
+                    "type": "string",
+                    "format": "date-time",
+                    "example": "2026-10-29T09:30:00Z"
+                },
+                "version": {
+                    "type": "integer",
+                    "example": 1
+                }
+            }
+        },
         "http.ReadyResponse": {
             "type": "object",
             "properties": {
@@ -1163,6 +1448,10 @@
         {
             "description": "Registration, email verification, sessions and CSRF tokens. Every POST needs the X-CSRF-Token header from GET /api/v1/auth/csrf and must come from the API's own origin.",
             "name": "Auth"
+        },
+        {
+            "description": "A user can own many portfolios, all in USD. Every call needs the session cookie; another user's portfolio looks exactly like a missing one (404). Reading returns an ETag with the portfolio version; changing or deleting a portfolio needs it back in If-Match.",
+            "name": "Portfolios"
         }
     ]
 }

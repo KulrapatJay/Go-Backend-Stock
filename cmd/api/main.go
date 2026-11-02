@@ -9,6 +9,8 @@
 // @tag.description Liveness and readiness probes
 // @tag.name        Auth
 // @tag.description Registration, email verification, sessions and CSRF tokens. Every POST needs the X-CSRF-Token header from GET /api/v1/auth/csrf and must come from the API's own origin.
+// @tag.name        Portfolios
+// @tag.description A user can own many portfolios, all in USD. Every call needs the session cookie; another user's portfolio looks exactly like a missing one (404). Reading returns an ETag with the portfolio version; changing or deleting a portfolio needs it back in If-Match.
 package main
 
 import (
