@@ -271,3 +271,46 @@ func TestDeletePortfolioClearsLeftoverIdempotencyKeys(t *testing.T) {
 		t.Errorf("idempotency keys = %d, want 0", n)
 	}
 }
+
+// TestUpdateAndDeletePortfolioNeedCSRFAndOrigin: PUT and DELETE change data, so they are held to the
+// same CSRF and Origin checks as POST, and a refused call changes nothing.
+func TestUpdateAndDeletePortfolioNeedCSRFAndOrigin(t *testing.T) {
+	h := newAuthHarness(t, withPortfolios())
+	b, _ := signedIn(t, h)
+	created := b.mustCreatePortfolio("Long term", "")
+	path := "/api/v1/portfolios/" + created.ID
+	b.fetchCSRF()
+	good := b.csrf
+
+	cases := []struct {
+		name    string
+		csrf    string
+		headers map[string]string
+	}{
+		{"missing token", "", nil},
+		{"token bound to another session", "AAAA", nil},
+		{"foreign origin", good, map[string]string{"Origin": "http://evil.example"}},
+	}
+	for _, tc := range cases {
+		for _, method := range []string{nethttp.MethodPut, nethttp.MethodDelete} {
+			t.Run(tc.name+" "+method, func(t *testing.T) {
+				b.csrf = tc.csrf
+				headers := map[string]string{"If-Match": `"1"`}
+				for k, v := range tc.headers {
+					headers[k] = v
+				}
+				var body any
+				if method == nethttp.MethodPut {
+					body = map[string]string{"name": "Taken over"}
+				}
+				resp, data := b.do(method, path, body, headers)
+				if resp.StatusCode != nethttp.StatusForbidden || errorCode(t, data) != "csrf_failed" {
+					t.Errorf("%s = %d %s, want 403 csrf_failed", method, resp.StatusCode, data)
+				}
+				if state := h.portfolioState(t, created.ID); !state.Found || state.Name != "Long term" || state.Version != 1 {
+					t.Errorf("portfolio after the refused %s = %+v, want it untouched", method, state)
+				}
+			})
+		}
+	}
+}
