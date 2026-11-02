@@ -94,3 +94,22 @@ type PortfolioPage struct {
 	Items      []Portfolio
 	NextCursor string
 }
+
+// PortfolioInput is the name and description a user sends to create or rename a portfolio.
+type PortfolioInput struct {
+	Name        PortfolioName
+	Description PortfolioDescription
+}
+
+// ParsePortfolioInput parses both fields and returns the first error, name before description.
+func ParsePortfolioInput(name, description string) (PortfolioInput, error) {
+	n, err := ParsePortfolioName(name)
+	if err != nil {
+		return PortfolioInput{}, err
+	}
+	d, err := ParsePortfolioDescription(description)
+	if err != nil {
+		return PortfolioInput{}, err
+	}
+	return PortfolioInput{Name: n, Description: d}, nil
+}

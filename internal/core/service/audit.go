@@ -38,19 +38,35 @@ type auditMetadata struct {
 }
 
 func (a *Auth) newAuditEvent(meta domain.RequestMeta, s auditSpec) (domain.AuditEvent, error) {
+	return newAuditEvent(a.clock, meta, s, auditMetadata{
+		IP: meta.MaskedIP, UserAgent: meta.UserAgent, Method: s.Method, Provider: s.Provider, Scope: string(s.Scope),
+	})
+}
+
+// newAuditEvent builds an event from the spec and the metadata its use case allows; metadata must
+// be a struct of allowlisted fields so nothing outside the allowlist can reach the table.
+func newAuditEvent(clock port.Clock, meta domain.RequestMeta, s auditSpec, metadata any) (domain.AuditEvent, error) {
 	id, err := domain.NewID()
 	if err != nil {
 		return domain.AuditEvent{}, err
 	}
-	metadata, err := json.Marshal(auditMetadata{IP: meta.MaskedIP, UserAgent: meta.UserAgent, Method: s.Method, Provider: s.Provider, Scope: string(s.Scope)})
+	encoded, err := json.Marshal(metadata)
 	if err != nil {
 		return domain.AuditEvent{}, fmt.Errorf("encode audit metadata: %w", err)
 	}
 	return domain.NewAuditEvent(domain.AuditEvent{
-		ID: id, OccurredAt: NowForStorage(a.clock), EventType: s.Type, ActorUserID: s.Actor,
+		ID: id, OccurredAt: NowForStorage(clock), EventType: s.Type, ActorUserID: s.Actor,
 		RequestID: meta.RequestID, SessionID: s.SessionID, TargetType: s.TargetType, TargetID: s.TargetID,
-		Outcome: s.Outcome, ReasonCode: s.Reason, Metadata: metadata,
+		Outcome: s.Outcome, ReasonCode: s.Reason, Metadata: encoded,
 	})
+}
+
+// appendAuditEvent writes e in tx, the transaction of the change it describes.
+func appendAuditEvent(ctx context.Context, tx port.TxRepositories, e domain.AuditEvent) error {
+	if err := tx.Audit().Append(ctx, e); err != nil {
+		return fmt.Errorf("%w: %w", errAuditWriteFailed, err)
+	}
+	return nil
 }
 
 // appendAudit writes the event in tx, the transaction of the change it describes.
@@ -59,10 +75,7 @@ func (a *Auth) appendAudit(ctx context.Context, tx port.TxRepositories, meta dom
 	if err != nil {
 		return err
 	}
-	if err := tx.Audit().Append(ctx, e); err != nil {
-		return fmt.Errorf("%w: %w", errAuditWriteFailed, err)
-	}
-	return nil
+	return appendAuditEvent(ctx, tx, e)
 }
 
 // recordFailure writes the event of a failed or refused attempt in a transaction of its own: there
