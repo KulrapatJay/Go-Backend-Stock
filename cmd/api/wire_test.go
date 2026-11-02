@@ -139,3 +139,36 @@ func TestBuildAuthTurnsGoogleOnWithItsConfig(t *testing.T) {
 		t.Errorf("GET /api/v1/auth/config = %s", got)
 	}
 }
+
+func TestBuildServesThePortfolioRoutes(t *testing.T) {
+	cfg := wireConfig(t, "http://localhost:8080")
+	pool, err := pgxpool.New(t.Context(), cfg.DatabaseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pool.Close()
+	log := slog.New(slog.NewJSONHandler(io.Discard, nil))
+
+	auth, err := buildAuth(cfg, pool, log)
+	if err != nil {
+		t.Fatalf("buildAuth() error = %v", err)
+	}
+	defer func() { _ = auth.mail.Close(context.Background()) }()
+	portfolios, err := buildPortfolios(pool, log)
+	if err != nil {
+		t.Fatalf("buildPortfolios() error = %v", err)
+	}
+	if portfolios.Service == nil {
+		t.Fatal("buildPortfolios() left the service unset")
+	}
+
+	app := httpadapter.NewServer(httpadapter.Options{Logger: log, Readiness: pool, Auth: auth.options, Portfolios: portfolios})
+	resp, err := app.Test(httptest.NewRequestWithContext(t.Context(), nethttp.MethodGet, "/api/v1/portfolios", nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != nethttp.StatusUnauthorized {
+		t.Errorf("GET /api/v1/portfolios without a session = %d, want 401 (404 means the route is not wired)", resp.StatusCode)
+	}
+}

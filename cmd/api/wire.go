@@ -150,3 +150,13 @@ func buildAuth(cfg config.Config, pool *pgxpool.Pool, log *slog.Logger) (authPar
 		mail: dispatcher,
 	}, nil
 }
+
+// buildPortfolios wires the portfolio use cases over the same store as auth. It opens no connection.
+func buildPortfolios(pool *pgxpool.Pool, log *slog.Logger) (httpadapter.PortfolioOptions, error) {
+	store := postgres.NewStore(pool)
+	portfolios, err := service.NewPortfolios(service.PortfolioDeps{Store: store, UnitOfWork: store, Clock: systemClock{}, Logger: log})
+	if err != nil {
+		return httpadapter.PortfolioOptions{}, fmt.Errorf("build portfolios: %w", err)
+	}
+	return httpadapter.PortfolioOptions{Service: portfolios}, nil
+}

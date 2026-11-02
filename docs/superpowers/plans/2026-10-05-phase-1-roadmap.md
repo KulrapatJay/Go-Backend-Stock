@@ -10,7 +10,7 @@
 
 **Spec:** [แบบระบบสำหรับตรวจยืนยัน](../specs/2026-10-05-phase-1-design.md) โดยยึดข้อกำหนดใน [AGENTS.md](../../../AGENTS.md)
 
-**Status:** ผู้ใช้ยืนยันให้เริ่มตามลำดับแล้ว จัดทำข้อเสนอ milestone 0 ใน spec ที่ลิงก์ด้านบนแล้ว ผู้ใช้ยืนยันข้อเสนอเดิมและเลื่อนหน้าหุ้นรายตัว/กราฟไปเฟสถัดไปแล้ว (2026-10-14) และยืนยันแบบ email verification, portfolio name uniqueness และกติการหัสผ่านแล้ว milestone 0 ผ่านการตรวจรับ; milestone 1 ผ่านการตรวจรับเมื่อ 2026-10-15 (ลงมือครบทุก task, self-review ทั้ง branch ไม่พบ Critical/Important, CI บน GitHub ผ่าน) milestone 2 ผ่านการตรวจรับเมื่อ 2026-10-17 (ลงมือครบทุก task, รีวิวทั้ง branch ด้วย subagent แก้ Important ครบ 4 ข้อ) milestone 3 แผน 3a ผ่านการตรวจรับเมื่อ 2026-10-20 (รีวิวทั้ง branch ด้วย subagent แก้ Important ครบ 4 ข้อ, CI บน GitHub ผ่าน) แผน 3b ผ่านการตรวจรับเมื่อ 2026-10-21 (รีวิวทั้ง branch ด้วย subagent แก้ Important 2 ข้อและ Minor 4 ข้อ; CI บน GitHub ยังไม่ได้รันเพราะยังไม่ push) แผน 3c ผ่านการตรวจรับเมื่อ 2026-10-22 (รีวิวทั้ง branch ด้วย subagent แก้ Important 1 ข้อและ Minor 6 ข้อ) milestone 3 ครบทุกแผน; CI บน GitHub ของ 3b/3c ยังไม่ได้รันเพราะยังไม่ push milestone 4 มี design ([spec](../specs/2026-10-22-milestone-4-auth-design.md)) แบ่งเป็นแผน 4a/4b/4c; แผน 4a ลงมือครบแล้ว รอตรวจรับ แผน 4b ลงมือครบแล้ว รอตรวจรับ แผน 4c ลงมือครบแล้ว รอตรวจรับ (ผู้ใช้ทดสอบกับ Google จริงด้วยมือบน browser แล้วเมื่อ 2026-10-29: link_required, link, login และสร้างบัญชีใหม่ผ่านทั้งหมด) milestone 5 มีแผน 5 ([plan](2026-10-29-milestone-5-password-reset.md)) ลงมือครบแล้ว รอตรวจรับ
+**Status:** ผู้ใช้ยืนยันให้เริ่มตามลำดับแล้ว จัดทำข้อเสนอ milestone 0 ใน spec ที่ลิงก์ด้านบนแล้ว ผู้ใช้ยืนยันข้อเสนอเดิมและเลื่อนหน้าหุ้นรายตัว/กราฟไปเฟสถัดไปแล้ว (2026-10-14) และยืนยันแบบ email verification, portfolio name uniqueness และกติการหัสผ่านแล้ว milestone 0 ผ่านการตรวจรับ; milestone 1 ผ่านการตรวจรับเมื่อ 2026-10-15 (ลงมือครบทุก task, self-review ทั้ง branch ไม่พบ Critical/Important, CI บน GitHub ผ่าน) milestone 2 ผ่านการตรวจรับเมื่อ 2026-10-17 (ลงมือครบทุก task, รีวิวทั้ง branch ด้วย subagent แก้ Important ครบ 4 ข้อ) milestone 3 แผน 3a ผ่านการตรวจรับเมื่อ 2026-10-20 (รีวิวทั้ง branch ด้วย subagent แก้ Important ครบ 4 ข้อ, CI บน GitHub ผ่าน) แผน 3b ผ่านการตรวจรับเมื่อ 2026-10-21 (รีวิวทั้ง branch ด้วย subagent แก้ Important 2 ข้อและ Minor 4 ข้อ; CI บน GitHub ยังไม่ได้รันเพราะยังไม่ push) แผน 3c ผ่านการตรวจรับเมื่อ 2026-10-22 (รีวิวทั้ง branch ด้วย subagent แก้ Important 1 ข้อและ Minor 6 ข้อ) milestone 3 ครบทุกแผน; CI บน GitHub ของ 3b/3c ยังไม่ได้รันเพราะยังไม่ push milestone 4 มี design ([spec](../specs/2026-10-22-milestone-4-auth-design.md)) แบ่งเป็นแผน 4a/4b/4c; แผน 4a ลงมือครบแล้ว รอตรวจรับ แผน 4b ลงมือครบแล้ว รอตรวจรับ แผน 4c ลงมือครบแล้ว รอตรวจรับ (ผู้ใช้ทดสอบกับ Google จริงด้วยมือบน browser แล้วเมื่อ 2026-10-29: link_required, link, login และสร้างบัญชีใหม่ผ่านทั้งหมด) milestone 5 มีแผน 5 ([plan](2026-10-29-milestone-5-password-reset.md)) ลงมือครบแล้ว รอตรวจรับ milestone 6 มีแผน 6 ([plan](2026-10-29-milestone-6-portfolios.md)) ลงมือครบแล้ว รอตรวจรับ
 
 ## Global Constraints
 
@@ -184,10 +184,12 @@
 
 **ไฟล์หลัก:** `internal/core/service/portfolio*.go`, `internal/adapter/http/portfolio*.go`
 
-- [ ] ทำสร้าง/รายการ/รายละเอียด/เปลี่ยนชื่อ/คำอธิบาย/ลบพอร์ต พร้อม audit; ชื่อพอร์ตซ้ำแบบไม่สนตัวพิมพ์ภายในผู้ใช้เดียวคืน 409 `portfolio_name_conflict` ส่วนต่างผู้ใช้ใช้ชื่อเดียวกันได้
-- [ ] ตรวจ ownership ทุกเส้นทาง และปฏิเสธการลบพอร์ตที่มี transactions
-- [ ] ส่ง ETag/version และบังคับ If-Match สำหรับ PUT/DELETE พร้อม HTTP tests ของ 428/412
-- [ ] ทดสอบด้วยผู้ใช้สองคนและหลายพอร์ตว่าการเดา ID ไม่ทำให้อ่านหรือแก้ข้อมูลข้ามผู้ใช้ได้
+แผน: [2026-10-29-milestone-6-portfolios.md](2026-10-29-milestone-6-portfolios.md) ลงมือครบ รอตรวจรับ
+
+- [x] ทำสร้าง/รายการ/รายละเอียด/เปลี่ยนชื่อ/คำอธิบาย/ลบพอร์ต พร้อม audit; ชื่อพอร์ตซ้ำแบบไม่สนตัวพิมพ์ภายในผู้ใช้เดียวคืน 409 `portfolio_name_conflict` ส่วนต่างผู้ใช้ใช้ชื่อเดียวกันได้ (แผน 6)
+- [x] ตรวจ ownership ทุกเส้นทาง และปฏิเสธการลบพอร์ตที่มี transactions (แผน 6)
+- [x] ส่ง ETag/version และบังคับ If-Match สำหรับ PUT/DELETE พร้อม HTTP tests ของ 428/412 (แผน 6)
+- [x] ทดสอบด้วยผู้ใช้สองคนและหลายพอร์ตว่าการเดา ID ไม่ทำให้อ่านหรือแก้ข้อมูลข้ามผู้ใช้ได้ (แผน 6)
 
 **ผ่านเมื่อ:** ผู้ใช้คนเดียวมีหลายพอร์ตได้และขอบเขตสิทธิ์ถูกต้องทั้ง API/repository
 

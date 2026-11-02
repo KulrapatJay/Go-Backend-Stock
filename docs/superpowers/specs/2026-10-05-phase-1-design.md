@@ -316,6 +316,7 @@ type PortfolioRepository interface {
     ListOwned(context.Context, domain.ID, domain.Page) (domain.PortfolioPage, error)
     UpdateOwned(context.Context, domain.Portfolio, domain.ID) (domain.Portfolio, error) // version = version + 1
     DeleteOwnedEmpty(context.Context, domain.ID, domain.ID) error
+    Exists(context.Context, domain.ID) (bool, error) // ไม่กรองเจ้าของ: ใช้ตัดสินเฉพาะว่าจะเขียน audit security.access_denied ห้ามใช้ตัดสินสิทธิ์อ่าน/เขียน
 }
 type TransactionRepository interface {
     History(context.Context, domain.ID, domain.ID) ([]domain.Transaction, error)
