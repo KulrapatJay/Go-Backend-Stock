@@ -32,6 +32,8 @@ func registerPortfolioRoutes(app *fiber.App, opts PortfolioOptions, chain authCh
 	app.Post("/api/v1/portfolios", chain.session, require, chain.csrf, h.create)
 	app.Get("/api/v1/portfolios", chain.session, require, h.list)
 	app.Get("/api/v1/portfolios/:portfolio_id", chain.session, require, h.get)
+	app.Put("/api/v1/portfolios/:portfolio_id", chain.session, require, chain.csrf, h.update)
+	app.Delete("/api/v1/portfolios/:portfolio_id", chain.session, require, chain.csrf, h.delete)
 }
 
 // CreatePortfolio godoc
@@ -125,6 +127,98 @@ func (h *portfolioHandlers) get(c fiber.Ctx) error {
 		return err
 	}
 	return sendPortfolio(c, fiber.StatusOK, found)
+}
+
+// UpdatePortfolio godoc
+// @Summary      Rename a portfolio or change its description
+// @Description  Replaces the name and description. Send the ETag of your last read in If-Match, for example "3" with the quotes: without it the call is refused with 428 precondition_required; if the portfolio changed since (version_conflict) the call is refused with 412 and nothing is written. Only the exact form "<version>" is accepted: the wildcard *, weak validators (W/"3") and lists give 400. A name that another portfolio of yours already uses, ignoring letter case, gives 409 portfolio_name_conflict; renaming a portfolio to the same name in a different case is allowed. A portfolio of another user gives the same 404 as one that does not exist. Needs the session cookie and X-CSRF-Token.
+// @Tags         Portfolios
+// @ID           updatePortfolio
+// @Accept       json
+// @Produce      json
+// @Param        portfolio_id  path    string            true  "Portfolio ID"  format(uuid)
+// @Param        If-Match      header  string            true  "ETag of the last read, with quotes, for example \"3\""
+// @Param        X-CSRF-Token  header  string            true  "Token from GET /api/v1/auth/csrf"
+// @Param        body          body    PortfolioRequest  true  "New name and description (a missing description clears it)"
+// @Success      200  {object}  PortfolioResponse
+// @Failure      400  {object}  ErrorResponse  "invalid_input (body, portfolio_id or If-Match) or malformed_json"
+// @Failure      401  {object}  ErrorResponse  "unauthenticated"
+// @Failure      403  {object}  ErrorResponse  "csrf_failed"
+// @Failure      404  {object}  ErrorResponse  "not_found"
+// @Failure      409  {object}  ErrorResponse  "portfolio_name_conflict"
+// @Failure      412  {object}  ErrorResponse  "version_conflict: read the portfolio again"
+// @Failure      428  {object}  ErrorResponse  "precondition_required: send If-Match"
+// @Failure      500  {object}  ErrorResponse  "audit_write_failed or internal"
+// @Failure      503  {object}  ErrorResponse  "dependency_unavailable"
+// @Header       200  {string}  ETag  "The new version in quotes, for example \"4\""
+// @Router       /api/v1/portfolios/{portfolio_id} [put]
+func (h *portfolioHandlers) update(c fiber.Ctx) error {
+	id, err := domain.ParseID("portfolio_id", c.Params("portfolio_id"))
+	if err != nil {
+		return err
+	}
+	expected, err := parseIfMatch(c)
+	if err != nil {
+		return err
+	}
+	var req PortfolioRequest
+	if err := decodeJSON(c, &req); err != nil {
+		return err
+	}
+	in, err := parsePortfolioRequest(req)
+	if err != nil {
+		return err
+	}
+	meta, err := requestMeta(c, h.clientIP)
+	if err != nil {
+		return err
+	}
+	p, _ := middleware.GetPrincipal(c)
+	updated, err := h.portfolios.Update(c.Context(), p, id, expected, in, meta)
+	if err != nil {
+		return err
+	}
+	return sendPortfolio(c, fiber.StatusOK, updated)
+}
+
+// DeletePortfolio godoc
+// @Summary      Delete an empty portfolio
+// @Description  Deletes a portfolio that has no transactions; a portfolio with transactions is kept and the call gives 409 portfolio_not_empty (history is never deleted silently). Needs If-Match with the ETag of your last read, like PUT. A portfolio of another user gives the same 404 as one that does not exist. Needs the session cookie and X-CSRF-Token.
+// @Tags         Portfolios
+// @ID           deletePortfolio
+// @Produce      json
+// @Param        portfolio_id  path    string  true  "Portfolio ID"  format(uuid)
+// @Param        If-Match      header  string  true  "ETag of the last read, with quotes, for example \"3\""
+// @Param        X-CSRF-Token  header  string  true  "Token from GET /api/v1/auth/csrf"
+// @Success      204  "Deleted"
+// @Failure      400  {object}  ErrorResponse  "invalid_input (portfolio_id or If-Match)"
+// @Failure      401  {object}  ErrorResponse  "unauthenticated"
+// @Failure      403  {object}  ErrorResponse  "csrf_failed"
+// @Failure      404  {object}  ErrorResponse  "not_found"
+// @Failure      409  {object}  ErrorResponse  "portfolio_not_empty"
+// @Failure      412  {object}  ErrorResponse  "version_conflict: read the portfolio again"
+// @Failure      428  {object}  ErrorResponse  "precondition_required: send If-Match"
+// @Failure      500  {object}  ErrorResponse  "audit_write_failed or internal"
+// @Failure      503  {object}  ErrorResponse  "dependency_unavailable"
+// @Router       /api/v1/portfolios/{portfolio_id} [delete]
+func (h *portfolioHandlers) delete(c fiber.Ctx) error {
+	id, err := domain.ParseID("portfolio_id", c.Params("portfolio_id"))
+	if err != nil {
+		return err
+	}
+	expected, err := parseIfMatch(c)
+	if err != nil {
+		return err
+	}
+	meta, err := requestMeta(c, h.clientIP)
+	if err != nil {
+		return err
+	}
+	p, _ := middleware.GetPrincipal(c)
+	if err := h.portfolios.Delete(c.Context(), p, id, expected, meta); err != nil {
+		return err
+	}
+	return c.SendStatus(fiber.StatusNoContent)
 }
 
 func parsePortfolioRequest(req PortfolioRequest) (domain.PortfolioInput, error) {

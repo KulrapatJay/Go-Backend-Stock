@@ -1040,6 +1040,215 @@ const docTemplate = `{
                         }
                     }
                 }
+            },
+            "put": {
+                "description": "Replaces the name and description. Send the ETag of your last read in If-Match, for example \"3\" with the quotes: without it the call is refused with 428 precondition_required; if the portfolio changed since (version_conflict) the call is refused with 412 and nothing is written. Only the exact form \"\u003cversion\u003e\" is accepted: the wildcard *, weak validators (W/\"3\") and lists give 400. A name that another portfolio of yours already uses, ignoring letter case, gives 409 portfolio_name_conflict; renaming a portfolio to the same name in a different case is allowed. A portfolio of another user gives the same 404 as one that does not exist. Needs the session cookie and X-CSRF-Token.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Portfolios"
+                ],
+                "summary": "Rename a portfolio or change its description",
+                "operationId": "updatePortfolio",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "format": "uuid",
+                        "description": "Portfolio ID",
+                        "name": "portfolio_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "ETag of the last read, with quotes, for example \\",
+                        "name": "If-Match",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Token from GET /api/v1/auth/csrf",
+                        "name": "X-CSRF-Token",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "description": "New name and description (a missing description clears it)",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/http.PortfolioRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/http.PortfolioResponse"
+                        },
+                        "headers": {
+                            "ETag": {
+                                "type": "string",
+                                "description": "The new version in quotes, for example \\\"4\\"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "invalid_input (body, portfolio_id or If-Match) or malformed_json",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "unauthenticated",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "csrf_failed",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "not_found",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "portfolio_name_conflict",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
+                    },
+                    "412": {
+                        "description": "version_conflict: read the portfolio again",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
+                    },
+                    "428": {
+                        "description": "precondition_required: send If-Match",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "audit_write_failed or internal",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "dependency_unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "description": "Deletes a portfolio that has no transactions; a portfolio with transactions is kept and the call gives 409 portfolio_not_empty (history is never deleted silently). Needs If-Match with the ETag of your last read, like PUT. A portfolio of another user gives the same 404 as one that does not exist. Needs the session cookie and X-CSRF-Token.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Portfolios"
+                ],
+                "summary": "Delete an empty portfolio",
+                "operationId": "deletePortfolio",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "format": "uuid",
+                        "description": "Portfolio ID",
+                        "name": "portfolio_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "ETag of the last read, with quotes, for example \\",
+                        "name": "If-Match",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Token from GET /api/v1/auth/csrf",
+                        "name": "X-CSRF-Token",
+                        "in": "header",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "Deleted"
+                    },
+                    "400": {
+                        "description": "invalid_input (portfolio_id or If-Match)",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "unauthenticated",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "csrf_failed",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "not_found",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "portfolio_not_empty",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
+                    },
+                    "412": {
+                        "description": "version_conflict: read the portfolio again",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
+                    },
+                    "428": {
+                        "description": "precondition_required: send If-Match",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "audit_write_failed or internal",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "dependency_unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
+                    }
+                }
             }
         },
         "/healthz": {
