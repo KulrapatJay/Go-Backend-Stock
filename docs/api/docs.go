@@ -890,6 +890,12 @@ const docTemplate = `{
                             "$ref": "#/definitions/http.ErrorResponse"
                         }
                     },
+                    "500": {
+                        "description": "internal",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
+                    },
                     "503": {
                         "description": "dependency_unavailable",
                         "schema": {
@@ -1033,6 +1039,12 @@ const docTemplate = `{
                             "$ref": "#/definitions/http.ErrorResponse"
                         }
                     },
+                    "500": {
+                        "description": "internal",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
+                    },
                     "503": {
                         "description": "dependency_unavailable",
                         "schema": {
@@ -1042,7 +1054,7 @@ const docTemplate = `{
                 }
             },
             "put": {
-                "description": "Replaces the name and description. Send the ETag of your last read in If-Match, for example \"3\" with the quotes: without it the call is refused with 428 precondition_required; if the portfolio changed since (version_conflict) the call is refused with 412 and nothing is written. Only the exact form \"\u003cversion\u003e\" is accepted: the wildcard *, weak validators (W/\"3\") and lists give 400. A name that another portfolio of yours already uses, ignoring letter case, gives 409 portfolio_name_conflict; renaming a portfolio to the same name in a different case is allowed. A portfolio of another user gives the same 404 as one that does not exist. Needs the session cookie and X-CSRF-Token.",
+                "description": "Replaces the name and description: send both, a body without description is refused with 400 and nothing is written (send an empty string to clear it). Send the ETag of your last read in If-Match, for example \"3\" with the quotes: without it the call is refused with 428 precondition_required; if the portfolio changed since (version_conflict) the call is refused with 412 and nothing is written. Only the exact form \"\u003cversion\u003e\" is accepted: the wildcard *, weak validators (W/\"3\") and lists give 400. A name that another portfolio of yours already uses, ignoring letter case, gives 409 portfolio_name_conflict; renaming a portfolio to the same name in a different case is allowed. A portfolio of another user gives the same 404 as one that does not exist. Needs the session cookie and X-CSRF-Token.",
                 "consumes": [
                     "application/json"
                 ],
@@ -1078,12 +1090,12 @@ const docTemplate = `{
                         "required": true
                     },
                     {
-                        "description": "New name and description (a missing description clears it)",
+                        "description": "New name and description; description is required, send an empty string to clear it",
                         "name": "body",
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/http.PortfolioRequest"
+                            "$ref": "#/definitions/http.UpdatePortfolioRequest"
                         }
                     }
                 ],
@@ -1624,6 +1636,26 @@ const docTemplate = `{
                 },
                 "user": {
                     "$ref": "#/definitions/http.UserResponse"
+                }
+            }
+        },
+        "http.UpdatePortfolioRequest": {
+            "type": "object",
+            "required": [
+                "description",
+                "name"
+            ],
+            "properties": {
+                "description": {
+                    "type": "string",
+                    "maxLength": 1000,
+                    "example": "Buy and hold, reviewed once a year."
+                },
+                "name": {
+                    "type": "string",
+                    "maxLength": 100,
+                    "minLength": 1,
+                    "example": "Long term"
                 }
             }
         },

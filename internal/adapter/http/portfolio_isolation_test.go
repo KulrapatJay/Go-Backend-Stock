@@ -145,10 +145,10 @@ func TestConcurrentPortfolioUpdatesWithOneVersionWinOnce(t *testing.T) {
 
 		a, bb := raceTwo(t,
 			func() (response, []byte, error) {
-				return b.tryDo(nethttp.MethodPut, path, map[string]string{"name": "From tab A"}, map[string]string{"If-Match": `"1"`})
+				return b.tryDo(nethttp.MethodPut, path, map[string]string{"name": "From tab A", "description": ""}, map[string]string{"If-Match": `"1"`})
 			},
 			func() (response, []byte, error) {
-				return c.tryDo(nethttp.MethodPut, path, map[string]string{"name": "From tab B"}, map[string]string{"If-Match": `"1"`})
+				return c.tryDo(nethttp.MethodPut, path, map[string]string{"name": "From tab B", "description": ""}, map[string]string{"If-Match": `"1"`})
 			})
 
 		statuses := []int{a.StatusCode, bb.StatusCode}
@@ -189,7 +189,7 @@ func TestConcurrentDeleteAndUpdateLeaveOneOutcome(t *testing.T) {
 				return b.tryDo(nethttp.MethodDelete, path, nil, map[string]string{"If-Match": `"1"`})
 			},
 			func() (response, []byte, error) {
-				return c.tryDo(nethttp.MethodPut, path, map[string]string{"name": "Renamed"}, map[string]string{"If-Match": `"1"`})
+				return c.tryDo(nethttp.MethodPut, path, map[string]string{"name": "Renamed", "description": ""}, map[string]string{"If-Match": `"1"`})
 			})
 
 		state := h.portfolioState(t, created.ID)

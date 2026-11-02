@@ -13,8 +13,8 @@ var documentedPortfolioOperations = []struct {
 	statuses     []int
 }{
 	{"post", "/api/v1/portfolios", []int{201, 400, 401, 403, 409, 500, 503}},
-	{"get", "/api/v1/portfolios", []int{200, 400, 401, 503}},
-	{"get", "/api/v1/portfolios/{portfolio_id}", []int{200, 400, 401, 404, 503}},
+	{"get", "/api/v1/portfolios", []int{200, 400, 401, 500, 503}},
+	{"get", "/api/v1/portfolios/{portfolio_id}", []int{200, 400, 401, 404, 500, 503}},
 	{"put", "/api/v1/portfolios/{portfolio_id}", []int{200, 400, 401, 403, 404, 409, 412, 428, 500, 503}},
 	{"delete", "/api/v1/portfolios/{portfolio_id}", []int{204, 400, 401, 403, 404, 409, 412, 428, 500, 503}},
 }
@@ -36,9 +36,10 @@ func TestPortfolioOperationsAreDocumented(t *testing.T) {
 }
 
 var requiredPortfolioFields = map[string][]string{
-	"http.PortfolioRequest":      {"name"},
-	"http.PortfolioResponse":     {"created_at", "currency", "description", "id", "name", "updated_at", "version"},
-	"http.PortfolioPageResponse": {"data", "next_cursor"},
+	"http.PortfolioRequest":       {"name"},
+	"http.UpdatePortfolioRequest": {"description", "name"},
+	"http.PortfolioResponse":      {"created_at", "currency", "description", "id", "name", "updated_at", "version"},
+	"http.PortfolioPageResponse":  {"data", "next_cursor"},
 }
 
 func TestPortfolioSchemasDeclareRequiredFieldsAndTimestampFormats(t *testing.T) {

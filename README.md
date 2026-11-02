@@ -123,11 +123,12 @@ curl -s -b "$JAR" -c "$JAR" -w '\nHTTP %{http_code}\n' "$API/portfolios"
 curl -s -i -b "$JAR" -c "$JAR" "$API/portfolios/$PORTFOLIO" | grep -iE '^(HTTP|etag)'
 
 # 14 เปลี่ยนชื่อ ต้องส่ง If-Match เป็น ETag ที่อ่านล่าสุด (มี quote) ได้ 200 และ ETag: "2"
+# PUT แทนที่ทั้งก้อน: ต้องส่งทั้ง name และ description (ไม่ส่ง description จะได้ 400 invalid_input; ส่ง "" เพื่อล้างคำอธิบาย)
 # ส่ง If-Match ซ้ำด้วย "1" ต่อไปจะได้ 412 version_conflict; ไม่ส่ง header จะได้ 428 precondition_required
 put() { curl -s -b "$JAR" -c "$JAR" -X PUT -H "Origin: http://localhost:8080" -H "X-CSRF-Token: $(csrf)" \
   -H 'Content-Type: application/json' -H "If-Match: $1" -w '\nHTTP %{http_code}\n' -d "$2" "$API/portfolios/$PORTFOLIO"; }
-put '"1"' '{"name":"ระยะยาว (ปรับแล้ว)"}'
-put '"1"' '{"name":"ระยะยาว (ปรับซ้ำ)"}'
+put '"1"' '{"name":"ระยะยาว (ปรับแล้ว)","description":"ถือยาว ทบทวนปีละครั้ง"}'
+put '"1"' '{"name":"ระยะยาว (ปรับซ้ำ)","description":"ถือยาว ทบทวนปีละครั้ง"}'
 
 # 15 ลบพอร์ตที่ยังไม่มีรายการซื้อขาย ได้ 204 (พอร์ตที่มีรายการจะได้ 409 portfolio_not_empty); ต้องมี If-Match เช่นกัน
 curl -s -b "$JAR" -c "$JAR" -X DELETE -H "Origin: http://localhost:8080" -H "X-CSRF-Token: $(csrf)" \

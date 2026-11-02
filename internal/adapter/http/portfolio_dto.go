@@ -6,10 +6,18 @@ import (
 	"go-backend-stock/internal/core/domain"
 )
 
-// PortfolioRequest is the body of POST and PUT /api/v1/portfolios. A missing description means "".
+// PortfolioRequest is the body of POST /api/v1/portfolios. A missing description means "".
 type PortfolioRequest struct {
 	Name        string  `json:"name" example:"Long term" minLength:"1" maxLength:"100" validate:"required"`
 	Description *string `json:"description" example:"Buy and hold, reviewed once a year." maxLength:"1000"`
+}
+
+// UpdatePortfolioRequest is the body of PUT /api/v1/portfolios/{portfolio_id}. PUT replaces the
+// portfolio, so both fields are required: a missing description is refused rather than read as ""
+// and erasing the stored one. Send "" to clear it.
+type UpdatePortfolioRequest struct {
+	Name        string  `json:"name" example:"Long term" minLength:"1" maxLength:"100" validate:"required"`
+	Description *string `json:"description" example:"Buy and hold, reviewed once a year." maxLength:"1000" validate:"required"`
 }
 
 // PortfolioResponse is one portfolio. Version is the number to send back in If-Match.

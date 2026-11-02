@@ -460,7 +460,7 @@ Base path `/api/v1`; JSON UTF-8; UUID เป็น string; timestamp RFC3339 UTC
 | POST /portfolios | required+CSRF | PortfolioInput → 201 Portfolio; ชื่อซ้ำ → 409 `portfolio_name_conflict` |
 | GET /portfolios | required | cursor/limit → 200 PortfolioPage |
 | GET /portfolios/{portfolio_id} | required | 200 Portfolio |
-| PUT /portfolios/{portfolio_id} | required+CSRF+If-Match | PortfolioInput → 200 Portfolio + ETag ใหม่; ชื่อซ้ำ → 409 `portfolio_name_conflict` |
+| PUT /portfolios/{portfolio_id} | required+CSRF+If-Match | PortfolioInput ทั้งชุด (ต้องส่ง `description` ส่ง `""` เพื่อล้าง; ขาด → 400 `invalid_input` เพื่อไม่ให้ลบคำอธิบายโดยไม่ตั้งใจ) → 200 Portfolio + ETag ใหม่; ชื่อซ้ำ → 409 `portfolio_name_conflict` |
 | DELETE /portfolios/{portfolio_id} | required+CSRF+If-Match | 204 เฉพาะพอร์ตว่าง |
 | POST /portfolios/{portfolio_id}/transactions | required+CSRF | TransactionInput + Idempotency-Key → 201 Transaction; replay คืน 201/body เดิม |
 | GET /portfolios/{portfolio_id}/transactions | required | limit/cursor/symbol/side/from/to → 200 TransactionPage |

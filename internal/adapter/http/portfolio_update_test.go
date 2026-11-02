@@ -8,15 +8,17 @@ import (
 	"time"
 )
 
-// updatePortfolio asks for a token first. ifMatch "" sends no If-Match header; description "" is
-// left out of the body, which clears the description.
+// updatePortfolio asks for a token first. ifMatch "" sends no If-Match header; PUT replaces the
+// whole portfolio, so the description is always sent ("" clears it).
 func (b *browser) updatePortfolio(id, ifMatch, name, description string) (response, []byte) {
 	b.t.Helper()
+	return b.putPortfolio(id, ifMatch, map[string]string{"name": name, "description": description})
+}
+
+// putPortfolio is updatePortfolio with a body of the caller's choosing.
+func (b *browser) putPortfolio(id, ifMatch string, body map[string]string) (response, []byte) {
+	b.t.Helper()
 	b.fetchCSRF()
-	body := map[string]string{"name": name}
-	if description != "" {
-		body["description"] = description
-	}
 	return b.do(nethttp.MethodPut, "/api/v1/portfolios/"+id, body, ifMatchHeader(ifMatch))
 }
 
@@ -129,6 +131,35 @@ func TestUpdatePortfolio(t *testing.T) {
 	}
 	if changed, _ := events[1].Metadata["changed"].([]any); len(changed) != 1 || changed[0] != "description" {
 		t.Errorf("changed = %v, want [description]", events[1].Metadata["changed"])
+	}
+}
+
+// PUT replaces the portfolio. A body without description would silently erase the stored one, so it
+// is refused; sending "" is the explicit way to clear it.
+func TestUpdatePortfolioRequiresTheDescription(t *testing.T) {
+	h := newAuthHarness(t, withPortfolios())
+	b, _ := signedIn(t, h)
+	created := b.mustCreatePortfolio("Long term", "keep me")
+	eventsBefore := len(h.auditByTarget(t, created.ID))
+
+	resp, body := b.putPortfolio(created.ID, `"1"`, map[string]string{"name": "Renamed"})
+	if resp.StatusCode != nethttp.StatusBadRequest || errorCode(t, body) != "invalid_input" || !strings.Contains(string(body), "description") {
+		t.Fatalf("PUT without description = %d %s, want 400 invalid_input naming description", resp.StatusCode, body)
+	}
+	got, _ := b.do(nethttp.MethodGet, "/api/v1/portfolios/"+created.ID, nil, nil)
+	if got.Header.Get("ETag") != `"1"` {
+		t.Errorf("ETag after the refused PUT = %q, want \"1\"", got.Header.Get("ETag"))
+	}
+	if state := h.portfolioState(t, created.ID); state.Name != "Long term" || state.Version != 1 {
+		t.Errorf("portfolio after the refused PUT = %+v, want Long term at version 1", state)
+	}
+	if n := len(h.auditByTarget(t, created.ID)); n != eventsBefore {
+		t.Errorf("audit events = %d, want %d", n, eventsBefore)
+	}
+
+	resp, body = b.putPortfolio(created.ID, `"1"`, map[string]string{"name": "Renamed", "description": ""})
+	if resp.StatusCode != nethttp.StatusOK || decodePortfolio(t, body).Description != "" {
+		t.Errorf("PUT with description \"\" = %d %s, want 200 with the description cleared", resp.StatusCode, body)
 	}
 }
 
@@ -301,7 +332,7 @@ func TestUpdateAndDeletePortfolioNeedCSRFAndOrigin(t *testing.T) {
 				}
 				var body any
 				if method == nethttp.MethodPut {
-					body = map[string]string{"name": "Taken over"}
+					body = map[string]string{"name": "Taken over", "description": ""}
 				}
 				resp, data := b.do(method, path, body, headers)
 				if resp.StatusCode != nethttp.StatusForbidden || errorCode(t, data) != "csrf_failed" {

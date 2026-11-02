@@ -226,6 +226,21 @@ definitions:
     - expires_at
     - user
     type: object
+  http.UpdatePortfolioRequest:
+    properties:
+      description:
+        example: Buy and hold, reviewed once a year.
+        maxLength: 1000
+        type: string
+      name:
+        example: Long term
+        maxLength: 100
+        minLength: 1
+        type: string
+    required:
+    - description
+    - name
+    type: object
   http.UserResponse:
     properties:
       created_at:
@@ -911,6 +926,10 @@ paths:
           description: unauthenticated
           schema:
             $ref: '#/definitions/http.ErrorResponse'
+        "500":
+          description: internal
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
         "503":
           description: dependency_unavailable
           schema:
@@ -1083,6 +1102,10 @@ paths:
           description: not_found
           schema:
             $ref: '#/definitions/http.ErrorResponse'
+        "500":
+          description: internal
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
         "503":
           description: dependency_unavailable
           schema:
@@ -1093,15 +1116,17 @@ paths:
     put:
       consumes:
       - application/json
-      description: 'Replaces the name and description. Send the ETag of your last
-        read in If-Match, for example "3" with the quotes: without it the call is
-        refused with 428 precondition_required; if the portfolio changed since (version_conflict)
-        the call is refused with 412 and nothing is written. Only the exact form "<version>"
-        is accepted: the wildcard *, weak validators (W/"3") and lists give 400. A
-        name that another portfolio of yours already uses, ignoring letter case, gives
-        409 portfolio_name_conflict; renaming a portfolio to the same name in a different
-        case is allowed. A portfolio of another user gives the same 404 as one that
-        does not exist. Needs the session cookie and X-CSRF-Token.'
+      description: 'Replaces the name and description: send both, a body without description
+        is refused with 400 and nothing is written (send an empty string to clear
+        it). Send the ETag of your last read in If-Match, for example "3" with the
+        quotes: without it the call is refused with 428 precondition_required; if
+        the portfolio changed since (version_conflict) the call is refused with 412
+        and nothing is written. Only the exact form "<version>" is accepted: the wildcard
+        *, weak validators (W/"3") and lists give 400. A name that another portfolio
+        of yours already uses, ignoring letter case, gives 409 portfolio_name_conflict;
+        renaming a portfolio to the same name in a different case is allowed. A portfolio
+        of another user gives the same 404 as one that does not exist. Needs the session
+        cookie and X-CSRF-Token.'
       operationId: updatePortfolio
       parameters:
       - description: Portfolio ID
@@ -1120,12 +1145,13 @@ paths:
         name: X-CSRF-Token
         required: true
         type: string
-      - description: New name and description (a missing description clears it)
+      - description: New name and description; description is required, send an empty
+          string to clear it
         in: body
         name: body
         required: true
         schema:
-          $ref: '#/definitions/http.PortfolioRequest'
+          $ref: '#/definitions/http.UpdatePortfolioRequest'
       produces:
       - application/json
       responses:
