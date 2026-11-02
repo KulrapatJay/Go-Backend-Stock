@@ -20,7 +20,8 @@ var (
 )
 
 // parseIfMatch reads the version a client last saw from If-Match. Only the strong form the API
-// issues is accepted: one positive integer in quotes. A weak validator (W/"3"), the wildcard, a
+// issues is accepted: one positive integer in quotes, written without leading zeros ("03" is not
+// an ETag the API ever sent, so it is not read as 3). A weak validator (W/"3"), the wildcard, a
 // list or a malformed value is an invalid input, not a missing precondition: the client sent one.
 func parseIfMatch(c fiber.Ctx) (domain.Version, error) {
 	values := c.Request().Header.PeekAll(fiber.HeaderIfMatch)
@@ -35,6 +36,9 @@ func parseIfMatch(c fiber.Ctx) (domain.Version, error) {
 		return domain.Version{}, errIfMatchInvalid
 	}
 	digits := raw[1 : len(raw)-1]
+	if digits[0] == '0' {
+		return domain.Version{}, errIfMatchInvalid
+	}
 	for i := 0; i < len(digits); i++ {
 		if digits[i] < '0' || digits[i] > '9' {
 			return domain.Version{}, errIfMatchInvalid

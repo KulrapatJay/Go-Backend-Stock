@@ -54,6 +54,8 @@ func TestParseIfMatch(t *testing.T) {
 		`two values`:      {`"3", "4"`},
 		`two headers`:     {`"3"`, `"4"`},
 		`zero`:            {`"0"`},
+		`leading zero`:    {`"03"`},
+		`many zeros`:      {`"0003"`},
 		`negative`:        {`"-1"`},
 		`explicit plus`:   {`"+3"`},
 		`not a number`:    {`"x"`},
