@@ -74,7 +74,7 @@ func run() error {
 		closeMail(earlyCtx, auth.mail, log)
 	}()
 
-	portfolios, err := buildPortfolios(pool, log)
+	portfolios, err := buildPortfolios(cfg, pool, log)
 	if err != nil {
 		return err
 	}

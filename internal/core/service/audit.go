@@ -81,16 +81,29 @@ func (a *Auth) appendAudit(ctx context.Context, tx port.TxRepositories, meta dom
 // recordFailure writes the event of a failed or refused attempt in a transaction of its own: there
 // is no business change to commit it with, and it must survive the error the caller returns.
 func (a *Auth) recordFailure(ctx context.Context, meta domain.RequestMeta, s auditSpec) error {
-	err := a.uow.WithinTransaction(ctx, func(tx port.TxRepositories) error {
-		return a.appendAudit(ctx, tx, meta, s)
+	return commitFailureAudit(ctx, a.uow, a.log, meta, s.Type, func() (domain.AuditEvent, error) {
+		return a.newAuditEvent(meta, s)
+	})
+}
+
+// commitFailureAudit stores the event build returns in a transaction of its own and logs, without
+// request data, an event that could not be stored. The error is returned for callers that must act
+// on it; callers that must not change their answer may ignore it, the log line is already written.
+func commitFailureAudit(ctx context.Context, uow port.UnitOfWork, log *slog.Logger, meta domain.RequestMeta, eventType domain.EventType, build func() (domain.AuditEvent, error)) error {
+	err := uow.WithinTransaction(ctx, func(tx port.TxRepositories) error {
+		e, err := build()
+		if err != nil {
+			return err
+		}
+		return appendAuditEvent(ctx, tx, e)
 	})
 	if err != nil {
-		a.log.Error("could not record an audit event",
+		log.Error("could not record an audit event",
 			slog.String("event", "audit.write_failed"),
 			slog.String("error_code", string(domain.CodeAuditWriteFailed)),
 			slog.String("error", err.Error()),
 			slog.String("request_id", meta.RequestID.String()),
-			slog.String("event_type", string(s.Type)))
+			slog.String("event_type", string(eventType)))
 	}
 	return err
 }

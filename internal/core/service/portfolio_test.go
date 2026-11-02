@@ -1,12 +1,13 @@
 package service
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
-	"io"
 	"log/slog"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -25,6 +26,7 @@ type fakePortfolios struct {
 	stored      map[domain.ID]domain.Portfolio
 	insertErr   error
 	existsAnswe bool
+	existsErr   error
 	inserted    []domain.Portfolio
 	updated     []domain.Portfolio
 }
@@ -66,7 +68,7 @@ func (f *fakePortfolios) DeleteOwnedEmpty(context.Context, domain.ID, domain.ID)
 
 func (f *fakePortfolios) Exists(context.Context, domain.ID) (bool, error) {
 	f.log.add("Portfolios.Exists")
-	return f.existsAnswe, nil
+	return f.existsAnswe, f.existsErr
 }
 
 type fakePortfolioKeys struct {
@@ -92,9 +94,11 @@ func (a loggingAudit) Append(ctx context.Context, e domain.AuditEvent) error {
 type portfolioStore struct {
 	port.Repositories
 	portfolios *fakePortfolios
+	limits     *fakeRateLimits
 }
 
 func (s portfolioStore) Portfolios() port.PortfolioRepository { return s.portfolios }
+func (s portfolioStore) RateLimits() port.RateLimitRepository { return s.limits }
 
 type portfolioTx struct {
 	port.TxRepositories
@@ -125,6 +129,8 @@ type testPortfolios struct {
 	audit      *fakeAudit
 	uow        *portfolioUoW
 	clock      *fakeClock
+	limits     *fakeRateLimits
+	logs       *bytes.Buffer
 	log        *callLog
 	caller     domain.Principal
 	callerMeta domain.RequestMeta
@@ -137,14 +143,17 @@ func newTestPortfolios(t *testing.T) testPortfolios {
 	audit := &fakeAudit{}
 	uow := &portfolioUoW{tx: portfolioTx{portfolios: repo, keys: &fakePortfolioKeys{log: log}, audit: loggingAudit{log: log, audit: audit}}}
 	clock := newFakeClock()
+	limits := &fakeRateLimits{decision: domain.RateLimitDecision{Allowed: true}}
+	logs := &bytes.Buffer{}
 	svc, err := NewPortfolios(PortfolioDeps{
-		Store: portfolioStore{portfolios: repo}, UnitOfWork: uow, Clock: clock, Logger: slog.New(slog.NewJSONHandler(io.Discard, nil)),
+		Store: portfolioStore{portfolios: repo, limits: limits}, UnitOfWork: uow, Clock: clock,
+		Limits: newTestPolicy(t), Logger: slog.New(slog.NewJSONHandler(logs, nil)),
 	})
 	if err != nil {
 		t.Fatalf("NewPortfolios() error = %v", err)
 	}
 	return testPortfolios{
-		svc: svc, repo: repo, audit: audit, uow: uow, clock: clock, log: log,
+		svc: svc, repo: repo, audit: audit, uow: uow, clock: clock, limits: limits, logs: logs, log: log,
 		caller:     domain.Principal{UserID: mustID(t), SessionID: mustID(t)},
 		callerMeta: testMeta(t),
 	}
@@ -368,6 +377,90 @@ func TestUpdateOrDeleteOfAnotherUsersPortfolioIsDeniedAndAudited(t *testing.T) {
 			}
 			if len(tp.audit.events) != 0 {
 				t.Errorf("audit events = %d, want none for an unknown ID", len(tp.audit.events))
+			}
+		})
+	}
+}
+
+// A user who keeps sending IDs that belong to someone else must not be able to fill the audit
+// table (AGENTS.md: bound the log volume of an obvious attack). Each denial asks the limiter first.
+func TestDeniedAccessIsAuditedOnlyWhileTheUserIsUnderTheLimit(t *testing.T) {
+	denied := func(recordMarker bool) domain.RateLimitDecision {
+		return domain.RateLimitDecision{RetryAfter: time.Minute, RecordDenialAudit: recordMarker, Scope: domain.RateLimitAccessDeniedUser}
+	}
+	t.Run("over the limit, once a minute, one rate_limited marker replaces the denial", func(t *testing.T) {
+		tp := newTestPortfolios(t)
+		other := tp.seed(t, mustID(t), "Theirs", 1)
+		tp.repo.existsAnswe = true
+		tp.limits.decision = denied(true)
+
+		if got := tp.svc.Delete(t.Context(), tp.caller, other.ID, mustVersion(t, 1), tp.callerMeta); !errors.Is(got, domain.ErrNotFound) {
+			t.Fatalf("Delete() error = %v, want not_found", got)
+		}
+		last := tp.audit.events[len(tp.audit.events)-1]
+		if last.EventType != domain.EventSecurityRateLimited || last.Outcome != domain.AuditOutcomeDenied || last.ActorUserID != tp.caller.UserID {
+			t.Errorf("audit event = %+v, want security.rate_limited denied for the caller", last)
+		}
+		for _, e := range tp.audit.events {
+			if e.EventType == domain.EventSecurityAccessDenied {
+				t.Errorf("access_denied was written although the limiter refused: %+v", e)
+			}
+		}
+	})
+	t.Run("over the limit, between markers, nothing is written", func(t *testing.T) {
+		tp := newTestPortfolios(t)
+		other := tp.seed(t, mustID(t), "Theirs", 1)
+		tp.repo.existsAnswe = true
+		tp.limits.decision = denied(false)
+
+		if got := tp.svc.Delete(t.Context(), tp.caller, other.ID, mustVersion(t, 1), tp.callerMeta); !errors.Is(got, domain.ErrNotFound) {
+			t.Fatalf("Delete() error = %v, want not_found", got)
+		}
+		if len(tp.audit.events) != 0 {
+			t.Errorf("audit events = %d, want none", len(tp.audit.events))
+		}
+	})
+	t.Run("the limit is counted per user", func(t *testing.T) {
+		tp := newTestPortfolios(t)
+		other := tp.seed(t, mustID(t), "Theirs", 1)
+		tp.repo.existsAnswe = true
+
+		_ = tp.svc.Delete(t.Context(), tp.caller, other.ID, mustVersion(t, 1), tp.callerMeta)
+
+		if len(tp.limits.rules) != 1 || tp.limits.rules[0].Scope != domain.RateLimitAccessDeniedUser {
+			t.Fatalf("rules = %+v, want one access_denied_user rule", tp.limits.rules)
+		}
+		wantKey, err := newTestPolicy(t).AccessDenied(tp.caller.UserID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !bytes.Equal(tp.limits.rules[0].KeyHash, wantKey[0].KeyHash) {
+			t.Error("the rule must be keyed by the caller, not by the portfolio or the owner")
+		}
+	})
+}
+
+// The answer to a write on a portfolio that is not yours is not_found whatever happens to the
+// bookkeeping around it: a 500 for a foreign ID against a 404 for an unknown one would tell them apart.
+func TestDenialBookkeepingFailuresDoNotChangeTheAnswer(t *testing.T) {
+	cases := map[string]func(tp testPortfolios){
+		"the audit cannot be written": func(tp testPortfolios) { tp.audit.err = errors.New("disk full") },
+		"the existence lookup fails":  func(tp testPortfolios) { tp.repo.existsErr = errors.New("connection reset") },
+		"the limiter is down":         func(tp testPortfolios) { tp.limits.err = errors.New("connection refused") },
+	}
+	for name, breakIt := range cases {
+		t.Run(name, func(t *testing.T) {
+			tp := newTestPortfolios(t)
+			other := tp.seed(t, mustID(t), "Theirs", 1)
+			tp.repo.existsAnswe = true
+			breakIt(tp)
+
+			err := tp.svc.Delete(t.Context(), tp.caller, other.ID, mustVersion(t, 1), tp.callerMeta)
+			if !errors.Is(err, domain.ErrNotFound) {
+				t.Fatalf("Delete() error = %v, want not_found", err)
+			}
+			if !strings.Contains(tp.logs.String(), `"level":"ERROR"`) || !strings.Contains(tp.logs.String(), tp.callerMeta.RequestID.String()) {
+				t.Errorf("log %q should record the failure at error level with the request ID", tp.logs.String())
 			}
 		})
 	}

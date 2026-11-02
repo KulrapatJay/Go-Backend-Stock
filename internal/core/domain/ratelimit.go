@@ -17,6 +17,7 @@ const (
 	RateLimitPasswordResetRequestIP        RateLimitScope = "password_reset_request_ip"
 	RateLimitPasswordResetConfirmIP        RateLimitScope = "password_reset_confirm_ip"
 	RateLimitInstrumentLookupUser          RateLimitScope = "instrument_lookup_user"
+	RateLimitAccessDeniedUser              RateLimitScope = "access_denied_user"
 )
 
 // RateLimitScopes lists every scope, for tests and the DB CHECK in milestone 3.
@@ -25,7 +26,7 @@ func RateLimitScopes() []RateLimitScope {
 		RateLimitLoginEmail, RateLimitLoginIP, RateLimitSignupIP, RateLimitGoogleStartIP,
 		RateLimitEmailVerificationRequestEmail, RateLimitEmailVerificationRequestIP, RateLimitEmailVerificationConfirmIP,
 		RateLimitPasswordResetRequestEmail, RateLimitPasswordResetRequestIP, RateLimitPasswordResetConfirmIP,
-		RateLimitInstrumentLookupUser,
+		RateLimitInstrumentLookupUser, RateLimitAccessDeniedUser,
 	}
 }
 

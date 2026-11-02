@@ -154,7 +154,7 @@ func TestBuildServesThePortfolioRoutes(t *testing.T) {
 		t.Fatalf("buildAuth() error = %v", err)
 	}
 	defer func() { _ = auth.mail.Close(context.Background()) }()
-	portfolios, err := buildPortfolios(pool, log)
+	portfolios, err := buildPortfolios(cfg, pool, log)
 	if err != nil {
 		t.Fatalf("buildPortfolios() error = %v", err)
 	}

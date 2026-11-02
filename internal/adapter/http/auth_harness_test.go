@@ -268,7 +268,7 @@ func newAuthHarness(t *testing.T, opts ...harnessOption) *authHarness {
 		ClientIP: NewClientIPResolver(testTrustedProxies), PublicOrigin: testOrigin,
 	}}
 	if cfg.portfolios {
-		portfolios, err := service.NewPortfolios(service.PortfolioDeps{Store: store, UnitOfWork: uow, Clock: clock, Logger: log})
+		portfolios, err := service.NewPortfolios(service.PortfolioDeps{Store: store, UnitOfWork: uow, Clock: clock, Limits: limits, Logger: log})
 		must(err)
 		options.Portfolios = PortfolioOptions{Service: portfolios}
 	}

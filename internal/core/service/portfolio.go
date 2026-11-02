@@ -14,6 +14,7 @@ type PortfolioDeps struct {
 	Store      port.Repositories
 	UnitOfWork port.UnitOfWork
 	Clock      port.Clock
+	Limits     *RateLimitPolicy
 	Logger     *slog.Logger
 }
 
@@ -23,6 +24,7 @@ type Portfolios struct {
 	store port.Repositories
 	uow   port.UnitOfWork
 	clock port.Clock
+	limit *RateLimitPolicy
 	log   *slog.Logger
 }
 
@@ -30,10 +32,10 @@ var _ port.PortfolioService = (*Portfolios)(nil)
 
 // NewPortfolios checks that every dependency is present.
 func NewPortfolios(d PortfolioDeps) (*Portfolios, error) {
-	if d.Store == nil || d.UnitOfWork == nil || d.Clock == nil || d.Logger == nil {
+	if d.Store == nil || d.UnitOfWork == nil || d.Clock == nil || d.Limits == nil || d.Logger == nil {
 		return nil, errors.New("portfolio service is missing a dependency")
 	}
-	return &Portfolios{store: d.Store, uow: d.UnitOfWork, clock: d.Clock, log: d.Logger}, nil
+	return &Portfolios{store: d.Store, uow: d.UnitOfWork, clock: d.Clock, limit: d.Limits, log: d.Logger}, nil
 }
 
 // portfolioMetadata is the allowlist of portfolio audit metadata. Changed names the fields whose
@@ -42,6 +44,7 @@ type portfolioMetadata struct {
 	IP        string   `json:"ip,omitempty"`
 	UserAgent string   `json:"user_agent,omitempty"`
 	Changed   []string `json:"changed,omitempty"`
+	Scope     string   `json:"scope,omitempty"` // security.rate_limited only
 }
 
 const portfolioTarget = "portfolio"
@@ -149,35 +152,64 @@ func (s *Portfolios) Delete(ctx context.Context, p domain.Principal, id domain.I
 	return nil
 }
 
-// denyIfForeign turns the not-found of a write into an audited access denial when the portfolio
-// exists under another owner. The caller always gets not_found, so nothing tells a portfolio that
-// belongs to someone else from one that was never there. Any other error passes through.
+// denyIfForeign records the access denial when the not-found of a write was really a portfolio of
+// another owner, and returns err unchanged. The answer never depends on that bookkeeping: if the
+// lookup, the limiter or the audit write fails, the failure is logged with the request ID and the
+// caller still gets not_found, so a foreign ID cannot be told from an unknown one by a 500. The
+// response time can still differ by the extra queries; IDs are random, so this only confirms an ID
+// the caller already holds. Any other error passes through.
 func (s *Portfolios) denyIfForeign(ctx context.Context, err error, p domain.Principal, id domain.ID, meta domain.RequestMeta) error {
-	if !errors.Is(err, domain.ErrNotFound) {
-		return err
+	if errors.Is(err, domain.ErrNotFound) {
+		s.recordDenial(ctx, p, id, meta)
 	}
-	exists, lookupErr := s.store.Portfolios().Exists(ctx, id)
-	if lookupErr != nil {
-		return lookupErr
+	return err
+}
+
+// recordDenial audits a refused access to someone else's portfolio, at most accessDeniedPerHourUser
+// events per user per hour. Past that limit the first refusal each minute is audited as
+// security.rate_limited instead, so a flood stays visible without filling the table.
+func (s *Portfolios) recordDenial(ctx context.Context, p domain.Principal, id domain.ID, meta domain.RequestMeta) {
+	exists, err := s.store.Portfolios().Exists(ctx, id)
+	if err != nil {
+		s.logDenialFailure("could not check who owns the portfolio", err, meta)
+		return
 	}
 	if !exists {
-		return err
+		return
+	}
+	rules, err := s.limit.AccessDenied(p.UserID)
+	if err != nil {
+		s.logDenialFailure("could not build the access denial limit", err, meta)
+		return
+	}
+	decision, err := s.store.RateLimits().Admit(ctx, rules, NowForStorage(s.clock))
+	if err != nil {
+		s.logDenialFailure("could not check the access denial limit", err, meta)
+		return
 	}
 	spec := portfolioSpec(domain.EventSecurityAccessDenied, p, id)
 	spec.Outcome, spec.Reason = domain.AuditOutcomeDenied, "not_owner"
-	auditErr := s.uow.WithinTransaction(ctx, func(tx port.TxRepositories) error {
-		return s.appendAudit(ctx, tx, meta, spec, nil)
-	})
-	if auditErr != nil {
-		s.log.Error("could not record an audit event",
-			slog.String("event", "audit.write_failed"),
-			slog.String("error_code", string(domain.CodeAuditWriteFailed)),
-			slog.String("error", auditErr.Error()),
-			slog.String("request_id", meta.RequestID.String()),
-			slog.String("event_type", string(spec.Type)))
-		return auditErr
+	switch {
+	case decision.Allowed:
+	case decision.RecordDenialAudit:
+		spec = auditSpec{
+			Type: domain.EventSecurityRateLimited, Outcome: domain.AuditOutcomeDenied, Actor: p.UserID, SessionID: p.SessionID,
+			TargetType: "rate_limit", TargetID: string(decision.Scope), Scope: decision.Scope,
+		}
+	default:
+		return
 	}
-	return err
+	// commitFailureAudit logs a lost event; the answer to the caller does not change.
+	_ = commitFailureAudit(ctx, s.uow, s.log, meta, spec.Type, func() (domain.AuditEvent, error) {
+		return newAuditEvent(s.clock, meta, spec, portfolioMetadata{IP: meta.MaskedIP, UserAgent: meta.UserAgent, Scope: string(spec.Scope)})
+	})
+}
+
+func (s *Portfolios) logDenialFailure(msg string, err error, meta domain.RequestMeta) {
+	s.log.Error(msg,
+		slog.String("event", "portfolio.denial_bookkeeping_failed"),
+		slog.String("error", err.Error()),
+		slog.String("request_id", meta.RequestID.String()))
 }
 
 func (s *Portfolios) appendAudit(ctx context.Context, tx port.TxRepositories, meta domain.RequestMeta, spec auditSpec, changed []string) error {

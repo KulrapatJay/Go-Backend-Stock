@@ -229,7 +229,7 @@
     }
 
     checks {
-      `scope IN ('login_email', 'login_ip', 'signup_ip', 'google_start_ip', 'email_verification_request_email', 'email_verification_request_ip', 'email_verification_confirm_ip', 'password_reset_request_email', 'password_reset_request_ip', 'password_reset_confirm_ip', 'instrument_lookup_user')` [name: 'rate_limit_keys_scope_allowed']
+      `scope IN ('login_email', 'login_ip', 'signup_ip', 'google_start_ip', 'email_verification_request_email', 'email_verification_request_ip', 'email_verification_confirm_ip', 'password_reset_request_email', 'password_reset_request_ip', 'password_reset_confirm_ip', 'instrument_lookup_user', 'access_denied_user')` [name: 'rate_limit_keys_scope_allowed']
     }
 
     Note: 'Lock keys in key_hash order when admitting a request against multiple rolling-window limits. Do not store raw email or IP.'
