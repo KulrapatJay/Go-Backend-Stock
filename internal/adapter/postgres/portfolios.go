@@ -147,6 +147,15 @@ func (r *PortfolioRepository) DeleteOwnedEmpty(ctx context.Context, ownerID, por
 	return domain.ErrNotFound
 }
 
+// Exists reports whether a portfolio has this ID, whoever owns it.
+func (r *PortfolioRepository) Exists(ctx context.Context, portfolioID domain.ID) (bool, error) {
+	exists, err := r.q.PortfolioExists(ctx, pgUUID(portfolioID))
+	if err != nil {
+		return false, mapError(err)
+	}
+	return exists, nil
+}
+
 // missingOrStale tells a version conflict from a portfolio that is missing or not the owner's.
 func (r *PortfolioRepository) missingOrStale(ctx context.Context, ownerID, portfolioID domain.ID) error {
 	exists, err := r.q.OwnedPortfolioExists(ctx, sqlc.OwnedPortfolioExistsParams{ID: pgUUID(portfolioID), UserID: pgUUID(ownerID)})
