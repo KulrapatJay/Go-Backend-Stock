@@ -24,6 +24,7 @@ type auditSpec struct {
 	TargetID   string
 	Reason     string
 	Method     string // "password" or "google" for login events
+	Provider   string // "google" for identity events
 	Scope      domain.RateLimitScope
 }
 
@@ -32,6 +33,7 @@ type auditMetadata struct {
 	IP        string `json:"ip,omitempty"`
 	UserAgent string `json:"user_agent,omitempty"`
 	Method    string `json:"method,omitempty"`
+	Provider  string `json:"provider,omitempty"`
 	Scope     string `json:"scope,omitempty"`
 }
 
@@ -40,7 +42,7 @@ func (a *Auth) newAuditEvent(meta domain.RequestMeta, s auditSpec) (domain.Audit
 	if err != nil {
 		return domain.AuditEvent{}, err
 	}
-	metadata, err := json.Marshal(auditMetadata{IP: meta.MaskedIP, UserAgent: meta.UserAgent, Method: s.Method, Scope: string(s.Scope)})
+	metadata, err := json.Marshal(auditMetadata{IP: meta.MaskedIP, UserAgent: meta.UserAgent, Method: s.Method, Provider: s.Provider, Scope: string(s.Scope)})
 	if err != nil {
 		return domain.AuditEvent{}, fmt.Errorf("encode audit metadata: %w", err)
 	}

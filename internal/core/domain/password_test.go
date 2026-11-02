@@ -95,6 +95,30 @@ func TestParsePasswordWithoutEmail(t *testing.T) {
 	}
 }
 
+func TestPasswordContainsEmail(t *testing.T) {
+	email := passwordTestEmail(t, "Alice.Smith@example.com")
+	for raw, want := range map[string]bool{
+		"Xx!alice.smith9": true, // the local part, case-insensitive
+		"Xx!ALICE.SMITH9": true,
+		"Xx!alice9":       false, // a piece of it is not enough
+	} {
+		p, err := domain.ParsePassword(raw, domain.Email{})
+		if err != nil {
+			t.Fatalf("%q: %v", raw, err)
+		}
+		if got := domain.PasswordContainsEmail(p, email); got != want {
+			t.Errorf("PasswordContainsEmail(%q) = %v, want %v", raw, got, want)
+		}
+	}
+	p, err := domain.ParsePassword("Xx!alice.smith9", domain.Email{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if domain.PasswordContainsEmail(p, domain.Email{}) {
+		t.Error("the zero email matches nothing")
+	}
+}
+
 func TestParsePasswordCheckedAsksTheCommonListWithLowercase(t *testing.T) {
 	email := passwordTestEmail(t, "somebody@example.com")
 	var seen []string

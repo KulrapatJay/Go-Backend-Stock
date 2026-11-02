@@ -13,13 +13,14 @@ type cookieJar struct {
 	secure      bool
 	sessionName string
 	nonceName   string
+	bindingName string // the browser binding of a Google flow
 }
 
 func newCookieJar(secure bool) cookieJar {
 	if secure {
-		return cookieJar{secure: true, sessionName: "__Host-session", nonceName: "__Host-csrf_nonce"}
+		return cookieJar{secure: true, sessionName: "__Host-session", nonceName: "__Host-csrf_nonce", bindingName: "__Host-oidc_binding"}
 	}
-	return cookieJar{sessionName: "session", nonceName: "csrf_nonce"}
+	return cookieJar{sessionName: "session", nonceName: "csrf_nonce", bindingName: "oidc_binding"}
 }
 
 // set writes an HttpOnly, SameSite=Lax cookie for the whole site that expires at expires. It sets no

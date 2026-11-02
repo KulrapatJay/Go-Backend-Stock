@@ -19,6 +19,8 @@ import (
 const (
 	verificationSubject        = "รหัสยืนยันอีเมลของคุณ"
 	registrationAttemptSubject = "มีผู้พยายามสมัครสมาชิกด้วยอีเมลของคุณ"
+	passwordResetSubject       = "รหัสสำหรับตั้งรหัสผ่านใหม่"   //nolint:gosec // G101 false positive: a mail subject, not a credential.
+	passwordChangedSubject     = "รหัสผ่านของคุณถูกเปลี่ยนแล้ว" //nolint:gosec // G101 false positive: a mail subject, not a credential.
 	otpExpiryLayout            = "2006-01-02 15:04"
 )
 
@@ -152,4 +154,18 @@ func registrationAttemptBody() string {
 	return "มีผู้พยายามสร้างบัญชีด้วยอีเมลนี้ แต่อีเมลนี้มีบัญชีอยู่แล้ว\n\n" +
 		"หากเป็นคุณ ให้เข้าสู่ระบบแทน หรือใช้ตัวเลือก \"ลืมรหัสผ่าน\" หากจำรหัสผ่านไม่ได้\n" +
 		"หากไม่ใช่คุณ ไม่ต้องทำอะไร\n"
+}
+
+func passwordResetBody(m domain.OTPMail) string {
+	return "รหัสสำหรับตั้งรหัสผ่านใหม่ของคุณคือ " + m.OTP.Reveal() + "\n\n" +
+		"รหัสนี้ใช้ได้ครั้งเดียวถึง " + m.ExpiresAt.In(thaiZone).Format(otpExpiryLayout) + " น. (เวลาประเทศไทย) ห้ามบอกรหัสนี้กับผู้อื่น\n\n" +
+		"รหัสอ้างอิง: " + m.ChallengeID.String() + "\n\n" +
+		"หากคุณไม่ได้ขอตั้งรหัสผ่านใหม่ ไม่ต้องทำอะไร รหัสผ่านเดิมยังใช้ได้\n"
+}
+
+// passwordChangedBody carries no password and no code: it only tells the owner what happened.
+func passwordChangedBody() string {
+	return "รหัสผ่านของบัญชีนี้เพิ่งถูกเปลี่ยน และทุกอุปกรณ์ที่เข้าสู่ระบบอยู่ถูกออกจากระบบแล้ว\n\n" +
+		"หากเป็นคุณ ให้เข้าสู่ระบบด้วยรหัสผ่านใหม่\n" +
+		"หากไม่ใช่คุณ ให้ใช้ \"ลืมรหัสผ่าน\" ตั้งรหัสใหม่ทันที\n"
 }

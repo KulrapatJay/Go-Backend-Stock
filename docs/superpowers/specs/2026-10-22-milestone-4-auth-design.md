@@ -1,6 +1,6 @@
 # Milestone 4 — Auth, email verification, sessions และ Google login (design)
 
-- **สถานะ:** design ทั้ง 4 ส่วนได้รับการยืนยันในบทสนทนา 2026-10-22; รอผู้ใช้รีวิว spec ฉบับนี้ — แผน 4a: [2026-10-22-milestone-4a-auth-building-blocks.md](../plans/2026-10-22-milestone-4a-auth-building-blocks.md) ลงมือครบ รอตรวจรับ; แผน 4b: [2026-10-24-milestone-4b-auth-endpoints.md](../plans/2026-10-24-milestone-4b-auth-endpoints.md) ลงมือครบ รอตรวจรับ
+- **สถานะ:** design ทั้ง 4 ส่วนได้รับการยืนยันในบทสนทนา 2026-10-22; รอผู้ใช้รีวิว spec ฉบับนี้ — แผน 4a: [2026-10-22-milestone-4a-auth-building-blocks.md](../plans/2026-10-22-milestone-4a-auth-building-blocks.md) ลงมือครบ รอตรวจรับ; แผน 4b: [2026-10-24-milestone-4b-auth-endpoints.md](../plans/2026-10-24-milestone-4b-auth-endpoints.md) ลงมือครบ รอตรวจรับ; แผน 4c: [2026-10-27-milestone-4c-google-oidc.md](../plans/2026-10-27-milestone-4c-google-oidc.md) ลงมือครบ รอตรวจรับ
 - **อ้างอิง:** [AGENTS.md](../../../AGENTS.md), [phase 1 spec](2026-10-05-phase-1-design.md) หัวข้อ 5, 8, 9, 10, 11 และ 13, [milestone 3 design](2026-10-17-milestone-3-persistence-design.md), [roadmap](../plans/2026-10-05-phase-1-roadmap.md) milestone 4, ADR [0002](../../adr/0002-server-side-sessions.md), [0005](../../adr/0005-password-hashing-and-policy.md), [0006](../../adr/0006-email-verification-and-registration.md), [0007](../../adr/0007-single-otp-challenges-table.md), [0013](../../adr/0013-domain-value-types.md)
 
 phase 1 spec กำหนดรายละเอียดส่วนใหญ่ของ milestone นี้ไว้แล้ว (parameters ของ Argon2id, กติการหัสผ่าน, OTP, session cookie, CSRF, rate limits, OIDC + PKCE และ audit events) เอกสารนี้ไม่ลอกซ้ำทั้งหมด แต่ระบุการแบ่งงาน การตัดสินใจที่เพิ่มขึ้น และรูปแบบที่แน่นอนที่ phase 1 spec ไม่ได้กำหนด หากเอกสารนี้ขัดกับ phase 1 spec ให้ถามผู้ใช้ก่อน
@@ -202,7 +202,7 @@ scripts/                   build_blocklist.go (สร้างไฟล์ block
 
 ## 10. นอกขอบเขต
 
-- password reset และอีเมลแจ้งเปลี่ยนรหัสผ่าน (milestone 5)
+- password reset และอีเมลแจ้งเปลี่ยนรหัสผ่าน (milestone 5) — ทำแล้วใน [แผน 5](../plans/2026-10-29-milestone-5-password-reset.md)
 - endpoints ของพอร์ตและรายการซื้อขาย (milestone 6–7)
 - เชื่อม Google จริงใน CI; ทดสอบกับ Google จริงทำด้วยมือเมื่อผู้ใช้มี credentials
 - frontend และการเปลี่ยนปลายทาง redirect หลัง Google (เมื่อเริ่ม Next.js)

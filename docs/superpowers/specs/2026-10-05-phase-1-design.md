@@ -222,7 +222,7 @@ type EmailVerificationService interface {
     Confirm(context.Context, domain.VerifyEmailInput, domain.RequestMeta) error
 }
 type PasswordResetService interface {
-    Request(context.Context, string, domain.RequestMeta) (domain.OTPReceipt, error)
+    Request(context.Context, domain.Email, domain.RequestMeta) (domain.OTPReceipt, error)
     Reset(context.Context, domain.ResetPasswordInput, domain.RequestMeta) error
 }
 type PortfolioService interface {
@@ -262,7 +262,7 @@ type Mailer interface {
     SendEmailVerification(context.Context, domain.OTPMail) error
     SendRegistrationAttempt(context.Context, string) error // อีเมลนี้มีบัญชีอยู่แล้ว
     SendPasswordReset(context.Context, domain.OTPMail) error
-    SendPasswordChanged(context.Context, string) error
+    SendPasswordChanged(context.Context, domain.Email) error
 }
 type UnitOfWork interface {
     WithinTransaction(context.Context, func(TxRepositories) error) error

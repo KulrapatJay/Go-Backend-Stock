@@ -40,6 +40,8 @@ type fakeSender struct {
 	mu        sync.Mutex
 	sent      []domain.OTPMail
 	attempts  []domain.Email
+	resets    []domain.OTPMail
+	changed   []domain.Email
 	started   chan struct{}
 	block     chan struct{}
 	err       error
@@ -83,6 +85,26 @@ func (f *fakeSender) SendRegistrationAttempt(ctx context.Context, to domain.Emai
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.attempts = append(f.attempts, to)
+	return f.err
+}
+
+func (f *fakeSender) SendPasswordReset(ctx context.Context, m domain.OTPMail) error {
+	if err := f.wait(ctx); err != nil {
+		return err
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.resets = append(f.resets, m)
+	return f.err
+}
+
+func (f *fakeSender) SendPasswordChanged(ctx context.Context, to domain.Email) error {
+	if err := f.wait(ctx); err != nil {
+		return err
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.changed = append(f.changed, to)
 	return f.err
 }
 
@@ -237,6 +259,64 @@ func TestDispatcherLogsNeverContainAddressOrOTP(t *testing.T) {
 		if strings.Contains(out, secret) {
 			t.Errorf("log %q leaks %q", out, secret)
 		}
+	}
+}
+
+func TestDispatcherQueuesThePasswordResetEmails(t *testing.T) {
+	sender := &fakeSender{}
+	d, _ := newTestDispatcher(t, sender, nil)
+	mail := testOTPMail(t)
+	if err := d.SendPasswordReset(t.Context(), mail); err != nil {
+		t.Fatal(err)
+	}
+	if err := d.SendPasswordChanged(t.Context(), mail.To); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	if err := d.Close(ctx); err != nil {
+		t.Fatal(err)
+	}
+	sender.mu.Lock()
+	defer sender.mu.Unlock()
+	if len(sender.resets) != 1 || sender.resets[0] != mail {
+		t.Errorf("resets = %v, want [%v]", sender.resets, mail)
+	}
+	if len(sender.changed) != 1 || sender.changed[0] != mail.To {
+		t.Errorf("changed = %v, want [%v]", sender.changed, mail.To)
+	}
+}
+
+func TestDispatcherLogsOfFailedPasswordEmailsNeverContainAddressOrOTP(t *testing.T) {
+	for kind, send := range map[string]func(*Dispatcher, domain.OTPMail) error{
+		"password_reset": func(d *Dispatcher, m domain.OTPMail) error { return d.SendPasswordReset(context.Background(), m) },
+		"password_changed": func(d *Dispatcher, m domain.OTPMail) error {
+			return d.SendPasswordChanged(context.Background(), m.To)
+		},
+	} {
+		t.Run(kind, func(t *testing.T) {
+			sender := &fakeSender{err: &textproto.Error{Code: 550, Msg: "user@example.com 042731 mailbox unavailable"}}
+			d, logs := newTestDispatcher(t, sender, nil)
+			if err := send(d, testOTPMail(t)); err != nil {
+				t.Fatal(err)
+			}
+			ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+			defer cancel()
+			if err := d.Close(ctx); err != nil {
+				t.Fatal(err)
+			}
+			out := logs.String()
+			for _, want := range []string{`"event":"mail.send_failed"`, `"kind":"` + kind + `"`, `"error_class":"smtp_550"`} {
+				if !strings.Contains(out, want) {
+					t.Errorf("log %q lacks %s", out, want)
+				}
+			}
+			for _, secret := range []string{"user@example.com", "example.com", "042731", "mailbox unavailable"} {
+				if strings.Contains(out, secret) {
+					t.Errorf("log %q leaks %q", out, secret)
+				}
+			}
+		})
 	}
 }
 

@@ -97,6 +97,13 @@ func TestRateLimitPolicyRules(t *testing.T) {
 			}},
 		{"email verification confirm", func() ([]domain.RateLimitRule, error) { return policy.EmailVerificationConfirm(ip) },
 			map[domain.RateLimitScope][]ruleShape{domain.RateLimitEmailVerificationConfirmIP: {{20, quarter}}}},
+		{"password reset request", func() ([]domain.RateLimitRule, error) { return policy.PasswordResetRequest(email, ip) },
+			map[domain.RateLimitScope][]ruleShape{
+				domain.RateLimitPasswordResetRequestIP:    {{20, hour}},
+				domain.RateLimitPasswordResetRequestEmail: cooldownAndHourly,
+			}},
+		{"password reset confirm", func() ([]domain.RateLimitRule, error) { return policy.PasswordResetConfirm(ip) },
+			map[domain.RateLimitScope][]ruleShape{domain.RateLimitPasswordResetConfirmIP: {{20, quarter}}}},
 		{"google start", func() ([]domain.RateLimitRule, error) { return policy.GoogleStart(ip) },
 			map[domain.RateLimitScope][]ruleShape{domain.RateLimitGoogleStartIP: {{20, hour}}}},
 	}
@@ -144,6 +151,59 @@ func TestRateLimitPolicyEmailRulesShareOneKey(t *testing.T) {
 	if len(emailKeys) != 2 || !bytes.Equal(emailKeys[0], emailKeys[1]) {
 		t.Errorf("the cooldown and the hourly rule must count the same events: keys = %x", emailKeys)
 	}
+}
+
+func TestPasswordResetRequestRules(t *testing.T) {
+	policy := newTestPolicy(t)
+	email := mustEmail(t, "a@example.com")
+	ip := netip.MustParseAddr("203.0.113.9")
+	rules, err := policy.PasswordResetRequest(email, ip)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []domain.RateLimitRule{
+		{Scope: domain.RateLimitPasswordResetRequestEmail, Limit: 1, Window: time.Minute},
+		{Scope: domain.RateLimitPasswordResetRequestEmail, Limit: 5, Window: time.Hour},
+		{Scope: domain.RateLimitPasswordResetRequestIP, Limit: 20, Window: time.Hour},
+	}
+	if len(rules) != len(want) {
+		t.Fatalf("got %d rules, want %d", len(rules), len(want))
+	}
+	for i, w := range want {
+		if rules[i].Scope != w.Scope || rules[i].Limit != w.Limit || rules[i].Window != w.Window {
+			t.Errorf("rule %d = %s/%d/%v, want %s/%d/%v", i, rules[i].Scope, rules[i].Limit, rules[i].Window, w.Scope, w.Limit, w.Window)
+		}
+	}
+	if !bytes.Equal(rules[0].KeyHash, rules[1].KeyHash) {
+		t.Error("the cooldown and the hourly rule must count the same events")
+	}
+	verification, err := policy.EmailVerificationRequest(email, ip)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, v := range verification {
+		for _, r := range rules {
+			if bytes.Equal(v.KeyHash, r.KeyHash) {
+				t.Errorf("reset key for %s equals a verification key for %s: the two quotas must not mix", r.Scope, v.Scope)
+			}
+		}
+	}
+	if _, err := policy.PasswordResetRequest(email, netip.Addr{}); err == nil {
+		t.Error("a zero IP must be an error")
+	}
+}
+
+func TestPasswordResetConfirmRule(t *testing.T) {
+	policy := newTestPolicy(t)
+	rules, err := policy.PasswordResetConfirm(netip.MustParseAddr("203.0.113.9"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rules) != 1 || rules[0].Scope != domain.RateLimitPasswordResetConfirmIP || rules[0].Limit != 20 || rules[0].Window != 15*time.Minute {
+		t.Errorf("rules = %+v", rules)
+	}
+	_, err = policy.PasswordResetConfirm(netip.Addr{})
+	_ = requireCode(t, err, domain.CodeInternal)
 }
 
 func TestRateLimitPolicyKeysHideEmailAndNormaliseIP(t *testing.T) {

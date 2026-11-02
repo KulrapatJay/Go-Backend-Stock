@@ -10,7 +10,7 @@
 
 **Spec:** [แบบระบบสำหรับตรวจยืนยัน](../specs/2026-10-05-phase-1-design.md) โดยยึดข้อกำหนดใน [AGENTS.md](../../../AGENTS.md)
 
-**Status:** ผู้ใช้ยืนยันให้เริ่มตามลำดับแล้ว จัดทำข้อเสนอ milestone 0 ใน spec ที่ลิงก์ด้านบนแล้ว ผู้ใช้ยืนยันข้อเสนอเดิมและเลื่อนหน้าหุ้นรายตัว/กราฟไปเฟสถัดไปแล้ว (2026-10-14) และยืนยันแบบ email verification, portfolio name uniqueness และกติการหัสผ่านแล้ว milestone 0 ผ่านการตรวจรับ; milestone 1 ผ่านการตรวจรับเมื่อ 2026-10-15 (ลงมือครบทุก task, self-review ทั้ง branch ไม่พบ Critical/Important, CI บน GitHub ผ่าน) milestone 2 ผ่านการตรวจรับเมื่อ 2026-10-17 (ลงมือครบทุก task, รีวิวทั้ง branch ด้วย subagent แก้ Important ครบ 4 ข้อ) milestone 3 แผน 3a ผ่านการตรวจรับเมื่อ 2026-10-20 (รีวิวทั้ง branch ด้วย subagent แก้ Important ครบ 4 ข้อ, CI บน GitHub ผ่าน) แผน 3b ผ่านการตรวจรับเมื่อ 2026-10-21 (รีวิวทั้ง branch ด้วย subagent แก้ Important 2 ข้อและ Minor 4 ข้อ; CI บน GitHub ยังไม่ได้รันเพราะยังไม่ push) แผน 3c ผ่านการตรวจรับเมื่อ 2026-10-22 (รีวิวทั้ง branch ด้วย subagent แก้ Important 1 ข้อและ Minor 6 ข้อ) milestone 3 ครบทุกแผน; CI บน GitHub ของ 3b/3c ยังไม่ได้รันเพราะยังไม่ push milestone 4 มี design ([spec](../specs/2026-10-22-milestone-4-auth-design.md)) แบ่งเป็นแผน 4a/4b/4c; แผน 4a ลงมือครบแล้ว รอตรวจรับ แผน 4b ลงมือครบแล้ว รอตรวจรับ ขั้นต่อไปคือแผน 4c
+**Status:** ผู้ใช้ยืนยันให้เริ่มตามลำดับแล้ว จัดทำข้อเสนอ milestone 0 ใน spec ที่ลิงก์ด้านบนแล้ว ผู้ใช้ยืนยันข้อเสนอเดิมและเลื่อนหน้าหุ้นรายตัว/กราฟไปเฟสถัดไปแล้ว (2026-10-14) และยืนยันแบบ email verification, portfolio name uniqueness และกติการหัสผ่านแล้ว milestone 0 ผ่านการตรวจรับ; milestone 1 ผ่านการตรวจรับเมื่อ 2026-10-15 (ลงมือครบทุก task, self-review ทั้ง branch ไม่พบ Critical/Important, CI บน GitHub ผ่าน) milestone 2 ผ่านการตรวจรับเมื่อ 2026-10-17 (ลงมือครบทุก task, รีวิวทั้ง branch ด้วย subagent แก้ Important ครบ 4 ข้อ) milestone 3 แผน 3a ผ่านการตรวจรับเมื่อ 2026-10-20 (รีวิวทั้ง branch ด้วย subagent แก้ Important ครบ 4 ข้อ, CI บน GitHub ผ่าน) แผน 3b ผ่านการตรวจรับเมื่อ 2026-10-21 (รีวิวทั้ง branch ด้วย subagent แก้ Important 2 ข้อและ Minor 4 ข้อ; CI บน GitHub ยังไม่ได้รันเพราะยังไม่ push) แผน 3c ผ่านการตรวจรับเมื่อ 2026-10-22 (รีวิวทั้ง branch ด้วย subagent แก้ Important 1 ข้อและ Minor 6 ข้อ) milestone 3 ครบทุกแผน; CI บน GitHub ของ 3b/3c ยังไม่ได้รันเพราะยังไม่ push milestone 4 มี design ([spec](../specs/2026-10-22-milestone-4-auth-design.md)) แบ่งเป็นแผน 4a/4b/4c; แผน 4a ลงมือครบแล้ว รอตรวจรับ แผน 4b ลงมือครบแล้ว รอตรวจรับ แผน 4c ลงมือครบแล้ว รอตรวจรับ (ผู้ใช้ทดสอบกับ Google จริงด้วยมือบน browser แล้วเมื่อ 2026-10-29: link_required, link, login และสร้างบัญชีใหม่ผ่านทั้งหมด) milestone 5 มีแผน 5 ([plan](2026-10-29-milestone-5-password-reset.md)) ลงมือครบแล้ว รอตรวจรับ
 
 ## Global Constraints
 
@@ -129,7 +129,7 @@
 
 ### 4. Auth + email verification + sessions + Google login + HTTP handlers
 
-**แผนลงมือ:** [design](../specs/2026-10-22-milestone-4-auth-design.md) — [4a](2026-10-22-milestone-4a-auth-building-blocks.md) (ชิ้นส่วนพื้นฐาน; ลงมือครบ รอตรวจรับ); [4b](2026-10-24-milestone-4b-auth-endpoints.md) (AuthService, EmailVerificationService, middleware, endpoints; ลงมือครบ รอตรวจรับ); 4c (Google OIDC) ยังไม่มีแผน
+**แผนลงมือ:** [design](../specs/2026-10-22-milestone-4-auth-design.md) — [4a](2026-10-22-milestone-4a-auth-building-blocks.md) (ชิ้นส่วนพื้นฐาน; ลงมือครบ รอตรวจรับ); [4b](2026-10-24-milestone-4b-auth-endpoints.md) (AuthService, EmailVerificationService, middleware, endpoints; ลงมือครบ รอตรวจรับ); [4c](2026-10-27-milestone-4c-google-oidc.md) (Google OIDC; ลงมือครบ รอตรวจรับ)
 
 **แผน 4a ปิดข้อส่งต่อแล้ว:** `ParseEmail` ปฏิเสธ `"(),:;<>[\]` และอักขระซ่อน (ข้อส่งต่อจาก milestone 2); `service.NowForStorage` ตัดเวลาที่ microsecond (รีวิว 3b); `service.NewRateLimitPolicy` สร้าง rules ผ่าน `domain.NewRateLimitRule` เท่านั้น จึงไม่มี rule ที่ `Limit` เป็นศูนย์ (รีวิว 3b) — ที่เหลือของข้อส่งต่อ 3b (`FOR UPDATE` ของ `OTPChallengeRepository.Lock`, purpose อื่น) ปิดใน 4b ตามหัวข้อ 9 ของ design
 
@@ -149,8 +149,9 @@
 - login ซ้อน (re-login ขณะมี session) ยังไม่ revoke session เดิม
 - สอง login พร้อมกันบนบัญชีที่ hash เก่าอาจได้ 401 หนึ่งครั้ง (fails closed)
 - test `TestConcurrentWrongCodesAreAllCounted` ส่ง 5 คำขอเท่ากับเพดาน ควรเพิ่มเป็น 8 — **ปิดแล้ว: เปลี่ยนเป็น `TestConcurrentWrongCodesAreSerializedByTheChallengeLock` ส่ง 8 คำขอ**
-- ยอมรับความเสี่ยงการสมัครชิงอีเมล (ตัดสินใจ 2026-10-27): ผู้โจมตีสมัครอีเมลของเหยื่อไว้ก่อนด้วยรหัสของตัวเอง ถ้าเหยื่อกด Resend แล้วยืนยันอีเมล บัญชีจะยืนยันโดยยังใช้รหัสผ่านของผู้โจมตี — คง Resend แบบรับอีเมลอย่างเดียวไว้; ทางแก้คือ forgot-password ใน milestone 5 (reset เปลี่ยนรหัสและ revoke ทุก session) และทบทวนอีกครั้งก่อน deploy
+- ยอมรับความเสี่ยงการสมัครชิงอีเมล (ตัดสินใจ 2026-10-27): ผู้โจมตีสมัครอีเมลของเหยื่อไว้ก่อนด้วยรหัสของตัวเอง ถ้าเหยื่อกด Resend แล้วยืนยันอีเมล บัญชีจะยืนยันโดยยังใช้รหัสผ่านของผู้โจมตี — คง Resend แบบรับอีเมลอย่างเดียวไว้; ทางแก้คือ forgot-password ใน milestone 5 (reset เปลี่ยนรหัสและ revoke ทุก session) และทบทวนอีกครั้งก่อน deploy — **ปิดแล้วในแผน 5**: reset ตั้งรหัสใหม่, ยืนยันอีเมล, revoke ทุก session และปิดรหัสยืนยันเก่า
 - ต้อง rotate รหัสผ่านของ dev DB ถ้าแชร์ transcript เพราะ Makefile echo คำสั่งตอนรัน `make test-integration` โดยไม่ใส่ `-s` (การเพิ่ม `@` ใน recipe ไม่อยู่ในงานของ 4b แค่จดไว้)
+- ข้อส่งต่อจากแผน 4c: ทดสอบ Google จริงบน browser — **ปิดแล้ว 2026-10-29** (ทดสอบ dev ด้วย OAuth client โหมด Testing; ก่อนปล่อยระบบจริงต้องทบทวน consent screen/redirect URI ของ production อีกครั้ง); ปลายทาง `/docs/?google=…` เปลี่ยนเป็นหน้า frontend ใน milestone 10; บัญชี Google-only ใช้ลืมรหัสผ่านไม่ได้ตาม AGENTS.md (แผน 5); การตั้งรหัสผ่านให้บัญชีเหล่านี้เป็น feature แยกที่ยังไม่อยู่ในเฟส 1
 
 **ไฟล์หลัก:** `internal/core/service/auth*.go`, `internal/core/service/otp*.go`, `internal/core/service/email_verification*.go`, `internal/adapter/http/auth*.go`, `internal/adapter/http/middleware/`, `internal/adapter/identity/`, `internal/adapter/mail/`
 
@@ -158,11 +159,11 @@
 - [x] ทำ register ที่ตอบ 202 แบบเดียวกันทุกกรณี, confirm/resend รหัสยืนยันอีเมล และปฏิเสธ login ของบัญชีที่ยังไม่ยืนยันด้วย `email_not_verified` (แผน 4b)
 - [x] ทำ email/password login/logout, current-user endpoint และ session authentication พร้อม expiry/revocation (แผน 4b)
 - [x] เพิ่ม cookie, CSRF, Origin checks, login rate limit และ error mapping พร้อม audit ของผลสำเร็จ/ล้มเหลว (แผน 4b)
-- [ ] เพิ่ม Google OIDC, state/nonce validation, PKCE S256 และ explicit account linking; ปิด flow ชัดเจนเมื่อ config ไม่ครบ
+- [x] เพิ่ม Google OIDC, state/nonce validation, PKCE S256 และ explicit account linking; ปิด flow ชัดเจนเมื่อ config ไม่ครบ (แผน 4c)
 - [x] login ของอีเมลที่ไม่มีบัญชี/บัญชี Google-only ตรวจกับ hash จำลองและตอบแบบเดียวกับรหัสผิด (แผน 4b)
 - [x] ทำ password validator (ความยาว, ASCII, พิมพ์เล็ก/ใหญ่/อักขระพิเศษ, blocklist แบบ go:embed, ไม่มีส่วนของอีเมล) พร้อม unit tests ของทุก field reason (แผน 4a: `domain.ParsePassword`, `service.PasswordPolicy`, ADR-0015)
-- [ ] ทดสอบ fake identity provider, replayed callback, invalid audience/issuer, session หมดอายุ/revoked และการ rollback เมื่อ audit insert ล้มเหลว
-- [ ] เพิ่ม auth annotations/examples แล้ว generate เอกสารใหม่ ตรวจ Swagger UI/browser cookie/CSRF โดยไม่ลดความปลอดภัย พร้อม curl cookie-jar examples และขั้นตอน Google login สำหรับ flow ที่ UI ไม่รองรับ ทั้งหมดทดสอบได้โดยไม่ใช้ Next.js
+- [x] ทดสอบ fake identity provider, replayed callback, invalid audience/issuer, session หมดอายุ/revoked และการ rollback เมื่อ audit insert ล้มเหลว (แผน 4c)
+- [x] เพิ่ม auth annotations/examples แล้ว generate เอกสารใหม่ ตรวจ Swagger UI/browser cookie/CSRF โดยไม่ลดความปลอดภัย พร้อม curl cookie-jar examples และขั้นตอน Google login สำหรับ flow ที่ UI ไม่รองรับ ทั้งหมดทดสอบได้โดยไม่ใช้ Next.js (แผน 4b/4c; ผู้ใช้ลอง Swagger UI และ Google จริงบน browser แล้วเมื่อ 2026-10-29)
 
 **ผ่านเมื่อ:** ทดสอบ flow สมัคร → ยืนยันอีเมลจาก Mailpit → login ผ่าน HTTP ได้ครบ, อีเมลซ้ำไม่เปิดเผยผ่าน response, logout แล้ว session เดิมเข้าถึง endpoint ที่ป้องกันไม่ได้, login ผิดยังมี audit และไม่มี secret ใน log; Google จริงตรวจเพิ่มเมื่อมี credentials ก่อนปล่อยระบบ
 
@@ -170,10 +171,12 @@
 
 **ไฟล์หลัก:** `internal/core/service/password_reset*.go`, `internal/adapter/http/password_reset*.go`
 
-- [ ] ใช้ OTP/Mailer จาก milestone 4 ทำ request/reset endpoints และตั้ง email_verified_at เมื่อ reset สำเร็จ
-- [ ] ทำ resend invalidation, cooldown และ account/IP limits ที่ไม่หายเมื่อ API restart
-- [ ] ทำ password update, OTP consume และ session revocation พร้อม audit ใน transaction เดียว โดยส่งอีเมลนอก transaction
-- [ ] ใช้ Clock fake ทดสอบ 10 นาที/60 วินาที/โควตาต่อชั่วโมง, กรอกผิด 5 ครั้ง, เลขศูนย์นำหน้า และ concurrent reset
+แผน: [2026-10-29-milestone-5-password-reset.md](2026-10-29-milestone-5-password-reset.md) ลงมือครบ รอตรวจรับ
+
+- [x] ใช้ OTP/Mailer จาก milestone 4 ทำ request/reset endpoints และตั้ง email_verified_at เมื่อ reset สำเร็จ (แผน 5)
+- [x] ทำ resend invalidation, cooldown และ account/IP limits ที่ไม่หายเมื่อ API restart (แผน 5)
+- [x] ทำ password update, OTP consume และ session revocation พร้อม audit ใน transaction เดียว โดยส่งอีเมลนอก transaction (แผน 5)
+- [x] ใช้ Clock fake ทดสอบ 10 นาที/60 วินาที/โควตาต่อชั่วโมง, กรอกผิด 5 ครั้ง, เลขศูนย์นำหน้า และ concurrent reset (แผน 5)
 
 **ผ่านเมื่อ:** reset จากอีเมลใน Mailpit ได้ครั้งเดียว, session เก่าถูก revoke, กรอกผิดแล้ว counters/audit ยังคงอยู่ และ Google-only/unknown email ไม่เปิดเผยสถานะผ่าน response
 

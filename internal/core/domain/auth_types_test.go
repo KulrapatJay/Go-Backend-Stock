@@ -63,6 +63,7 @@ func TestRetryErrorAndAuthSentinels(t *testing.T) {
 		domain.ErrUnauthenticated:     domain.CodeUnauthenticated,
 		domain.ErrInvalidCredentials:  domain.CodeInvalidCredentials,
 		domain.ErrInvalidVerification: domain.CodeInvalidVerification,
+		domain.ErrInvalidReset:        domain.CodeInvalidReset,
 		domain.ErrEmailNotVerified:    domain.CodeEmailNotVerified,
 		domain.ErrCSRFFailed:          domain.CodeCSRFFailed,
 	}

@@ -104,6 +104,20 @@ func (d *Dispatcher) SendRegistrationAttempt(_ context.Context, to domain.Email)
 	})
 }
 
+// SendPasswordReset queues the email.
+func (d *Dispatcher) SendPasswordReset(_ context.Context, mail domain.OTPMail) error {
+	return d.enqueue("password_reset", func(ctx context.Context) error {
+		return d.sender.SendPasswordReset(ctx, mail)
+	})
+}
+
+// SendPasswordChanged queues the email.
+func (d *Dispatcher) SendPasswordChanged(_ context.Context, to domain.Email) error {
+	return d.enqueue("password_changed", func(ctx context.Context) error {
+		return d.sender.SendPasswordChanged(ctx, to)
+	})
+}
+
 func (d *Dispatcher) enqueue(kind string, run func(ctx context.Context) error) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()

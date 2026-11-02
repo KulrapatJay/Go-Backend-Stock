@@ -10,11 +10,16 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	httpadapter "go-backend-stock/internal/adapter/http"
+	"go-backend-stock/internal/adapter/identity"
 	"go-backend-stock/internal/adapter/mail"
 	"go-backend-stock/internal/adapter/postgres"
 	"go-backend-stock/internal/config"
+	"go-backend-stock/internal/core/port"
 	"go-backend-stock/internal/core/service"
 )
+
+// googleTimeout limits each call to Google (discovery, token, keys).
+const googleTimeout = 10 * time.Second
 
 // systemClock is the real port.Clock.
 type systemClock struct{}
@@ -94,6 +99,23 @@ func buildAuth(cfg config.Config, pool *pgxpool.Pool, log *slog.Logger) (authPar
 	if err != nil {
 		return fail("response pacer", err)
 	}
+	oidc, err := service.NewOIDCCodec(cfg.Auth.OIDCSecret.Bytes())
+	if err != nil {
+		return fail("oidc codec", err)
+	}
+	// Set only when Google is configured: an interface that holds a nil *identity.Google is not nil
+	// and would turn Google sign-in on.
+	var google port.IdentityProvider
+	if cfg.Google.Enabled() {
+		g, err := identity.NewGoogle(identity.GoogleConfig{
+			Issuer: identity.GoogleIssuer, ClientID: cfg.Google.ClientID, ClientSecret: cfg.Google.ClientSecret.Reveal(),
+			RedirectURL: cfg.Google.RedirectURI, Timeout: googleTimeout,
+		})
+		if err != nil {
+			return fail("google identity provider", err)
+		}
+		google = g
+	}
 	tlsMode, err := smtpTLSMode(cfg.SMTP.TLS)
 	if err != nil {
 		return fail("smtp tls mode", err)
@@ -112,6 +134,7 @@ func buildAuth(cfg config.Config, pool *pgxpool.Pool, log *slog.Logger) (authPar
 	auth, err := service.NewAuth(service.AuthDeps{
 		Store: store, UnitOfWork: store, Clock: clock, Hasher: hasher, OTP: otp, Limits: limits, Pacer: pacer,
 		Mailer: dispatcher, Logger: log, SessionTTL: cfg.Auth.SessionTTL, OTPMaxAttempts: cfg.Auth.OTPMaxAttempts,
+		Identity: google, OIDC: oidc,
 	})
 	if err != nil {
 		// The workers are already running; stop them so a failed build leaks no goroutines.
@@ -120,7 +143,7 @@ func buildAuth(cfg config.Config, pool *pgxpool.Pool, log *slog.Logger) (authPar
 	}
 	return authParts{
 		options: httpadapter.AuthOptions{
-			Service: auth, Verification: auth, Passwords: passwords, CSRF: csrf,
+			Service: auth, Verification: auth, PasswordReset: auth.PasswordReset(), Passwords: passwords, CSRF: csrf,
 			ClientIP:     httpadapter.NewClientIPResolver(cfg.Auth.TrustedProxies),
 			PublicOrigin: cfg.PublicOrigin, SecureCookies: secureCookies(cfg.PublicOrigin),
 		},

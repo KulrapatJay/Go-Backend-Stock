@@ -13,7 +13,7 @@ type CSRFResponse struct {
 }
 
 // otpAcceptedMessage is the same for every outcome, so it reveals nothing about the account.
-const otpAcceptedMessage = "If this address can receive email, a verification code has been sent. It expires in 10 minutes."
+const otpAcceptedMessage = "If this address can receive email, a code has been sent. It expires in 10 minutes."
 
 // RegisterRequest is the body of POST /api/v1/auth/register.
 type RegisterRequest struct {
@@ -23,7 +23,7 @@ type RegisterRequest struct {
 
 // OTPAcceptedResponse answers register and "send the code again" with the same shape every time.
 type OTPAcceptedResponse struct {
-	Message     string `json:"message" example:"If this address can receive email, a verification code has been sent. It expires in 10 minutes." validate:"required"`
+	Message     string `json:"message" example:"If this address can receive email, a code has been sent. It expires in 10 minutes." validate:"required"`
 	ChallengeID string `json:"challenge_id" example:"0192f0c1-7a8e-7cc4-9d2b-3f6c1a2b4c5d" validate:"required"`
 	ExpiresIn   int    `json:"expires_in" example:"600" validate:"required"`
 }
@@ -41,6 +41,13 @@ type EmailRequest struct {
 type ConfirmEmailRequest struct {
 	ChallengeID string `json:"challenge_id" example:"0192f0c1-7a8e-7cc4-9d2b-3f6c1a2b4c5d" validate:"required"`
 	OTP         string `json:"otp" example:"042731" validate:"required"`
+}
+
+// ResetPasswordRequest is the body of POST /api/v1/auth/password-reset/confirm.
+type ResetPasswordRequest struct {
+	ChallengeID string `json:"challenge_id" example:"0192f0c1-7a8e-7cc4-9d2b-3f6c1a2b4c5d" validate:"required"`
+	OTP         string `json:"otp" example:"042731" validate:"required"`
+	NewPassword string `json:"new_password" example:"Zq9!kVx1" validate:"required"`
 }
 
 // LoginRequest is the body of POST /api/v1/auth/login.
@@ -65,4 +72,14 @@ func newUserResponse(u domain.User) UserResponse {
 type SessionResponse struct {
 	User      UserResponse `json:"user" validate:"required"`
 	ExpiresAt time.Time    `json:"expires_at" format:"date-time" example:"2026-10-31T09:30:00Z" validate:"required"`
+}
+
+// AuthConfigResponse tells a client which sign-in methods this server offers.
+type AuthConfigResponse struct {
+	GoogleEnabled bool `json:"google_enabled" example:"true" validate:"required"`
+}
+
+// GoogleStartResponse is where to send the browser to sign in with Google.
+type GoogleStartResponse struct {
+	AuthorizationURL string `json:"authorization_url" example:"https://accounts.google.com/o/oauth2/v2/auth?client_id=...&code_challenge=...&code_challenge_method=S256&nonce=...&redirect_uri=...&response_type=code&scope=openid+email&state=..." validate:"required"`
 }

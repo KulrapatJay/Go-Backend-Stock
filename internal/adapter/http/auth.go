@@ -28,6 +28,7 @@ type PasswordParser interface {
 type AuthOptions struct {
 	Service       port.AuthService
 	Verification  port.EmailVerificationService // nil leaves out the email-verification routes
+	PasswordReset port.PasswordResetService     // nil leaves out the password-reset routes
 	Passwords     PasswordParser
 	CSRF          CSRFTokens
 	ClientIP      *ClientIPResolver // nil trusts no proxy header
@@ -38,6 +39,7 @@ type AuthOptions struct {
 type authHandlers struct {
 	auth         port.AuthService
 	verification port.EmailVerificationService
+	reset        port.PasswordResetService
 	passwords    PasswordParser
 	csrf         CSRFTokens
 	clientIP     *ClientIPResolver
@@ -55,7 +57,7 @@ func registerAuthRoutes(app *fiber.App, opts AuthOptions) {
 		resolver = NewClientIPResolver(nil)
 	}
 	h := &authHandlers{
-		auth: opts.Service, verification: opts.Verification, passwords: opts.Passwords,
+		auth: opts.Service, verification: opts.Verification, reset: opts.PasswordReset, passwords: opts.Passwords,
 		csrf: opts.CSRF, clientIP: resolver, cookies: newCookieJar(opts.SecureCookies),
 	}
 	session := middleware.ResolveSession(opts.Service, h.cookies.sessionName)
@@ -67,9 +69,19 @@ func registerAuthRoutes(app *fiber.App, opts AuthOptions) {
 	app.Post("/api/v1/auth/login", session, csrf, h.login)
 	app.Get("/api/v1/auth/me", session, middleware.RequireAuth(), h.me)
 	app.Post("/api/v1/auth/logout", session, csrf, h.logout)
+	app.Get("/api/v1/auth/config", h.authConfig)
+	app.Post("/api/v1/auth/google/start", session, csrf, h.googleStart)
+	app.Post("/api/v1/auth/google/link", session, middleware.RequireAuth(), csrf, h.googleLink)
+	// No app CSRF: the browser arrives from Google. The state, the binding cookie and the nonce
+	// protect the callback instead (phase 1 spec section 10).
+	app.Get("/api/v1/auth/google/callback", session, h.googleCallback)
 	if opts.Verification != nil {
 		app.Post("/api/v1/auth/email-verification/request", session, csrf, h.requestVerification)
 		app.Post("/api/v1/auth/email-verification/confirm", session, csrf, h.confirmEmail)
+	}
+	if opts.PasswordReset != nil {
+		app.Post("/api/v1/auth/password-reset/request", session, csrf, h.requestPasswordReset)
+		app.Post("/api/v1/auth/password-reset/confirm", session, csrf, h.confirmPasswordReset)
 	}
 }
 

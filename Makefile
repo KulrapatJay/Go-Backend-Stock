@@ -60,7 +60,7 @@ TEST_MAINTENANCE_DATABASE_URL ?= postgres://app_maintenance:$(APP_MAINTENANCE_PA
 # database instead of skipping integration tests. test-integration passes them explicitly.
 unexport TEST_ADMIN_DATABASE_URL TEST_RUNTIME_DATABASE_URL TEST_MAINTENANCE_DATABASE_URL MIGRATION_DATABASE_URL
 
-.PHONY: migrate-up migrate-status test-integration
+.PHONY: migrate-up migrate-status test-integration clean-test-data
 
 migrate-up:
 	$(GOOSE) -dir migrations -table app.goose_db_version postgres "$(MIGRATION_DATABASE_URL)" up
@@ -73,7 +73,18 @@ test-integration:
 	TEST_ADMIN_DATABASE_URL="$(TEST_ADMIN_DATABASE_URL)" \
 	TEST_RUNTIME_DATABASE_URL="$(TEST_RUNTIME_DATABASE_URL)" \
 	TEST_MAINTENANCE_DATABASE_URL="$(TEST_MAINTENANCE_DATABASE_URL)" \
-	go test -race -count=1 ./internal/adapter/postgres/... ./internal/adapter/http/...
+	go test -race -count=1 ./internal/adapter/postgres/... ./internal/adapter/http/... ; \
+	status=$$?; $(MAKE) --no-print-directory -s clean-test-data; exit $$status
+
+# The integration tests write random rows into the dev database and never delete them, so this
+# empties every table of schema app (not the goose version table) after each run. It also removes
+# accounts made by hand in the same database. The Go tests of one run share the database, so this
+# runs once after all packages finish, never inside a test.
+clean-test-data:
+	@psql "$(TEST_ADMIN_DATABASE_URL)" -v ON_ERROR_STOP=1 -q -c "DO \$$\$$ DECLARE t text; BEGIN \
+		SELECT string_agg(format('%I.%I', schemaname, tablename), ', ') INTO t FROM pg_tables \
+		WHERE schemaname = 'app' AND tablename <> 'goose_db_version'; \
+		IF t IS NOT NULL THEN EXECUTE 'TRUNCATE ' || t || ' CASCADE'; END IF; END \$$\$$;"
 
 MAILPIT_SMTP_ADDR ?= 127.0.0.1:1025
 MAILPIT_API_URL ?= http://127.0.0.1:8025
