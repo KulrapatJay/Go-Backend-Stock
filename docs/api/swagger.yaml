@@ -931,7 +931,11 @@ paths:
           schema:
             $ref: '#/definitions/http.ErrorResponse'
         "503":
-          description: dependency_unavailable
+          description: dependency_unavailable or server_busy
+          headers:
+            Retry-After:
+              description: Seconds to wait
+              type: integer
           schema:
             $ref: '#/definitions/http.ErrorResponse'
       summary: List the portfolios of the signed-in user
@@ -992,7 +996,11 @@ paths:
           schema:
             $ref: '#/definitions/http.ErrorResponse'
         "503":
-          description: dependency_unavailable
+          description: dependency_unavailable or server_busy
+          headers:
+            Retry-After:
+              description: Seconds to wait
+              type: integer
           schema:
             $ref: '#/definitions/http.ErrorResponse'
       summary: Create a portfolio
@@ -1061,7 +1069,11 @@ paths:
           schema:
             $ref: '#/definitions/http.ErrorResponse'
         "503":
-          description: dependency_unavailable
+          description: dependency_unavailable or server_busy
+          headers:
+            Retry-After:
+              description: Seconds to wait
+              type: integer
           schema:
             $ref: '#/definitions/http.ErrorResponse'
       summary: Delete an empty portfolio
@@ -1107,7 +1119,11 @@ paths:
           schema:
             $ref: '#/definitions/http.ErrorResponse'
         "503":
-          description: dependency_unavailable
+          description: dependency_unavailable or server_busy
+          headers:
+            Retry-After:
+              description: Seconds to wait
+              type: integer
           schema:
             $ref: '#/definitions/http.ErrorResponse'
       summary: Get one portfolio
@@ -1196,7 +1212,11 @@ paths:
           schema:
             $ref: '#/definitions/http.ErrorResponse'
         "503":
-          description: dependency_unavailable
+          description: dependency_unavailable or server_busy
+          headers:
+            Retry-After:
+              description: Seconds to wait
+              type: integer
           schema:
             $ref: '#/definitions/http.ErrorResponse'
       summary: Rename a portfolio or change its description

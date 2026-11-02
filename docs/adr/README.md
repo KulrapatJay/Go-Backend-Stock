@@ -23,3 +23,4 @@
 | [0013](0013-domain-value-types.md) | Domain value types แบบ parse, don't validate และชนิดตัวเลขแยกตามความหมาย | Accepted |
 | [0014](0014-mail-dispatcher-and-timing-floor.md) | ส่งอีเมลหลังตอบผ่าน dispatcher เบื้องหลัง และ timing floor ใน core | Accepted |
 | [0015](0015-filtered-password-blocklist.md) | Blocklist รหัสผ่านที่กรองตามกติกาของเรา | Accepted |
+| [0016](0016-database-timeouts-and-retryable-busy.md) | Timeout ของ DB, deadline ต่อคำขอ และ 503 `server_busy` ที่ลองใหม่ได้ | Accepted |

@@ -1,9 +1,11 @@
 package postgres
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/shopspring/decimal"
 
@@ -108,4 +110,125 @@ func TestConcurrentSellsNeverOversell(t *testing.T) {
 			t.Errorf("rejected sell error = %v, want not enough shares", err)
 		}
 	}
+}
+
+// newBoundedStore returns a Store over a pool from NewPool, so it carries the lock and statement
+// timeouts of production. newRuntimeStore uses a bare pgxpool and does not.
+func newBoundedStore(t *testing.T) *Store {
+	t.Helper()
+	pool, err := NewPool(t.Context(), integrationURL(t, "TEST_RUNTIME_DATABASE_URL"), 4)
+	if err != nil {
+		t.Fatalf("NewPool() error = %v", err)
+	}
+	t.Cleanup(pool.Close)
+	return NewStore(pool)
+}
+
+func requireServerBusy(t *testing.T, err error) {
+	t.Helper()
+	var de *domain.Error
+	if !errors.As(err, &de) || de.Code != domain.CodeServerBusy || de.RetryAfter != time.Second {
+		t.Fatalf("error = %v, want server_busy with RetryAfter 1s", err)
+	}
+}
+
+// TestLockWaitEndsAsServerBusy: a request that waits for a portfolio lock must give up (lock_timeout
+// 3s) with a retryable error instead of holding a pooled connection for as long as the holder lives.
+func TestLockWaitEndsAsServerBusy(t *testing.T) {
+	store := newBoundedStore(t)
+	user := insertUser(t, store)
+	p := insertPortfolio(t, store, user.ID)
+
+	locked, release, holderDone := make(chan struct{}), make(chan struct{}), make(chan error, 1)
+	go func() {
+		holderDone <- store.WithinTransaction(context.Background(), func(r portTx) error {
+			if _, err := r.Portfolios().LockOwned(context.Background(), user.ID, p.ID); err != nil {
+				return err
+			}
+			close(locked)
+			<-release
+			return nil
+		})
+	}()
+	select {
+	case <-locked:
+	case err := <-holderDone:
+		t.Fatalf("holder ended before locking: %v", err)
+	}
+
+	start := time.Now()
+	err := store.WithinTransaction(t.Context(), func(r portTx) error {
+		_, err := r.Portfolios().LockOwned(t.Context(), user.ID, p.ID)
+		return err
+	})
+	waited := time.Since(start)
+	close(release)
+	if holdErr := <-holderDone; holdErr != nil {
+		t.Fatalf("holder: %v", holdErr)
+	}
+
+	requireServerBusy(t, err)
+	if waited > 4*time.Second {
+		t.Errorf("waiter gave up after %v, want within 4s", waited)
+	}
+	if err := store.WithinTransaction(t.Context(), func(r portTx) error {
+		_, err := r.Portfolios().LockOwned(t.Context(), user.ID, p.ID)
+		return err
+	}); err != nil {
+		t.Fatalf("lock after the holder finished: %v", err)
+	}
+}
+
+// TestDeadlockEndsAsServerBusy: two transactions lock portfolios A and B in opposite order.
+// PostgreSQL aborts one with 40P01, which must be a retryable 503 and not a 500; the other commits.
+func TestDeadlockEndsAsServerBusy(t *testing.T) {
+	store := newBoundedStore(t)
+	user := insertUser(t, store)
+	a, b := insertPortfolio(t, store, user.ID), insertPortfolio(t, store, user.ID)
+
+	var firstLocked [2]chan struct{}
+	for i := range firstLocked {
+		firstLocked[i] = make(chan struct{})
+	}
+	run := func(self int, first, second domain.ID) error {
+		return store.WithinTransaction(context.Background(), func(r portTx) error {
+			if _, err := r.Portfolios().LockOwned(context.Background(), user.ID, first); err != nil {
+				return err
+			}
+			close(firstLocked[self])
+			<-firstLocked[1-self] // both hold their first lock before either asks for the second
+			_, err := r.Portfolios().LockOwned(context.Background(), user.ID, second)
+			return err
+		})
+	}
+	results := make(chan error, 2)
+	go func() { results <- run(0, a.ID, b.ID) }()
+	go func() { results <- run(1, b.ID, a.ID) }()
+
+	var busy, committed int
+	for range 2 {
+		err := <-results
+		switch {
+		case err == nil:
+			committed++
+		case errors.Is(err, errDatabaseBusy):
+			requireServerBusy(t, err)
+			busy++
+		default:
+			t.Errorf("unexpected error: %v", err)
+		}
+	}
+	if busy != 1 || committed != 1 {
+		t.Fatalf("busy = %d, committed = %d, want one of each", busy, committed)
+	}
+}
+
+func TestTransactionPastItsDeadlineIsServerBusy(t *testing.T) {
+	store := newBoundedStore(t)
+	ctx, cancel := context.WithDeadline(t.Context(), time.Now().Add(-time.Second))
+	defer cancel()
+
+	err := store.WithinTransaction(ctx, func(portTx) error { return nil })
+
+	requireServerBusy(t, err)
 }

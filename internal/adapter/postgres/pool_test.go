@@ -25,3 +25,21 @@ func TestNewPoolPingsDatabase(t *testing.T) {
 		t.Fatalf("Ping() error = %v", err)
 	}
 }
+
+func TestNewPoolSetsLockAndStatementTimeouts(t *testing.T) {
+	pool, err := NewPool(t.Context(), integrationURL(t, "TEST_RUNTIME_DATABASE_URL"), 2)
+	if err != nil {
+		t.Fatalf("NewPool() error = %v", err)
+	}
+	defer pool.Close()
+
+	for setting, want := range map[string]string{"lock_timeout": "3s", "statement_timeout": "5s"} {
+		var got string
+		if err := pool.QueryRow(t.Context(), "SHOW "+setting).Scan(&got); err != nil {
+			t.Fatalf("SHOW %s: %v", setting, err)
+		}
+		if got != want {
+			t.Errorf("%s = %q, want %q", setting, got, want)
+		}
+	}
+}

@@ -132,7 +132,7 @@ func (s *Store) WithinTransaction(ctx context.Context, fn func(port.TxRepositori
 func (s *Store) withinTx(ctx context.Context, fn func(*txRepositories) error) (err error) {
 	tx, err := s.pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.ReadCommitted})
 	if err != nil {
-		return fmt.Errorf("%w: begin transaction: %w", domain.ErrInternal, err)
+		return mapError(fmt.Errorf("begin transaction: %w", err))
 	}
 	// Roll back with a context that outlives a cancelled request.
 	rollback := func() error { return tx.Rollback(context.WithoutCancel(ctx)) }
@@ -154,7 +154,7 @@ func (s *Store) withinTx(ctx context.Context, fn func(*txRepositories) error) (e
 		return err
 	}
 	if err := tx.Commit(ctx); err != nil {
-		return fmt.Errorf("%w: commit: %w", domain.ErrInternal, err)
+		return mapError(fmt.Errorf("commit: %w", err))
 	}
 	return nil
 }

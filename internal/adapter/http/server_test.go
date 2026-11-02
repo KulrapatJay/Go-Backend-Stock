@@ -5,10 +5,12 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"log/slog"
 	nethttp "net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gofiber/fiber/v3"
 
@@ -178,5 +180,29 @@ func TestHeadMirrorsGetForReadRoutes(t *testing.T) {
 		if len(body) != 0 {
 			t.Errorf("HEAD %s returned a %d byte body, want none", path, len(body))
 		}
+	}
+}
+
+// TestEveryRequestHasADeadline: a handler's context must carry a deadline, so a stuck dependency
+// cannot hold a request (and its pooled connection) forever.
+func TestEveryRequestHasADeadline(t *testing.T) {
+	app := newApp(slog.New(slog.DiscardHandler))
+	var deadline time.Time
+	var ok bool
+	app.Get("/deadline", func(c fiber.Ctx) error {
+		deadline, ok = c.Context().Deadline()
+		return c.SendStatus(nethttp.StatusNoContent)
+	})
+
+	resp, _ := doRequest(t, app, httptest.NewRequestWithContext(t.Context(), nethttp.MethodGet, "/deadline", nil))
+
+	if resp.StatusCode != nethttp.StatusNoContent {
+		t.Fatalf("status = %d, want 204", resp.StatusCode)
+	}
+	if !ok {
+		t.Fatal("request context has no deadline")
+	}
+	if left := time.Until(deadline); left <= 0 || left > 12*time.Second {
+		t.Errorf("time left = %v, want within (0, 12s]", left)
 	}
 }

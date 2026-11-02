@@ -21,6 +21,9 @@ const (
 	writeTimeout    = 15 * time.Second
 	idleTimeout     = 60 * time.Second
 	readinessBudget = time.Second
+	// requestTimeout is the deadline of a request's context. It is above the database lock_timeout
+	// (3s) and statement_timeout (5s), so a database wait ends first with its own retryable error.
+	requestTimeout = 12 * time.Second
 )
 
 // Options are the dependencies of the HTTP server, assembled in cmd/api/main.go.
@@ -80,6 +83,7 @@ func newApp(log *slog.Logger) *fiber.App {
 	app.Use(middleware.RequestID())
 	app.Use(middleware.AccessLog(log, errorHandler))
 	app.Use(middleware.Recover(log))
+	app.Use(middleware.RequestTimeout(requestTimeout))
 	app.Use(middleware.SecurityHeaders())
 	// Fiber's default server error handler runs the Use chain (including NotFound and
 	// AccessLog) before it renders the error, so an oversized body would be logged as 404.

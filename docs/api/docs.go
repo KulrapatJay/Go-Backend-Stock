@@ -897,9 +897,15 @@ const docTemplate = `{
                         }
                     },
                     "503": {
-                        "description": "dependency_unavailable",
+                        "description": "dependency_unavailable or server_busy",
                         "schema": {
                             "$ref": "#/definitions/http.ErrorResponse"
+                        },
+                        "headers": {
+                            "Retry-After": {
+                                "type": "integer",
+                                "description": "Seconds to wait"
+                            }
                         }
                     }
                 }
@@ -979,9 +985,15 @@ const docTemplate = `{
                         }
                     },
                     "503": {
-                        "description": "dependency_unavailable",
+                        "description": "dependency_unavailable or server_busy",
                         "schema": {
                             "$ref": "#/definitions/http.ErrorResponse"
+                        },
+                        "headers": {
+                            "Retry-After": {
+                                "type": "integer",
+                                "description": "Seconds to wait"
+                            }
                         }
                     }
                 }
@@ -1046,9 +1058,15 @@ const docTemplate = `{
                         }
                     },
                     "503": {
-                        "description": "dependency_unavailable",
+                        "description": "dependency_unavailable or server_busy",
                         "schema": {
                             "$ref": "#/definitions/http.ErrorResponse"
+                        },
+                        "headers": {
+                            "Retry-After": {
+                                "type": "integer",
+                                "description": "Seconds to wait"
+                            }
                         }
                     }
                 }
@@ -1161,9 +1179,15 @@ const docTemplate = `{
                         }
                     },
                     "503": {
-                        "description": "dependency_unavailable",
+                        "description": "dependency_unavailable or server_busy",
                         "schema": {
                             "$ref": "#/definitions/http.ErrorResponse"
+                        },
+                        "headers": {
+                            "Retry-After": {
+                                "type": "integer",
+                                "description": "Seconds to wait"
+                            }
                         }
                     }
                 }
@@ -1255,9 +1279,15 @@ const docTemplate = `{
                         }
                     },
                     "503": {
-                        "description": "dependency_unavailable",
+                        "description": "dependency_unavailable or server_busy",
                         "schema": {
                             "$ref": "#/definitions/http.ErrorResponse"
+                        },
+                        "headers": {
+                            "Retry-After": {
+                                "type": "integer",
+                                "description": "Seconds to wait"
+                            }
                         }
                     }
                 }

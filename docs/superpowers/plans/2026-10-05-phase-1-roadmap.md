@@ -195,8 +195,8 @@
 
 **ผลรีวิว (2026-11-02):** แก้แล้ว — `security.access_denied` ถูกจำกัดด้วย rate limit `access_denied_user` (20 ครั้ง/ชั่วโมงต่อผู้ใช้ เกินแล้วบันทึก `security.rate_limited` นาทีละครั้ง; migration 00005), ความล้มเหลวของ bookkeeping ไม่เปลี่ยนคำตอบ 404, PUT บังคับ `description` (ขาด → 400), GET ประกาศ 500, `If-Match` ปฏิเสธเลขศูนย์นำหน้า, test CSRF ใช้ token จริงของอีกเซสชัน ยังไม่แก้ (ไม่ใช่ blocker ของ M6 แต่ต้องทำก่อนเริ่ม milestone 7 เพราะ M7 ถือ row lock หนักกว่า):
 
-- [ ] ตั้ง `lock_timeout`/`statement_timeout` ที่ pool และ context deadline ต่อคำขอ ตอนนี้ `LockOwned` รอ row lock ได้ไม่จำกัด และ `DB_MAX_CONNS` ต่ำ การรอค้างอาจกิน connection ทั้งหมด (พบจากการอ่านโค้ด ยังไม่ได้ทดสอบกับ PostgreSQL จริง)
-- [ ] แปลง `40P01` (deadlock) และ `40001` เป็น error ที่ลองใหม่ได้แทน 500 และตัดสินใจเรื่องลำดับ lock เมื่อสลับชื่อพอร์ตสองใบพร้อมกัน (พบจากการอ่านโค้ด `mapError` ยังไม่ได้ทดสอบ)
+- [x] ตั้ง `lock_timeout`/`statement_timeout` ที่ pool และ context deadline ต่อคำขอ ตอนนี้ `LockOwned` รอ row lock ได้ไม่จำกัด และ `DB_MAX_CONNS` ต่ำ การรอค้างอาจกิน connection ทั้งหมด (พบจากการอ่านโค้ด ยังไม่ได้ทดสอบกับ PostgreSQL จริง)
+- [x] แปลง `40P01` (deadlock) และ `40001` เป็น error ที่ลองใหม่ได้แทน 500 และตัดสินใจเรื่องลำดับ lock เมื่อสลับชื่อพอร์ตสองใบพร้อมกัน (พบจากการอ่านโค้ด `mapError` ยังไม่ได้ทดสอบ)
 - [ ] method ที่ไม่รองรับบน `/api/v1/portfolios/{portfolio_id}` ตอบ 404 แทน 405 และ `HEAD` ตอบ 404 เพราะ route ของ GET ไม่ใช้ `getAndHead`; ตัดสินใจว่าจะทำทั้งระบบพร้อม route ของ transactions
 
 ### 7. Transactions + replay validation + concurrency/idempotency
