@@ -312,6 +312,11 @@ func TestUpdateAndDeletePortfolioNeedCSRFAndOrigin(t *testing.T) {
 	path := "/api/v1/portfolios/" + created.ID
 	b.fetchCSRF()
 	good := b.csrf
+	// A genuine token, issued by this API to somebody else's session: well formed and correctly
+	// signed, refused only because it is bound to the other session.
+	other, _ := signedIn(t, h)
+	other.fetchCSRF()
+	othersToken := other.csrf
 
 	cases := []struct {
 		name    string
@@ -319,7 +324,7 @@ func TestUpdateAndDeletePortfolioNeedCSRFAndOrigin(t *testing.T) {
 		headers map[string]string
 	}{
 		{"missing token", "", nil},
-		{"token bound to another session", "AAAA", nil},
+		{"token bound to another session", othersToken, nil},
 		{"foreign origin", good, map[string]string{"Origin": "http://evil.example"}},
 	}
 	for _, tc := range cases {
