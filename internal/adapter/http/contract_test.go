@@ -23,7 +23,12 @@ type swaggerOperation struct {
 }
 
 type swaggerResponse struct {
-	Schema *swaggerSchema `json:"schema"`
+	Schema  *swaggerSchema           `json:"schema"`
+	Headers map[string]swaggerHeader `json:"headers"`
+}
+
+type swaggerHeader struct {
+	Description string `json:"description"`
 }
 
 type swaggerSchema struct {
@@ -44,6 +49,23 @@ func loadSpec(t *testing.T) swaggerSpec {
 		t.Fatalf("parse swagger.json: %v", err)
 	}
 	return spec
+}
+
+// TestSwaggerHeaderDescriptionsHaveNoBackslash: swag does not unescape an embedded quote in a
+// @Header description, it renders the backslash and loses the closing quote.
+func TestSwaggerHeaderDescriptionsHaveNoBackslash(t *testing.T) {
+	spec := loadSpec(t)
+	for path, ops := range spec.Paths {
+		for method, op := range ops {
+			for status, resp := range op.Responses {
+				for name, header := range resp.Headers {
+					if strings.Contains(header.Description, `\`) {
+						t.Errorf("%s %s %s header %s description %q has a backslash", strings.ToUpper(method), path, status, name, header.Description)
+					}
+				}
+			}
+		}
+	}
 }
 
 func TestSwaggerOperationIDsAreUnique(t *testing.T) {

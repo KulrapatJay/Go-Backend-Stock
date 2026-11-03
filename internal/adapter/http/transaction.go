@@ -65,7 +65,7 @@ func registerTransactionRoutes(app *fiber.App, opts TransactionOptions, chain au
 // @Failure      503  {object}  ErrorResponse  "dependency_unavailable or server_busy"
 // @Header       429  {integer}  Retry-After  "Seconds to wait"
 // @Header       503  {integer}  Retry-After  "Seconds to wait"
-// @Header       201  {string}  ETag  "The transaction version in quotes, for example \"1\""
+// @Header       201  {string}  ETag  "The transaction version number wrapped in double quotes"
 // @Router       /api/v1/portfolios/{portfolio_id}/transactions [post]
 func (h *transactionHandlers) create(c fiber.Ctx) error {
 	portfolioID, err := domain.ParseID("portfolio_id", c.Params("portfolio_id"))
@@ -151,7 +151,7 @@ func (h *transactionHandlers) list(c fiber.Ctx) error {
 // @Failure      500  {object}  ErrorResponse  "internal"
 // @Failure      503  {object}  ErrorResponse  "dependency_unavailable or server_busy"
 // @Header       503  {integer}  Retry-After  "Seconds to wait"
-// @Header       200  {string}  ETag  "The transaction version in quotes, for example \"1\""
+// @Header       200  {string}  ETag  "The transaction version number wrapped in double quotes"
 // @Router       /api/v1/portfolios/{portfolio_id}/transactions/{transaction_id} [get]
 func (h *transactionHandlers) get(c fiber.Ctx) error {
 	portfolioID, err := domain.ParseID("portfolio_id", c.Params("portfolio_id"))

@@ -950,7 +950,7 @@ const docTemplate = `{
                         "headers": {
                             "ETag": {
                                 "type": "string",
-                                "description": "The portfolio version in quotes, for example \\\"1\\"
+                                "description": "The portfolio version number wrapped in double quotes"
                             }
                         }
                     },
@@ -1029,7 +1029,7 @@ const docTemplate = `{
                         "headers": {
                             "ETag": {
                                 "type": "string",
-                                "description": "The portfolio version in quotes, for example \\\"1\\"
+                                "description": "The portfolio version number wrapped in double quotes"
                             }
                         }
                     },
@@ -1126,7 +1126,7 @@ const docTemplate = `{
                         "headers": {
                             "ETag": {
                                 "type": "string",
-                                "description": "The new version in quotes, for example \\\"4\\"
+                                "description": "The new version number wrapped in double quotes"
                             }
                         }
                     },
@@ -1461,7 +1461,7 @@ const docTemplate = `{
                         "headers": {
                             "ETag": {
                                 "type": "string",
-                                "description": "The transaction version in quotes, for example \\\"1\\"
+                                "description": "The transaction version number wrapped in double quotes"
                             }
                         }
                     },
@@ -1572,7 +1572,7 @@ const docTemplate = `{
                         "headers": {
                             "ETag": {
                                 "type": "string",
-                                "description": "The transaction version in quotes, for example \\\"1\\"
+                                "description": "The transaction version number wrapped in double quotes"
                             }
                         }
                     },

@@ -53,7 +53,7 @@ func registerPortfolioRoutes(app *fiber.App, opts PortfolioOptions, chain authCh
 // @Failure      500  {object}  ErrorResponse  "audit_write_failed or internal"
 // @Failure      503  {object}  ErrorResponse  "dependency_unavailable or server_busy"
 // @Header       503  {integer}  Retry-After  "Seconds to wait"
-// @Header       201  {string}  ETag  "The portfolio version in quotes, for example \"1\""
+// @Header       201  {string}  ETag  "The portfolio version number wrapped in double quotes"
 // @Router       /api/v1/portfolios [post]
 func (h *portfolioHandlers) create(c fiber.Ctx) error {
 	var req PortfolioRequest
@@ -119,7 +119,7 @@ func (h *portfolioHandlers) list(c fiber.Ctx) error {
 // @Failure      500  {object}  ErrorResponse  "internal"
 // @Failure      503  {object}  ErrorResponse  "dependency_unavailable or server_busy"
 // @Header       503  {integer}  Retry-After  "Seconds to wait"
-// @Header       200  {string}  ETag  "The portfolio version in quotes, for example \"1\""
+// @Header       200  {string}  ETag  "The portfolio version number wrapped in double quotes"
 // @Router       /api/v1/portfolios/{portfolio_id} [get]
 func (h *portfolioHandlers) get(c fiber.Ctx) error {
 	id, err := domain.ParseID("portfolio_id", c.Params("portfolio_id"))
@@ -156,7 +156,7 @@ func (h *portfolioHandlers) get(c fiber.Ctx) error {
 // @Failure      500  {object}  ErrorResponse  "audit_write_failed or internal"
 // @Failure      503  {object}  ErrorResponse  "dependency_unavailable or server_busy"
 // @Header       503  {integer}  Retry-After  "Seconds to wait"
-// @Header       200  {string}  ETag  "The new version in quotes, for example \"4\""
+// @Header       200  {string}  ETag  "The new version number wrapped in double quotes"
 // @Router       /api/v1/portfolios/{portfolio_id} [put]
 func (h *portfolioHandlers) update(c fiber.Ctx) error {
 	id, err := domain.ParseID("portfolio_id", c.Params("portfolio_id"))
