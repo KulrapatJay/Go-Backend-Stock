@@ -28,6 +28,10 @@ func TestErrorsNeverEchoInput(t *testing.T) {
 			_, err := domain.ParseExecutedAt(s, time.Now())
 			return err
 		},
+		"ParseTimeFilter": func(s string) error {
+			_, err := domain.ParseTimeFilter("from", s)
+			return err
+		},
 		"ParsePortfolioName":        func(s string) error { _, err := domain.ParsePortfolioName(s + "\x01x"); return err },
 		"ParsePortfolioDescription": func(s string) error { _, err := domain.ParsePortfolioDescription(s + "\x01x"); return err },
 	}

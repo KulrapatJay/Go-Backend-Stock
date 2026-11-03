@@ -2,6 +2,8 @@ package domain_test
 
 import (
 	"encoding/json"
+	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -194,5 +196,29 @@ func TestNewIdempotencyRecordRejectsJSONThatJSONBCannotStore(t *testing.T) {
 			_, err := domain.NewIdempotencyRecord(r)
 			requireCode(t, err, domain.CodeInternal)
 		})
+	}
+}
+
+func TestNewSentinelsMapToTheirCodes(t *testing.T) {
+	for _, tc := range []struct {
+		err  *domain.Error
+		code domain.ErrorCode
+		msg  string
+	}{
+		{domain.ErrInsufficientShares, domain.CodeInsufficientShares, "Transaction would make holdings negative"},
+		{domain.ErrInvalidHistory, domain.CodeInvalidHistory, "Change would make holdings negative at some point in the history"},
+		{domain.ErrUnknownSymbol, domain.CodeUnknownSymbol, "symbol is not a known US stock"},
+		{domain.ErrDependencyUnavailable, domain.CodeDependencyUnavailable, "a required service is unavailable, try again later"},
+	} {
+		if tc.err.Code != tc.code || tc.err.Message != tc.msg {
+			t.Errorf("sentinel = {%s, %q}, want {%s, %q}", tc.err.Code, tc.err.Message, tc.code, tc.msg)
+		}
+		wrapped := fmt.Errorf("replay: %w", tc.err)
+		if !errors.Is(wrapped, tc.err) {
+			t.Errorf("errors.Is(wrapped, %s) = false", tc.code)
+		}
+		if errors.Is(wrapped, domain.ErrInternal) {
+			t.Errorf("%s sentinel matches ErrInternal", tc.code)
+		}
 	}
 }

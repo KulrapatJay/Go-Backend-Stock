@@ -95,6 +95,13 @@ var (
 	ErrIdempotencyConflict   = NewError(CodeIdempotencyConflict, "idempotency key was used with a different request")
 	ErrInternal              = NewError(CodeInternal, "internal error")
 
+	// Transaction outcomes. ErrInsufficientShares is a sell larger than the shares held;
+	// ErrInvalidHistory is a change to the past that would make holdings negative later on.
+	ErrInsufficientShares    = NewError(CodeInsufficientShares, "Transaction would make holdings negative")
+	ErrInvalidHistory        = NewError(CodeInvalidHistory, "Change would make holdings negative at some point in the history")
+	ErrUnknownSymbol         = NewError(CodeUnknownSymbol, "symbol is not a known US stock")
+	ErrDependencyUnavailable = NewError(CodeDependencyUnavailable, "a required service is unavailable, try again later")
+
 	// Auth outcomes. Their messages are shown to clients, so they never say which check failed.
 	ErrUnauthenticated     = NewError(CodeUnauthenticated, "authentication required")
 	ErrInvalidCredentials  = NewError(CodeInvalidCredentials, "email or password is incorrect")
