@@ -33,6 +33,8 @@ type Options struct {
 	Docs       DocsOptions
 	Auth       AuthOptions
 	Portfolios PortfolioOptions
+	// Transactions serves the trades of a portfolio; it needs Portfolios and Auth too.
+	Transactions TransactionOptions
 }
 
 // NewServer builds the Fiber app with the full middleware chain and every route.
@@ -175,14 +177,15 @@ func registerRoutes(app *fiber.App, opts Options) {
 	getAndHead(app, "/readyz", health.Readyz)
 	registerDocs(app, opts.Docs)
 	if opts.Auth.Service == nil {
-		if opts.Portfolios.Service != nil {
-			panic("http: portfolio routes need Options.Auth.Service to resolve the session")
+		if opts.Portfolios.Service != nil || opts.Transactions.Service != nil {
+			panic("http: portfolio and transaction routes need Options.Auth.Service to resolve the session")
 		}
 		return
 	}
 	chain := newAuthChain(opts.Auth)
 	registerAuthRoutes(app, opts.Auth, chain)
 	registerPortfolioRoutes(app, opts.Portfolios, chain)
+	registerTransactionRoutes(app, opts.Transactions, chain)
 }
 
 // getAndHead registers handler for GET and HEAD. Fiber's automatic HEAD routes are added at

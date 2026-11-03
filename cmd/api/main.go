@@ -3,7 +3,7 @@
 // @title           Stock Portfolio Tracker API
 // @version         1.0
 // @description     Records US stock trades and tracks portfolio cost and P&L. It does not place real orders.
-// @description     Milestone 6 exposes Health, the Auth endpoints (email and password, email verification, password reset, Google sign-in and linking) and Portfolios; transactions and holdings are not implemented yet.
+// @description     Milestone 7 exposes Health, the Auth endpoints (email and password, email verification, password reset, Google sign-in and linking), Portfolios and Transactions (record, list and read trades; changing and deleting trades is added next); holdings and prices are not implemented yet.
 // @BasePath        /
 // @tag.name        Health
 // @tag.description Liveness and readiness probes
@@ -11,6 +11,8 @@
 // @tag.description Registration, email verification, sessions and CSRF tokens. Every POST needs the X-CSRF-Token header from GET /api/v1/auth/csrf and must come from the API's own origin.
 // @tag.name        Portfolios
 // @tag.description A user can own many portfolios, all in USD. Every call needs the session cookie; another user's portfolio looks exactly like a missing one (404). Reading returns an ETag with the portfolio version; changing or deleting a portfolio needs it back in If-Match.
+// @tag.name        Transactions
+// @tag.description Buys and sells a user recorded in one of their portfolios; the API never places orders. Every call needs the session cookie; a portfolio of another user looks exactly like a missing one (404). Quantity, price and fee are decimal strings. Creating a trade needs an Idempotency-Key, so a retry never records it twice; reading returns an ETag with the trade version.
 package main
 
 import (
