@@ -11,5 +11,7 @@ type Repositories interface {
 	RateLimits() RateLimitRepository
 	Identities() IdentityRepository
 	Portfolios() PortfolioRepository
+	Transactions() TransactionRepository
+	Instruments() InstrumentRepository
 	OIDCFlows() OIDCFlowRepository // Consume is one conditional UPDATE, so it needs no transaction
 }

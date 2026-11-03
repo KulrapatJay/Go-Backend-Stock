@@ -21,11 +21,10 @@ type PortfolioDeps struct {
 // Portfolios is the use cases of a user's portfolios. Every method works on the caller's own
 // portfolios only: another user's portfolio is reported exactly like a missing one.
 type Portfolios struct {
-	store port.Repositories
-	uow   port.UnitOfWork
-	clock port.Clock
-	limit *RateLimitPolicy
-	log   *slog.Logger
+	store   port.Repositories
+	uow     port.UnitOfWork
+	clock   port.Clock
+	denials accessDenials
 }
 
 var _ port.PortfolioService = (*Portfolios)(nil)
@@ -35,7 +34,10 @@ func NewPortfolios(d PortfolioDeps) (*Portfolios, error) {
 	if d.Store == nil || d.UnitOfWork == nil || d.Clock == nil || d.Limits == nil || d.Logger == nil {
 		return nil, errors.New("portfolio service is missing a dependency")
 	}
-	return &Portfolios{store: d.Store, uow: d.UnitOfWork, clock: d.Clock, limit: d.Limits, log: d.Logger}, nil
+	return &Portfolios{
+		store: d.Store, uow: d.UnitOfWork, clock: d.Clock,
+		denials: accessDenials{store: d.Store, uow: d.UnitOfWork, clock: d.Clock, limits: d.Limits, log: d.Logger},
+	}, nil
 }
 
 // portfolioMetadata is the allowlist of portfolio audit metadata. Changed names the fields whose
@@ -44,7 +46,6 @@ type portfolioMetadata struct {
 	IP        string   `json:"ip,omitempty"`
 	UserAgent string   `json:"user_agent,omitempty"`
 	Changed   []string `json:"changed,omitempty"`
-	Scope     string   `json:"scope,omitempty"` // security.rate_limited only
 }
 
 const portfolioTarget = "portfolio"
@@ -160,56 +161,9 @@ func (s *Portfolios) Delete(ctx context.Context, p domain.Principal, id domain.I
 // the caller already holds. Any other error passes through.
 func (s *Portfolios) denyIfForeign(ctx context.Context, err error, p domain.Principal, id domain.ID, meta domain.RequestMeta) error {
 	if errors.Is(err, domain.ErrNotFound) {
-		s.recordDenial(ctx, p, id, meta)
+		s.denials.record(ctx, p, id, meta)
 	}
 	return err
-}
-
-// recordDenial audits a refused access to someone else's portfolio, at most accessDeniedPerHourUser
-// events per user per hour. Past that limit the first refusal each minute is audited as
-// security.rate_limited instead, so a flood stays visible without filling the table.
-func (s *Portfolios) recordDenial(ctx context.Context, p domain.Principal, id domain.ID, meta domain.RequestMeta) {
-	exists, err := s.store.Portfolios().Exists(ctx, id)
-	if err != nil {
-		s.logDenialFailure("could not check who owns the portfolio", err, meta)
-		return
-	}
-	if !exists {
-		return
-	}
-	rules, err := s.limit.AccessDenied(p.UserID)
-	if err != nil {
-		s.logDenialFailure("could not build the access denial limit", err, meta)
-		return
-	}
-	decision, err := s.store.RateLimits().Admit(ctx, rules, NowForStorage(s.clock))
-	if err != nil {
-		s.logDenialFailure("could not check the access denial limit", err, meta)
-		return
-	}
-	spec := portfolioSpec(domain.EventSecurityAccessDenied, p, id)
-	spec.Outcome, spec.Reason = domain.AuditOutcomeDenied, "not_owner"
-	switch {
-	case decision.Allowed:
-	case decision.RecordDenialAudit:
-		spec = auditSpec{
-			Type: domain.EventSecurityRateLimited, Outcome: domain.AuditOutcomeDenied, Actor: p.UserID, SessionID: p.SessionID,
-			TargetType: "rate_limit", TargetID: string(decision.Scope), Scope: decision.Scope,
-		}
-	default:
-		return
-	}
-	// commitFailureAudit logs a lost event; the answer to the caller does not change.
-	_ = commitFailureAudit(ctx, s.uow, s.log, meta, spec.Type, func() (domain.AuditEvent, error) {
-		return newAuditEvent(s.clock, meta, spec, portfolioMetadata{IP: meta.MaskedIP, UserAgent: meta.UserAgent, Scope: string(spec.Scope)})
-	})
-}
-
-func (s *Portfolios) logDenialFailure(msg string, err error, meta domain.RequestMeta) {
-	s.log.Error(msg,
-		slog.String("event", "portfolio.denial_bookkeeping_failed"),
-		slog.String("error", err.Error()),
-		slog.String("request_id", meta.RequestID.String()))
 }
 
 func (s *Portfolios) appendAudit(ctx context.Context, tx port.TxRepositories, meta domain.RequestMeta, spec auditSpec, changed []string) error {
