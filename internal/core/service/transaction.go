@@ -40,6 +40,8 @@ type Transactions struct {
 	denials     accessDenials
 }
 
+var _ port.TransactionService = (*Transactions)(nil)
+
 // NewTransactions checks that every dependency is present.
 func NewTransactions(d TransactionDeps) (*Transactions, error) {
 	if d.Store == nil || d.UnitOfWork == nil || d.Clock == nil || d.Limits == nil || d.Instruments == nil || d.Logger == nil {
@@ -59,6 +61,12 @@ func NewTransactions(d TransactionDeps) (*Transactions, error) {
 func (s *Transactions) Create(ctx context.Context, p domain.Principal, portfolioID domain.ID, key string, in domain.TransactionInput, meta domain.RequestMeta) (domain.Transaction, error) {
 	if p.IsZero() {
 		return domain.Transaction{}, domain.ErrUnauthenticated
+	}
+	// A malformed key is the client's mistake (400), found before anything is read or the
+	// provider quota is spent.
+	key, err := domain.ParseIdempotencyKey(key)
+	if err != nil {
+		return domain.Transaction{}, err
 	}
 	instrument, fresh, err := s.instrumentFor(ctx, p, portfolioID, in.Symbol, meta)
 	if err != nil {
@@ -227,6 +235,10 @@ func (s *Transactions) instrumentFor(ctx context.Context, p domain.Principal, po
 		return domain.Instrument{}, false, fmt.Errorf("%w: %w", domain.ErrDependencyUnavailable, err)
 	case found.AssetClass != domain.AssetClassUSEquity:
 		return domain.Instrument{}, false, domain.ErrUnknownSymbol
+	case found.Symbol != symbol:
+		// The provider answered for another ticker (it followed a rename): phase 1 does not
+		// follow symbol changes, so the symbol asked for is not one it knows.
+		return domain.Instrument{}, false, domain.ErrUnknownSymbol
 	}
 	if found.ID, err = domain.NewID(); err != nil {
 		return domain.Instrument{}, false, err
@@ -237,4 +249,122 @@ func (s *Transactions) instrumentFor(ctx context.Context, p domain.Principal, po
 		return domain.Instrument{}, false, err
 	}
 	return instrument, true, nil
+}
+
+// List returns one page of the portfolio's transactions, newest first. Reading is not audited, and
+// another user's portfolio reads as not found without a denial record: only writes are recorded.
+func (s *Transactions) List(ctx context.Context, p domain.Principal, portfolioID domain.ID, f domain.TransactionFilter) (domain.TransactionPage, error) {
+	if p.IsZero() {
+		return domain.TransactionPage{}, domain.ErrUnauthenticated
+	}
+	return s.store.Transactions().List(ctx, p.UserID, portfolioID, f)
+}
+
+// Get returns one transaction of the caller's portfolio. Reading is not audited.
+func (s *Transactions) Get(ctx context.Context, p domain.Principal, portfolioID, transactionID domain.ID) (domain.Transaction, error) {
+	if p.IsZero() {
+		return domain.Transaction{}, domain.ErrUnauthenticated
+	}
+	return s.store.Transactions().Get(ctx, p.UserID, portfolioID, transactionID)
+}
+
+// Update replaces the trade fields of a transaction (phase 1 spec section 9, step 4). A new symbol
+// is verified first, outside any transaction. Then, under the portfolio lock: read the trade,
+// check the version the client read, store a newly verified instrument, write the trade, replay
+// the whole portfolio history and audit before and after. The sequence and creation time never
+// change, so the trade keeps its place among trades executed at the same time. A change that
+// would leave a position negative at any point rolls everything back with invalid_history.
+func (s *Transactions) Update(ctx context.Context, p domain.Principal, portfolioID, transactionID domain.ID, expected domain.Version, in domain.TransactionInput, meta domain.RequestMeta) (domain.Transaction, error) {
+	if p.IsZero() {
+		return domain.Transaction{}, domain.ErrUnauthenticated
+	}
+	instrument, fresh, err := s.instrumentFor(ctx, p, portfolioID, in.Symbol, meta)
+	if err != nil {
+		return domain.Transaction{}, err
+	}
+	var result domain.Transaction
+	err = s.inPortfolio(ctx, p, portfolioID, meta, func(tx port.TxRepositories) error {
+		current, err := currentTrade(ctx, tx, p, portfolioID, transactionID, expected)
+		if err != nil {
+			return err
+		}
+		stored := instrument
+		if fresh {
+			if stored, err = tx.Instruments().Upsert(ctx, instrument); err != nil {
+				return err
+			}
+		}
+		next := current // ID, portfolio, sequence, version and creation time stay as stored
+		next.InstrumentID, next.Symbol = stored.ID, stored.Symbol
+		next.Side, next.Quantity, next.Price, next.Fee, next.ExecutedAt = in.Side, in.Quantity, in.Price, in.Fee, in.ExecutedAt
+		next.UpdatedAt = NowForStorage(s.clock)
+		updated, err := tx.Transactions().Update(ctx, p.UserID, next)
+		if err != nil {
+			return err
+		}
+		if err := replayAfterChange(ctx, tx, p, portfolioID); err != nil {
+			return err
+		}
+		if err := s.appendAudit(ctx, tx, meta, domain.EventTransactionUpdated, p, portfolioID, current.ID, tradeFieldsOf(current), tradeFieldsOf(updated)); err != nil {
+			return err
+		}
+		result = updated
+		return nil
+	})
+	if err != nil {
+		return domain.Transaction{}, err
+	}
+	return result, nil
+}
+
+// Delete removes a transaction under the portfolio lock after the same version check as Update,
+// then replays the remaining history: removing a buy that a later sale needs is invalid_history.
+// The audit event keeps the removed trade as before.
+func (s *Transactions) Delete(ctx context.Context, p domain.Principal, portfolioID, transactionID domain.ID, expected domain.Version, meta domain.RequestMeta) error {
+	if p.IsZero() {
+		return domain.ErrUnauthenticated
+	}
+	return s.inPortfolio(ctx, p, portfolioID, meta, func(tx port.TxRepositories) error {
+		current, err := currentTrade(ctx, tx, p, portfolioID, transactionID, expected)
+		if err != nil {
+			return err
+		}
+		if err := tx.Transactions().Delete(ctx, p.UserID, portfolioID, transactionID); err != nil {
+			return err
+		}
+		if err := replayAfterChange(ctx, tx, p, portfolioID); err != nil {
+			return err
+		}
+		return s.appendAudit(ctx, tx, meta, domain.EventTransactionDeleted, p, portfolioID, current.ID, tradeFieldsOf(current), nil)
+	})
+}
+
+// currentTrade reads the trade under the portfolio lock and checks the version the client read.
+// A trade missing from the caller's own portfolio is a plain not_found, not an access denial.
+func currentTrade(ctx context.Context, tx port.TxRepositories, p domain.Principal, portfolioID, transactionID domain.ID, expected domain.Version) (domain.Transaction, error) {
+	current, err := tx.Transactions().Get(ctx, p.UserID, portfolioID, transactionID)
+	if err != nil {
+		return domain.Transaction{}, err
+	}
+	if current.Version != expected {
+		return domain.Transaction{}, domain.ErrVersionConflict
+	}
+	return current, nil
+}
+
+// replayAfterChange replays the whole portfolio history after an edit or a removal. A position
+// going negative is a change to the past that breaks a later sale, reported as invalid_history;
+// insufficient_shares stays the answer to a new sale only.
+func replayAfterChange(ctx context.Context, tx port.TxRepositories, p domain.Principal, portfolioID domain.ID) error {
+	history, err := tx.Transactions().History(ctx, p.UserID, portfolioID)
+	if err != nil {
+		return err
+	}
+	if _, err := domain.ReplayHistory(history); err != nil {
+		if errors.Is(err, domain.ErrInsufficientShares) {
+			return domain.ErrInvalidHistory
+		}
+		return err
+	}
+	return nil
 }

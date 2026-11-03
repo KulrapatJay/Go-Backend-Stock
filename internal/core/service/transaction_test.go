@@ -25,17 +25,36 @@ func (f *fakePortfolios) GetOwned(_ context.Context, ownerID, id domain.ID) (dom
 	return p, nil
 }
 
-// fakeTransactions behaves like the database: Insert assigns the next sequence and version 1, and
-// History returns every stored row ordered by (executed_at, sequence).
+// fakeTransactions behaves like the database: Insert assigns the next sequence and version 1,
+// Update matches the current version and returns version + 1 with the stored sequence and creation
+// time, and History returns every stored row ordered by (executed_at, sequence). Like the SQL, every
+// query reaches only portfolios of ownerID; another owner's portfolio is not found.
 type fakeTransactions struct {
 	port.TransactionRepository
-	log       *callLog
-	rows      []domain.Transaction
-	nextSeq   int64
-	inserted  []domain.Transaction // what the service passed to Insert
-	insertErr error
+	log        *callLog
+	portfolios *fakePortfolios
+	rows       []domain.Transaction
+	nextSeq    int64
+	inserted   []domain.Transaction // what the service passed to Insert
+	updated    []domain.Transaction // what the service passed to Update
+	deleted    []domain.ID
+	filters    []domain.TransactionFilter // what the service passed to List
+	insertErr  error
 	// stored, when set, changes the row Insert returns, as a database default or trigger would.
 	stored func(*domain.Transaction)
+}
+
+func (f *fakeTransactions) owned(ownerID, portfolioID domain.ID) bool {
+	p, ok := f.portfolios.stored[portfolioID]
+	return ok && p.UserID == ownerID
+}
+
+// find returns the index of the trade in rows, or -1.
+func (f *fakeTransactions) find(ownerID, portfolioID, id domain.ID) int {
+	if !f.owned(ownerID, portfolioID) {
+		return -1
+	}
+	return slices.IndexFunc(f.rows, func(t domain.Transaction) bool { return t.ID == id && t.PortfolioID == portfolioID })
 }
 
 func (f *fakeTransactions) Insert(_ context.Context, _ domain.ID, t domain.Transaction) (domain.Transaction, error) {
@@ -53,8 +72,67 @@ func (f *fakeTransactions) Insert(_ context.Context, _ domain.ID, t domain.Trans
 	return t, nil
 }
 
-func (f *fakeTransactions) History(_ context.Context, _, portfolioID domain.ID) ([]domain.Transaction, error) {
+func (f *fakeTransactions) Get(_ context.Context, ownerID, portfolioID, id domain.ID) (domain.Transaction, error) {
+	f.log.add("Transactions.Get")
+	i := f.find(ownerID, portfolioID, id)
+	if i < 0 {
+		return domain.Transaction{}, domain.ErrNotFound
+	}
+	return f.rows[i], nil
+}
+
+func (f *fakeTransactions) List(_ context.Context, ownerID, portfolioID domain.ID, filter domain.TransactionFilter) (domain.TransactionPage, error) {
+	f.log.add("Transactions.List")
+	f.filters = append(f.filters, filter)
+	if !f.owned(ownerID, portfolioID) {
+		return domain.TransactionPage{}, domain.ErrNotFound
+	}
+	var page domain.TransactionPage
+	for _, t := range f.rows {
+		if t.PortfolioID == portfolioID {
+			page.Items = append(page.Items, t)
+		}
+	}
+	slices.Reverse(page.Items)
+	return page, nil
+}
+
+func (f *fakeTransactions) Update(_ context.Context, ownerID domain.ID, t domain.Transaction) (domain.Transaction, error) {
+	f.log.add("Transactions.Update")
+	f.updated = append(f.updated, t)
+	i := f.find(ownerID, t.PortfolioID, t.ID)
+	if i < 0 {
+		return domain.Transaction{}, domain.ErrNotFound
+	}
+	current := f.rows[i]
+	if current.Version != t.Version {
+		return domain.Transaction{}, domain.ErrVersionConflict
+	}
+	next, err := domain.ParseVersion(int64(current.Version.Int32()) + 1)
+	if err != nil {
+		return domain.Transaction{}, err
+	}
+	t.Version, t.Sequence, t.CreatedAt = next, current.Sequence, current.CreatedAt
+	f.rows[i] = t
+	return t, nil
+}
+
+func (f *fakeTransactions) Delete(_ context.Context, ownerID, portfolioID, id domain.ID) error {
+	f.log.add("Transactions.Delete")
+	f.deleted = append(f.deleted, id)
+	i := f.find(ownerID, portfolioID, id)
+	if i < 0 {
+		return domain.ErrNotFound
+	}
+	f.rows = slices.Delete(f.rows, i, i+1)
+	return nil
+}
+
+func (f *fakeTransactions) History(_ context.Context, ownerID, portfolioID domain.ID) ([]domain.Transaction, error) {
 	f.log.add("Transactions.History")
+	if !f.owned(ownerID, portfolioID) {
+		return nil, domain.ErrNotFound
+	}
 	var out []domain.Transaction
 	for _, t := range f.rows {
 		if t.PortfolioID == portfolioID {
@@ -99,27 +177,33 @@ func (f *fakeInstruments) Upsert(_ context.Context, i domain.Instrument) (domain
 	return i, nil
 }
 
+// fakeTransactionKeys records the scope and key of every lookup and deletion, so a test can check
+// that the key is looked up for the right user, portfolio and operation.
 type fakeTransactionKeys struct {
 	port.IdempotencyRepository
-	log     *callLog
-	record  *domain.IdempotencyRecord
-	gotKey  string
-	deleted []time.Time
-	saved   []domain.IdempotencyRecord
+	log          *callLog
+	record       *domain.IdempotencyRecord
+	gotScope     domain.IdempotencyScope
+	gotKey       string
+	deleted      []time.Time
+	deletedScope domain.IdempotencyScope
+	deletedKey   string
+	saved        []domain.IdempotencyRecord
 }
 
-func (f *fakeTransactionKeys) Get(_ context.Context, _ domain.IdempotencyScope, key string) (domain.IdempotencyRecord, error) {
+func (f *fakeTransactionKeys) Get(_ context.Context, scope domain.IdempotencyScope, key string) (domain.IdempotencyRecord, error) {
 	f.log.add("Idempotency.Get")
-	f.gotKey = key
+	f.gotScope, f.gotKey = scope, key
 	if f.record == nil {
 		return domain.IdempotencyRecord{}, domain.ErrNotFound
 	}
 	return *f.record, nil
 }
 
-func (f *fakeTransactionKeys) DeleteExpired(_ context.Context, _ domain.IdempotencyScope, _ string, now time.Time) error {
+func (f *fakeTransactionKeys) DeleteExpired(_ context.Context, scope domain.IdempotencyScope, key string, now time.Time) error {
 	f.log.add("Idempotency.DeleteExpired")
 	f.deleted = append(f.deleted, now)
+	f.deletedScope, f.deletedKey = scope, key
 	return nil
 }
 
@@ -145,11 +229,13 @@ func (l loggingLimits) Admit(ctx context.Context, rules []domain.RateLimitRule, 
 }
 
 // fakeProvider records how many transactions had started when it was called: the provider must be
-// asked before the portfolio lock is taken.
+// asked before the portfolio lock is taken. It answers for the symbol asked, or for renamedTo when
+// that is set, as a provider that followed a ticker change would.
 type fakeProvider struct {
 	log        *callLog
 	uow        *transactionUoW
 	answer     domain.Instrument
+	renamedTo  *domain.Symbol
 	err        error
 	runsAtCall []int
 }
@@ -162,19 +248,24 @@ func (f *fakeProvider) Lookup(_ context.Context, s domain.Symbol) (domain.Instru
 	}
 	answer := f.answer
 	answer.Symbol = s
+	if f.renamedTo != nil {
+		answer.Symbol = *f.renamedTo
+	}
 	return answer, nil
 }
 
 type transactionStore struct {
 	port.Repositories
-	portfolios  *fakePortfolios
-	instruments *fakeInstruments
-	limits      loggingLimits
+	portfolios   *fakePortfolios
+	transactions *fakeTransactions
+	instruments  *fakeInstruments
+	limits       loggingLimits
 }
 
-func (s transactionStore) Portfolios() port.PortfolioRepository   { return s.portfolios }
-func (s transactionStore) Instruments() port.InstrumentRepository { return s.instruments }
-func (s transactionStore) RateLimits() port.RateLimitRepository   { return s.limits }
+func (s transactionStore) Portfolios() port.PortfolioRepository     { return s.portfolios }
+func (s transactionStore) Transactions() port.TransactionRepository { return s.transactions }
+func (s transactionStore) Instruments() port.InstrumentRepository   { return s.instruments }
+func (s transactionStore) RateLimits() port.RateLimitRepository     { return s.limits }
 
 type transactionTx struct {
 	port.TxRepositories
@@ -191,14 +282,28 @@ func (t transactionTx) Idempotency() port.IdempotencyRepository  { return t.keys
 func (t transactionTx) Instruments() port.InstrumentRepository   { return t.instruments }
 func (t transactionTx) Audit() port.AuditRepository              { return t.audit }
 
+// transactionUoW records what each transaction ended with: nil commits, an error rolls back. The
+// fakes do not undo writes, so a test of a refused change checks that nothing was committed.
 type transactionUoW struct {
-	tx   transactionTx
-	runs int
+	tx      transactionTx
+	runs    int
+	results []error
 }
 
 func (u *transactionUoW) WithinTransaction(_ context.Context, fn func(port.TxRepositories) error) error {
 	u.runs++
-	return fn(u.tx)
+	err := fn(u.tx)
+	u.results = append(u.results, err)
+	return err
+}
+
+// committed reports, for each transaction in order, whether it committed.
+func (u *transactionUoW) committed() []bool {
+	out := make([]bool, len(u.results))
+	for i, err := range u.results {
+		out[i] = err == nil
+	}
+	return out
 }
 
 type testTransactions struct {
@@ -228,7 +333,7 @@ func newTestTransactions(t *testing.T) testTransactions {
 	portfolios := &fakePortfolios{log: log, stored: map[domain.ID]domain.Portfolio{}}
 	aapl := mustInstrument(t, "AAPL", clock.Now())
 	instruments := &fakeInstruments{log: log, bySymbol: map[string]domain.Instrument{"AAPL": aapl}}
-	transactions := &fakeTransactions{log: log}
+	transactions := &fakeTransactions{log: log, portfolios: portfolios}
 	keys := &fakeTransactionKeys{log: log}
 	audit := &fakeAudit{}
 	uow := &transactionUoW{tx: transactionTx{
@@ -243,7 +348,10 @@ func newTestTransactions(t *testing.T) testTransactions {
 	scopes := &[]domain.RateLimitScope{}
 	logs := &bytes.Buffer{}
 	svc, err := NewTransactions(TransactionDeps{
-		Store:      transactionStore{portfolios: portfolios, instruments: instruments, limits: loggingLimits{log: log, limits: limits, scopes: scopes}},
+		Store: transactionStore{
+			portfolios: portfolios, transactions: transactions, instruments: instruments,
+			limits: loggingLimits{log: log, limits: limits, scopes: scopes},
+		},
 		UnitOfWork: uow, Clock: clock, Limits: newTestPolicy(t), Instruments: provider,
 		Logger: slog.New(slog.NewJSONHandler(logs, nil)),
 	})
@@ -269,15 +377,25 @@ func (tt testTransactions) seedPortfolio(t *testing.T, owner domain.ID) domain.P
 	return p
 }
 
-// seedTrade stores a trade the portfolio already has, as History would return it.
-func (tt testTransactions) seedTrade(t *testing.T, in domain.TransactionInput) {
+// seedTrade stores an AAPL trade the portfolio already has, as History would return it.
+func (tt testTransactions) seedTrade(t *testing.T, in domain.TransactionInput) domain.Transaction {
 	t.Helper()
 	tt.transactions.nextSeq++
-	tt.transactions.rows = append(tt.transactions.rows, domain.Transaction{
+	tr := domain.Transaction{
 		ID: mustID(t), PortfolioID: tt.portfolio.ID, InstrumentID: tt.aapl.ID, Symbol: tt.aapl.Symbol,
 		Sequence: tt.transactions.nextSeq, Side: in.Side, Quantity: in.Quantity, Price: in.Price, Fee: in.Fee,
 		ExecutedAt: in.ExecutedAt, Version: mustVersion(t, 1), CreatedAt: tt.clock.Now(), UpdatedAt: tt.clock.Now(),
-	})
+	}
+	tt.transactions.rows = append(tt.transactions.rows, tr)
+	return tr
+}
+
+// requireNothingCommitted fails unless exactly one transaction ran and it rolled back.
+func (tt testTransactions) requireNothingCommitted(t *testing.T) {
+	t.Helper()
+	if got := tt.uow.committed(); !slices.Equal(got, []bool{false}) {
+		t.Errorf("transactions committed = %v, want one that rolled back", got)
+	}
 }
 
 func (tt testTransactions) create(t *testing.T, in domain.TransactionInput) (domain.Transaction, error) {
@@ -351,8 +469,8 @@ func TestCreateTradeWritesInOneTransaction(t *testing.T) {
 	if !slices.Equal(tt.log.calls, want) {
 		t.Errorf("calls = %v, want %v", tt.log.calls, want)
 	}
-	if tt.uow.runs != 1 || len(tt.provider.runsAtCall) != 0 {
-		t.Errorf("transactions = %d, provider calls = %d; want 1 and 0", tt.uow.runs, len(tt.provider.runsAtCall))
+	if !slices.Equal(tt.uow.committed(), []bool{true}) || len(tt.provider.runsAtCall) != 0 {
+		t.Errorf("transactions committed = %v, provider calls = %d; want one commit and no call", tt.uow.committed(), len(tt.provider.runsAtCall))
 	}
 	if got.Sequence != 1 || got.PortfolioID != tt.portfolio.ID || got.InstrumentID != tt.aapl.ID || got.Symbol != tt.aapl.Symbol ||
 		got.Version.Int32() != 1 || got.Side != domain.SideBuy || got.Quantity.String() != "0.5" ||
@@ -364,7 +482,10 @@ func TestCreateTradeWritesInOneTransaction(t *testing.T) {
 		t.Fatalf("saved records = %d, want 1", len(tt.keys.saved))
 	}
 	rec := tt.keys.saved[0]
-	wantScope := domain.IdempotencyScope{UserID: tt.caller.UserID, PortfolioID: tt.portfolio.ID, Operation: domain.IdempotencyOperationCreateTransaction}
+	wantScope := tt.createScope()
+	if tt.keys.gotScope != wantScope || tt.keys.gotKey != "key-1" {
+		t.Errorf("key looked up as %+v %q, want %+v key-1", tt.keys.gotScope, tt.keys.gotKey, wantScope)
+	}
 	if rec.Scope != wantScope || rec.Key != "key-1" || !bytes.Equal(rec.RequestHash, in.RequestHash()) {
 		t.Errorf("record = %+v, want scope %+v, key-1 and the request hash", rec, wantScope)
 	}
@@ -442,6 +563,7 @@ func TestCreateStoresTheRowTheDatabaseReturned(t *testing.T) {
 		if slices.Contains(tt.log.calls, "Idempotency.Save") || slices.Contains(tt.log.calls, "Audit.Append") {
 			t.Errorf("calls = %v, want neither audit nor key", tt.log.calls)
 		}
+		tt.requireNothingCommitted(t)
 	})
 }
 
@@ -567,6 +689,18 @@ func TestCreateSymbolProblems(t *testing.T) {
 			t.Errorf("transactions = %d, want none", tt.uow.runs)
 		}
 	})
+	t.Run("the provider answers for another symbol", func(t *testing.T) {
+		tt := newTestTransactions(t)
+		renamed := mustSymbol(t, "MSFTX") // phase 1 does not follow symbol changes
+		tt.provider.renamedTo = &renamed
+
+		if _, err := tt.create(t, newSymbol(t)); !errors.Is(err, domain.ErrUnknownSymbol) {
+			t.Fatalf("Create() error = %v, want unknown_symbol", err)
+		}
+		if tt.uow.runs != 0 || len(tt.instruments.upserted) != 0 {
+			t.Errorf("transactions = %d, upserts = %d; want nothing written", tt.uow.runs, len(tt.instruments.upserted))
+		}
+	})
 	t.Run("the provider is down", func(t *testing.T) {
 		tt := newTestTransactions(t)
 		cause := errors.New("connection reset")
@@ -629,6 +763,11 @@ func TestCreateSymbolProblems(t *testing.T) {
 	}
 }
 
+// createScope is the idempotency scope of a create in the caller's own portfolio.
+func (tt testTransactions) createScope() domain.IdempotencyScope {
+	return domain.IdempotencyScope{UserID: tt.caller.UserID, PortfolioID: tt.portfolio.ID, Operation: domain.IdempotencyOperationCreateTransaction}
+}
+
 func (tt testTransactions) storedRecord(t *testing.T, in domain.TransactionInput, createdAt time.Time, result domain.Transaction) *domain.IdempotencyRecord {
 	t.Helper()
 	raw, err := domain.MarshalTransactionSnapshot(result)
@@ -636,7 +775,7 @@ func (tt testTransactions) storedRecord(t *testing.T, in domain.TransactionInput
 		t.Fatal(err)
 	}
 	return &domain.IdempotencyRecord{
-		Scope:       domain.IdempotencyScope{UserID: tt.caller.UserID, PortfolioID: tt.portfolio.ID, Operation: domain.IdempotencyOperationCreateTransaction},
+		Scope:       tt.createScope(),
 		Key:         "key-1",
 		RequestHash: in.RequestHash(),
 		Result:      json.RawMessage(raw),
@@ -671,8 +810,8 @@ func TestCreateReplaysTheSameKey(t *testing.T) {
 	if want := []string{"Instruments.BySymbol", "Portfolios.LockOwned", "Idempotency.Get"}; !slices.Equal(tt.log.calls, want) {
 		t.Errorf("calls = %v, want %v", tt.log.calls, want)
 	}
-	if tt.keys.gotKey != "key-1" || len(tt.audit.events) != 0 || len(tt.provider.runsAtCall) != 0 {
-		t.Errorf("key = %q, events = %d, provider calls = %d", tt.keys.gotKey, len(tt.audit.events), len(tt.provider.runsAtCall))
+	if tt.keys.gotKey != "key-1" || tt.keys.gotScope != tt.createScope() || len(tt.audit.events) != 0 || len(tt.provider.runsAtCall) != 0 {
+		t.Errorf("key = %+v %q, events = %d, provider calls = %d", tt.keys.gotScope, tt.keys.gotKey, len(tt.audit.events), len(tt.provider.runsAtCall))
 	}
 }
 
@@ -691,6 +830,7 @@ func TestCreateRefusesAKeyUsedForAnotherRequest(t *testing.T) {
 	if len(tt.audit.events) != 0 {
 		t.Errorf("audit events = %d, want none", len(tt.audit.events))
 	}
+	tt.requireNothingCommitted(t)
 }
 
 func TestCreateReusesAnExpiredKey(t *testing.T) {
@@ -712,6 +852,9 @@ func TestCreateReusesAnExpiredKey(t *testing.T) {
 	}
 	if !slices.Equal(tt.keys.deleted, []time.Time{tt.clock.Now()}) {
 		t.Errorf("DeleteExpired at %v, want now", tt.keys.deleted)
+	}
+	if tt.keys.deletedScope != tt.createScope() || tt.keys.deletedKey != "key-1" {
+		t.Errorf("DeleteExpired(%+v, %q), want %+v key-1", tt.keys.deletedScope, tt.keys.deletedKey, tt.createScope())
 	}
 	rec := tt.keys.saved[0]
 	if !bytes.Equal(rec.RequestHash, in.RequestHash()) || !rec.CreatedAt.Equal(tt.clock.Now()) {
@@ -735,6 +878,7 @@ func TestCreateRefusesASellPastTheHolding(t *testing.T) {
 	if slices.Contains(tt.log.calls, "Audit.Append") || slices.Contains(tt.log.calls, "Idempotency.Save") {
 		t.Errorf("calls = %v, want neither audit nor key", tt.log.calls)
 	}
+	tt.requireNothingCommitted(t)
 }
 
 func TestCreateFailsWhenTheAuditCannotBeWritten(t *testing.T) {
@@ -749,6 +893,7 @@ func TestCreateFailsWhenTheAuditCannotBeWritten(t *testing.T) {
 	if slices.Contains(tt.log.calls, "Idempotency.Save") {
 		t.Errorf("calls = %v, want no key saved", tt.log.calls)
 	}
+	tt.requireNothingCommitted(t)
 }
 
 func TestCreateNeedsACaller(t *testing.T) {
@@ -767,4 +912,459 @@ func TestNewTransactionsNeedsEveryDependency(t *testing.T) {
 	if _, err := NewTransactions(TransactionDeps{}); err == nil {
 		t.Error("NewTransactions(no deps) error = nil, want an error")
 	}
+}
+
+// A malformed Idempotency-Key is refused before anything is read, so it cannot spend the
+// instrument lookup quota on a request that was never going to be recorded.
+func TestCreateRefusesABadIdempotencyKeyFirst(t *testing.T) {
+	for name, key := range map[string]string{
+		"empty":          "",
+		"with a space":   "key 1",
+		"129 bytes":      string(bytes.Repeat([]byte("k"), 129)),
+		"not ASCII":      "clé",
+		"a control byte": "key\n",
+	} {
+		t.Run(name, func(t *testing.T) {
+			tt := newTestTransactions(t)
+
+			_, err := tt.svc.Create(t.Context(), tt.caller, tt.portfolio.ID, key, tradeInput(t, "MSFT", "buy", "1", "2026-10-01T14:30:00Z"), tt.meta)
+			if !errors.Is(err, domain.ErrInvalidInput) {
+				t.Fatalf("Create() error = %v, want invalid_input", err)
+			}
+			if len(tt.log.calls) != 0 || tt.uow.runs != 0 || len(*tt.scopes) != 0 {
+				t.Errorf("calls = %v, transactions = %d, limits = %v; want nothing touched", tt.log.calls, tt.uow.runs, *tt.scopes)
+			}
+		})
+	}
+}
+
+// The bookkeeping of a refused write logs its failure under a stable event name that alerts and
+// log queries can match; the answer stays not_found.
+func TestDenialBookkeepingFailureIsLoggedByName(t *testing.T) {
+	cases := map[string]func(tt testTransactions){
+		"the existence lookup fails": func(tt testTransactions) { tt.portfolios.existsErr = errors.New("connection reset") },
+		"the limiter is down":        func(tt testTransactions) { tt.limits.err = errors.New("connection refused") },
+	}
+	for name, breakIt := range cases {
+		t.Run(name, func(t *testing.T) {
+			tt := newTestTransactions(t)
+			theirs := tt.seedPortfolio(t, mustID(t))
+			tt.portfolios.existsAnswe = true
+			breakIt(tt)
+
+			err := tt.svc.Delete(t.Context(), tt.caller, theirs.ID, mustID(t), mustVersion(t, 1), tt.meta)
+			if !errors.Is(err, domain.ErrNotFound) {
+				t.Fatalf("Delete() error = %v, want not_found", err)
+			}
+			if !bytes.Contains(tt.logs.Bytes(), []byte(`"event":"access_denial.bookkeeping_failed"`)) ||
+				!bytes.Contains(tt.logs.Bytes(), []byte(tt.meta.RequestID.String())) {
+				t.Errorf("log %q, want event access_denial.bookkeeping_failed with the request ID", tt.logs.String())
+			}
+		})
+	}
+}
+
+func tradeOf(t *testing.T, symbol, side, quantity, price, fee, executedAt string) domain.TransactionInput {
+	t.Helper()
+	in, err := domain.ParseTransactionInput(symbol, side, quantity, price, fee, executedAt, newFakeClock().Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return in
+}
+
+func (tt testTransactions) update(t *testing.T, id domain.ID, expected int64, in domain.TransactionInput) (domain.Transaction, error) {
+	t.Helper()
+	return tt.svc.Update(t.Context(), tt.caller, tt.portfolio.ID, id, mustVersion(t, expected), in, tt.meta)
+}
+
+func (tt testTransactions) delete(t *testing.T, id domain.ID, expected int64) error {
+	t.Helper()
+	return tt.svc.Delete(t.Context(), tt.caller, tt.portfolio.ID, id, mustVersion(t, expected), tt.meta)
+}
+
+// requireTradeFields checks an audited before or after: exactly the six trade fields, as strings.
+func requireTradeFields(t *testing.T, name string, got any, want map[string]any) {
+	t.Helper()
+	m, ok := got.(map[string]any)
+	if !ok || len(m) != len(want) {
+		t.Errorf("%s = %v, want exactly %v", name, got, want)
+		return
+	}
+	for k, v := range want {
+		if s, isString := m[k].(string); !isString || s != v {
+			t.Errorf("%s[%s] = %#v, want the string %v", name, k, m[k], v)
+		}
+	}
+}
+
+func TestUpdateChecksTheVersionUnderTheLock(t *testing.T) {
+	t.Run("update", func(t *testing.T) {
+		tt := newTestTransactions(t)
+		seeded := tt.seedTrade(t, tradeInput(t, "AAPL", "buy", "1", "2026-09-01T14:30:00Z"))
+		tt.transactions.rows[0].Version = mustVersion(t, 2) // someone else changed it after the client read it
+
+		_, err := tt.update(t, seeded.ID, 1, tradeInput(t, "AAPL", "buy", "3", "2026-09-01T14:30:00Z"))
+		if !errors.Is(err, domain.ErrVersionConflict) {
+			t.Fatalf("Update() error = %v, want version_conflict", err)
+		}
+		if want := []string{"Instruments.BySymbol", "Portfolios.LockOwned", "Transactions.Get"}; !slices.Equal(tt.log.calls, want) {
+			t.Errorf("calls = %v, want %v", tt.log.calls, want)
+		}
+		if len(tt.audit.events) != 0 {
+			t.Errorf("audit events = %+v, want none", tt.audit.events)
+		}
+		tt.requireNothingCommitted(t)
+	})
+	t.Run("delete", func(t *testing.T) {
+		tt := newTestTransactions(t)
+		seeded := tt.seedTrade(t, tradeInput(t, "AAPL", "buy", "1", "2026-09-01T14:30:00Z"))
+		tt.transactions.rows[0].Version = mustVersion(t, 2)
+
+		if err := tt.delete(t, seeded.ID, 1); !errors.Is(err, domain.ErrVersionConflict) {
+			t.Fatalf("Delete() error = %v, want version_conflict", err)
+		}
+		if want := []string{"Portfolios.LockOwned", "Transactions.Get"}; !slices.Equal(tt.log.calls, want) {
+			t.Errorf("calls = %v, want %v", tt.log.calls, want)
+		}
+		if len(tt.audit.events) != 0 || len(tt.transactions.rows) != 1 {
+			t.Errorf("audit events = %d, rows = %d; want none and the trade kept", len(tt.audit.events), len(tt.transactions.rows))
+		}
+		tt.requireNothingCommitted(t)
+	})
+}
+
+func TestUpdateAuditsBeforeAndAfter(t *testing.T) {
+	tt := newTestTransactions(t)
+	seeded := tt.seedTrade(t, tradeOf(t, "AAPL", "buy", "1", "200", "1", "2026-09-01T14:30:00Z"))
+	tt.clock.Advance(time.Hour)
+
+	got, err := tt.update(t, seeded.ID, 1, tradeOf(t, "AAPL", "buy", "2.50", "180.25", "0", "2026-09-02T15:00:00+07:00"))
+	if err != nil {
+		t.Fatalf("Update() error = %v", err)
+	}
+	want := []string{
+		"Instruments.BySymbol", "Portfolios.LockOwned", "Transactions.Get", "Transactions.Update",
+		"Transactions.History", "Audit.Append",
+	}
+	if !slices.Equal(tt.log.calls, want) {
+		t.Errorf("calls = %v, want %v", tt.log.calls, want)
+	}
+	if !slices.Equal(tt.uow.committed(), []bool{true}) {
+		t.Errorf("transactions committed = %v, want one commit", tt.uow.committed())
+	}
+
+	passed := tt.transactions.updated[0]
+	if passed.ID != seeded.ID || passed.PortfolioID != tt.portfolio.ID || passed.Version.Int32() != 1 ||
+		passed.Sequence != seeded.Sequence || !passed.CreatedAt.Equal(seeded.CreatedAt) || !passed.UpdatedAt.Equal(tt.clock.Now()) {
+		t.Errorf("Update got %+v, want the current version, the original sequence and creation time, and updated now", passed)
+	}
+	if got.Version.Int32() != 2 || got.Sequence != seeded.Sequence || got.Quantity.String() != "2.5" ||
+		got.Price.String() != "180.25" || got.Fee.String() != "0" || !got.UpdatedAt.Equal(tt.clock.Now()) {
+		t.Errorf("Update() = %+v, want the stored row at version 2", got)
+	}
+
+	if len(tt.audit.events) != 1 {
+		t.Fatalf("audit events = %d, want 1", len(tt.audit.events))
+	}
+	e := tt.audit.events[0]
+	if e.EventType != domain.EventTransactionUpdated || e.Outcome != domain.AuditOutcomeSuccess ||
+		e.ActorUserID != tt.caller.UserID || e.SessionID != tt.caller.SessionID || e.RequestID != tt.meta.RequestID ||
+		e.TargetType != "transaction" || e.TargetID != seeded.ID.String() {
+		t.Errorf("audit event = %+v", e)
+	}
+	m := auditMetadataOf(t, e)
+	for k := range m {
+		if !slices.Contains([]string{"portfolio_id", "ip", "user_agent", "before", "after"}, k) {
+			t.Errorf("metadata has %q; only portfolio_id, ip, user_agent, before and after are allowed", k)
+		}
+	}
+	if m["portfolio_id"] != tt.portfolio.ID.String() || m["ip"] != tt.meta.MaskedIP || m["user_agent"] != tt.meta.UserAgent {
+		t.Errorf("metadata = %v, want portfolio_id, ip and user_agent", m)
+	}
+	requireTradeFields(t, "before", m["before"], map[string]any{
+		"symbol": "AAPL", "side": "buy", "quantity": "1", "price": "200", "fee": "1", "executed_at": "2026-09-01T14:30:00Z",
+	})
+	requireTradeFields(t, "after", m["after"], map[string]any{
+		"symbol": "AAPL", "side": "buy", "quantity": "2.5", "price": "180.25", "fee": "0", "executed_at": "2026-09-02T08:00:00Z",
+	})
+}
+
+func TestUpdateToANewSymbolStoresTheInstrumentFirst(t *testing.T) {
+	tt := newTestTransactions(t)
+	seeded := tt.seedTrade(t, tradeInput(t, "AAPL", "buy", "1", "2026-09-01T14:30:00Z"))
+	winner := mustInstrument(t, "MSFT", tt.clock.Now())
+	tt.instruments.raceWinner = &winner // a concurrent request stored MSFT first
+
+	got, err := tt.update(t, seeded.ID, 1, tradeInput(t, "MSFT", "buy", "1", "2026-09-01T14:30:00Z"))
+	if err != nil {
+		t.Fatalf("Update() error = %v", err)
+	}
+	want := []string{
+		"Instruments.BySymbol", "Portfolios.GetOwned", "RateLimits.Admit", "Provider.Lookup",
+		"Portfolios.LockOwned", "Transactions.Get", "Instruments.Upsert", "Transactions.Update",
+		"Transactions.History", "Audit.Append",
+	}
+	if !slices.Equal(tt.log.calls, want) {
+		t.Errorf("calls = %v, want %v", tt.log.calls, want)
+	}
+	if !slices.Equal(tt.provider.runsAtCall, []int{0}) {
+		t.Errorf("provider called with %v transactions started, want once before any", tt.provider.runsAtCall)
+	}
+	if tt.transactions.updated[0].InstrumentID != winner.ID || got.InstrumentID != winner.ID || got.Symbol.String() != "MSFT" {
+		t.Errorf("Update got instrument %v, returned %v %s; want the stored row's %v MSFT",
+			tt.transactions.updated[0].InstrumentID, got.InstrumentID, got.Symbol, winner.ID)
+	}
+	m := auditMetadataOf(t, tt.audit.events[0])
+	before, _ := m["before"].(map[string]any)
+	after, _ := m["after"].(map[string]any)
+	if before["symbol"] != "AAPL" || after["symbol"] != "MSFT" {
+		t.Errorf("before = %v, after = %v; want AAPL then MSFT", before, after)
+	}
+	if !slices.Equal(tt.uow.committed(), []bool{true}) {
+		t.Errorf("transactions committed = %v, want one commit", tt.uow.committed())
+	}
+}
+
+func TestUpdateAndDeleteRefuseAnImpossibleHistory(t *testing.T) {
+	// The buy funds a later sale of everything it bought.
+	seed := func(t *testing.T) (testTransactions, domain.Transaction) {
+		tt := newTestTransactions(t)
+		buy := tt.seedTrade(t, tradeInput(t, "AAPL", "buy", "1", "2026-09-01T14:30:00Z"))
+		tt.seedTrade(t, tradeInput(t, "AAPL", "sell", "1", "2026-10-01T14:30:00Z"))
+		return tt, buy
+	}
+	changes := map[string]func(tt testTransactions, buy domain.Transaction) error{
+		"buy fewer": func(tt testTransactions, buy domain.Transaction) error {
+			_, err := tt.update(t, buy.ID, 1, tradeInput(t, "AAPL", "buy", "0.5", "2026-09-01T14:30:00Z"))
+			return err
+		},
+		"buy after the sale": func(tt testTransactions, buy domain.Transaction) error {
+			_, err := tt.update(t, buy.ID, 1, tradeInput(t, "AAPL", "buy", "1", "2026-10-02T14:30:00Z"))
+			return err
+		},
+		"move the buy to another symbol": func(tt testTransactions, buy domain.Transaction) error {
+			tt.instruments.bySymbol["MSFT"] = mustInstrument(t, "MSFT", tt.clock.Now())
+			_, err := tt.update(t, buy.ID, 1, tradeInput(t, "MSFT", "buy", "1", "2026-09-01T14:30:00Z"))
+			return err
+		},
+		"delete the buy": func(tt testTransactions, buy domain.Transaction) error {
+			return tt.delete(t, buy.ID, 1)
+		},
+	}
+	for name, change := range changes {
+		t.Run(name, func(t *testing.T) {
+			tt, buy := seed(t)
+
+			err := change(tt, buy)
+			if !errors.Is(err, domain.ErrInvalidHistory) || errors.Is(err, domain.ErrInsufficientShares) {
+				t.Fatalf("error = %v, want invalid_history and not insufficient_shares", err)
+			}
+			if !slices.Contains(tt.log.calls, "Transactions.History") || slices.Contains(tt.log.calls, "Audit.Append") {
+				t.Errorf("calls = %v, want the history replayed and no audit", tt.log.calls)
+			}
+			tt.requireNothingCommitted(t)
+		})
+	}
+}
+
+func TestDeleteAuditsWhatWasRemoved(t *testing.T) {
+	tt := newTestTransactions(t)
+	seeded := tt.seedTrade(t, tradeOf(t, "AAPL", "buy", "0.5", "200", "1", "2026-10-01T14:30:00Z"))
+
+	if err := tt.delete(t, seeded.ID, 1); err != nil {
+		t.Fatalf("Delete() error = %v", err)
+	}
+	want := []string{"Portfolios.LockOwned", "Transactions.Get", "Transactions.Delete", "Transactions.History", "Audit.Append"}
+	if !slices.Equal(tt.log.calls, want) {
+		t.Errorf("calls = %v, want %v", tt.log.calls, want)
+	}
+	if !slices.Equal(tt.transactions.deleted, []domain.ID{seeded.ID}) || len(tt.transactions.rows) != 0 {
+		t.Errorf("deleted = %v, rows left = %d; want the trade removed", tt.transactions.deleted, len(tt.transactions.rows))
+	}
+	if !slices.Equal(tt.uow.committed(), []bool{true}) {
+		t.Errorf("transactions committed = %v, want one commit", tt.uow.committed())
+	}
+	if len(tt.audit.events) != 1 {
+		t.Fatalf("audit events = %d, want 1", len(tt.audit.events))
+	}
+	e := tt.audit.events[0]
+	if e.EventType != domain.EventTransactionDeleted || e.Outcome != domain.AuditOutcomeSuccess ||
+		e.ActorUserID != tt.caller.UserID || e.SessionID != tt.caller.SessionID ||
+		e.TargetType != "transaction" || e.TargetID != seeded.ID.String() {
+		t.Errorf("audit event = %+v", e)
+	}
+	m := auditMetadataOf(t, e)
+	requireTradeFields(t, "before", m["before"], map[string]any{
+		"symbol": "AAPL", "side": "buy", "quantity": "0.5", "price": "200", "fee": "1", "executed_at": "2026-10-01T14:30:00Z",
+	})
+	if _, has := m["after"]; has || m["portfolio_id"] != tt.portfolio.ID.String() {
+		t.Errorf("metadata = %v, want the portfolio and no after for a deleted trade", m)
+	}
+}
+
+func TestUpdateAndDeleteFailWhenTheAuditCannotBeWritten(t *testing.T) {
+	for name, change := range map[string]func(tt testTransactions, id domain.ID) error{
+		"update": func(tt testTransactions, id domain.ID) error {
+			_, err := tt.update(t, id, 1, tradeInput(t, "AAPL", "buy", "2", "2026-09-01T14:30:00Z"))
+			return err
+		},
+		"delete": func(tt testTransactions, id domain.ID) error { return tt.delete(t, id, 1) },
+	} {
+		t.Run(name, func(t *testing.T) {
+			tt := newTestTransactions(t)
+			seeded := tt.seedTrade(t, tradeInput(t, "AAPL", "buy", "1", "2026-09-01T14:30:00Z"))
+			tt.audit.err = errors.New("disk full")
+
+			err := change(tt, seeded.ID)
+			var de *domain.Error
+			if !errors.As(err, &de) || de.Code != domain.CodeAuditWriteFailed {
+				t.Fatalf("error = %v, want audit_write_failed", err)
+			}
+			tt.requireNothingCommitted(t)
+		})
+	}
+}
+
+func TestMissingTradeInOwnPortfolioIsNotAnAccessDenial(t *testing.T) {
+	for name, change := range map[string]func(tt testTransactions, id domain.ID) error{
+		"update": func(tt testTransactions, id domain.ID) error {
+			_, err := tt.update(t, id, 1, tradeInput(t, "AAPL", "buy", "2", "2026-09-01T14:30:00Z"))
+			return err
+		},
+		"delete": func(tt testTransactions, id domain.ID) error { return tt.delete(t, id, 1) },
+	} {
+		t.Run(name, func(t *testing.T) {
+			tt := newTestTransactions(t)
+			tt.portfolios.existsAnswe = true // the portfolio exists: it is the caller's own
+
+			if err := change(tt, mustID(t)); !errors.Is(err, domain.ErrNotFound) {
+				t.Fatalf("error = %v, want not_found", err)
+			}
+			if slices.Contains(tt.log.calls, "Portfolios.Exists") || len(tt.audit.events) != 0 {
+				t.Errorf("calls = %v, events = %+v: a missing trade in your own portfolio is not an access denial", tt.log.calls, tt.audit.events)
+			}
+			tt.requireNothingCommitted(t)
+		})
+	}
+}
+
+func TestUpdateOrDeleteOnAForeignPortfolioIsDenied(t *testing.T) {
+	for name, change := range map[string]func(tt testTransactions, portfolioID domain.ID) error{
+		"update": func(tt testTransactions, portfolioID domain.ID) error {
+			_, err := tt.svc.Update(t.Context(), tt.caller, portfolioID, mustID(t), mustVersion(t, 1), tradeInput(t, "AAPL", "buy", "1", "2026-09-01T14:30:00Z"), tt.meta)
+			return err
+		},
+		"update to a new symbol": func(tt testTransactions, portfolioID domain.ID) error {
+			_, err := tt.svc.Update(t.Context(), tt.caller, portfolioID, mustID(t), mustVersion(t, 1), tradeInput(t, "MSFT", "buy", "1", "2026-09-01T14:30:00Z"), tt.meta)
+			return err
+		},
+		"delete": func(tt testTransactions, portfolioID domain.ID) error {
+			return tt.svc.Delete(t.Context(), tt.caller, portfolioID, mustID(t), mustVersion(t, 1), tt.meta)
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			tt := newTestTransactions(t)
+			theirs := tt.seedPortfolio(t, mustID(t))
+			tt.portfolios.existsAnswe = true
+
+			if err := change(tt, theirs.ID); !errors.Is(err, domain.ErrNotFound) {
+				t.Fatalf("error = %v, want not_found", err)
+			}
+			denied := tt.eventsOf(domain.EventSecurityAccessDenied)
+			if len(denied) != 1 || len(tt.audit.events) != 1 {
+				t.Fatalf("audit events = %+v, want one security.access_denied", tt.audit.events)
+			}
+			if e := denied[0]; e.TargetType != "portfolio" || e.TargetID != theirs.ID.String() || e.ActorUserID != tt.caller.UserID {
+				t.Errorf("audit event = %+v", e)
+			}
+			if slices.Contains(tt.log.calls, "Transactions.Get") || slices.Contains(tt.log.calls, "Provider.Lookup") {
+				t.Errorf("calls = %v, want neither a trade read nor a provider call", tt.log.calls)
+			}
+			// Any write transaction rolled back; only the denial's own transaction commits.
+			if got := tt.uow.committed(); len(got) == 0 || got[len(got)-1] != true || slices.Contains(got[:len(got)-1], true) {
+				t.Errorf("transactions committed = %v, want only the denial committed", got)
+			}
+		})
+	}
+}
+
+func TestUpdateAndDeleteNeedACaller(t *testing.T) {
+	tt := newTestTransactions(t)
+	seeded := tt.seedTrade(t, tradeInput(t, "AAPL", "buy", "1", "2026-09-01T14:30:00Z"))
+
+	_, err := tt.svc.Update(t.Context(), domain.Principal{}, tt.portfolio.ID, seeded.ID, mustVersion(t, 1), tradeInput(t, "MSFT", "buy", "1", "2026-09-01T14:30:00Z"), tt.meta)
+	if !errors.Is(err, domain.ErrUnauthenticated) {
+		t.Fatalf("Update() error = %v, want unauthenticated", err)
+	}
+	if err := tt.svc.Delete(t.Context(), domain.Principal{}, tt.portfolio.ID, seeded.ID, mustVersion(t, 1), tt.meta); !errors.Is(err, domain.ErrUnauthenticated) {
+		t.Fatalf("Delete() error = %v, want unauthenticated", err)
+	}
+	if len(tt.log.calls) != 0 || tt.uow.runs != 0 {
+		t.Errorf("repositories touched: %v (%d transactions)", tt.log.calls, tt.uow.runs)
+	}
+}
+
+func TestGetAndListNeedACallerAndWriteNoAudit(t *testing.T) {
+	page, err := domain.ParsePage("", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	filter, err := domain.NewTransactionFilter(page, nil, nil, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Run("no caller", func(t *testing.T) {
+		tt := newTestTransactions(t)
+		seeded := tt.seedTrade(t, tradeInput(t, "AAPL", "buy", "1", "2026-09-01T14:30:00Z"))
+
+		if _, err := tt.svc.Get(t.Context(), domain.Principal{}, tt.portfolio.ID, seeded.ID); !errors.Is(err, domain.ErrUnauthenticated) {
+			t.Errorf("Get() error = %v, want unauthenticated", err)
+		}
+		if _, err := tt.svc.List(t.Context(), domain.Principal{}, tt.portfolio.ID, filter); !errors.Is(err, domain.ErrUnauthenticated) {
+			t.Errorf("List() error = %v, want unauthenticated", err)
+		}
+		if len(tt.log.calls) != 0 {
+			t.Errorf("repositories touched: %v", tt.log.calls)
+		}
+	})
+	t.Run("the caller's portfolio", func(t *testing.T) {
+		tt := newTestTransactions(t)
+		first := tt.seedTrade(t, tradeInput(t, "AAPL", "buy", "1", "2026-09-01T14:30:00Z"))
+		second := tt.seedTrade(t, tradeInput(t, "AAPL", "buy", "2", "2026-09-02T14:30:00Z"))
+
+		got, err := tt.svc.Get(t.Context(), tt.caller, tt.portfolio.ID, first.ID)
+		if err != nil || got.ID != first.ID {
+			t.Fatalf("Get() = %+v, %v; want the first trade", got, err)
+		}
+		listed, err := tt.svc.List(t.Context(), tt.caller, tt.portfolio.ID, filter)
+		if err != nil {
+			t.Fatalf("List() error = %v", err)
+		}
+		if len(listed.Items) != 2 || listed.Items[0].ID != second.ID || len(tt.transactions.filters) != 1 || tt.transactions.filters[0] != filter {
+			t.Errorf("List() = %+v, filters passed = %+v; want both trades newest first and the filter passed on", listed, tt.transactions.filters)
+		}
+		if want := []string{"Transactions.Get", "Transactions.List"}; !slices.Equal(tt.log.calls, want) {
+			t.Errorf("calls = %v, want %v outside any transaction", tt.log.calls, want)
+		}
+		if tt.uow.runs != 0 || len(tt.audit.events) != 0 {
+			t.Errorf("transactions = %d, audit events = %d; reading writes nothing", tt.uow.runs, len(tt.audit.events))
+		}
+	})
+	t.Run("a foreign portfolio reads as missing and is not recorded", func(t *testing.T) {
+		tt := newTestTransactions(t)
+		theirs := tt.seedPortfolio(t, mustID(t))
+		tt.portfolios.existsAnswe = true
+
+		if _, err := tt.svc.Get(t.Context(), tt.caller, theirs.ID, mustID(t)); !errors.Is(err, domain.ErrNotFound) {
+			t.Errorf("Get() error = %v, want not_found", err)
+		}
+		if _, err := tt.svc.List(t.Context(), tt.caller, theirs.ID, filter); !errors.Is(err, domain.ErrNotFound) {
+			t.Errorf("List() error = %v, want not_found", err)
+		}
+		if slices.Contains(tt.log.calls, "Portfolios.Exists") || tt.uow.runs != 0 || len(tt.audit.events) != 0 {
+			t.Errorf("calls = %v, transactions = %d, events = %d; a read is never an audited denial", tt.log.calls, tt.uow.runs, len(tt.audit.events))
+		}
+	})
 }
