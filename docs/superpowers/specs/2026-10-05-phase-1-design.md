@@ -248,7 +248,7 @@ type PriceProvider interface {
     Quotes(context.Context, []string, time.Time) (domain.QuoteBatch, error) // symbols, cutoff
 }
 type InstrumentProvider interface { // external lookup: Alpaca Assets API หรือ demo list
-    Lookup(context.Context, string) (domain.Instrument, error) // ErrUnknownSymbol / ErrDependencyUnavailable
+    Lookup(context.Context, domain.Symbol) (domain.Instrument, error) // ErrUnknownSymbol / ErrDependencyUnavailable (milestone 7: รับ symbol ที่ normalize แล้ว; ผลไม่มี ID/เวลา service เติมก่อนบันทึก)
 }
 type InstrumentRepository interface {
     BySymbol(context.Context, domain.Symbol) (domain.Instrument, error)
@@ -346,7 +346,7 @@ ID arguments เรียง ownerID, portfolioID, transactionID เมื่อ
 
 `OTPReceipt` = ChallengeID/ExpiresIn ใช้ทั้ง register, ขอรหัสยืนยันอีเมลใหม่ และ password reset; `OTPMail` = To/OTP/ChallengeID/ExpiresAt ห้าม log; `OTPChallenge` = ID/UserID/Purpose/OTPHash/CreatedAt/ExpiresAt/FailedAttempts/ConsumedAt/InvalidatedAt โดย Purpose เป็นชนิด `domain.OTPPurpose` ค่า `email_verification` หรือ `password_reset` ตรงกับ CHECK ของ otp_challenges และถูกรวมใน HMAC เพื่อไม่ให้รหัสของ flow หนึ่งใช้กับอีก flow ได้; `VerifyEmailInput` = ChallengeID/OTP. `QuoteBatch` แยก Quotes ตาม symbol และ UnavailableSymbols; `PriceQuote` มี Price/Currency/AsOf/FetchedAt/Source/Feed/IsDemo/Stale/Cached/SessionStatus. `IdempotencyScope` = UserID/PortfolioID/Operation; record มี Key/RequestHash/Result/ExpiresAt. RateLimitRule = Scope/KeyHash/Limit/Window; decision = Allowed/RetryAfter/RecordDenialAudit โดย flag สุดท้ายได้จาก atomic update ของ last_denial_audit_at
 
-Repositories ที่อ่านนอก transaction inject ได้เป็น concrete adapters ผ่าน port เดิม ส่วน mutations ที่ต้อง atomic ใช้เฉพาะ repositories จาก callback. `Lock*` ใช้ได้เฉพาะ transaction-bound instance; ห้ามเปิด nested transactions เอง
+Repositories ที่อ่านนอก transaction inject ได้เป็น concrete adapters ผ่าน port เดิม (milestone 7 เพิ่ม accessor `Transactions()` และ `Instruments()` ให้ `port.Repositories` สำหรับอ่านรายการ/รายการเดี่ยวและค้น instrument นอก transaction) ส่วน mutations ที่ต้อง atomic ใช้เฉพาะ repositories จาก callback. `Lock*` ใช้ได้เฉพาะ transaction-bound instance; ห้ามเปิด nested transactions เอง
 
 ไม่สร้าง PasswordHasher/UUIDFactory/logger interface โดยไม่มีเหตุผล: crypto helper ใช้ concrete implementation, randomness ใช้ crypto/rand และ slog inject เป็นค่า ไม่สร้าง abstraction ให้ทุกฟังก์ชัน
 
@@ -354,7 +354,7 @@ Repositories ที่อ่านนอก transaction inject ได้เป�
 
 ### ซื้อขายและการแก้ย้อนหลัง
 
-0. ก่อนเปิด DB transaction: normalize symbol แล้วอ่าน instruments; ถ้าไม่มี ให้ตรวจ rate limit `instrument_lookup_user` แล้วเรียก InstrumentProvider นอก lock — ไม่เจอหรือไม่ใช่ us_equity คืน 422 `unknown_symbol`, provider ล่ม/timeout คืน 503 `dependency_unavailable` โดยไม่ fallback ไปข้อมูลเดโม; การแก้รายการที่เปลี่ยน symbol ใช้ขั้นนี้กับ symbol ใหม่ และ retry ด้วย idempotency key เดิมไม่ต้องเรียก provider ซ้ำเพราะ symbol ถูกบันทึกแล้วตั้งแต่ครั้งแรก
+0. ก่อนเปิด DB transaction: normalize symbol แล้วอ่าน instruments; ถ้าไม่มี ให้ตรวจเจ้าของพอร์ตด้วย `GetOwned(ownerID, portfolioID)` ก่อน (พอร์ตของคนอื่นหรือที่ไม่มีคืน 404 `not_found` โดยไม่แตะ rate limit และ provider เพื่อไม่ให้ `portfolio_id` ของคนอื่นกินโควตา provider; milestone 7 เพิ่มขั้นนี้) แล้วจึงตรวจ rate limit `instrument_lookup_user` แล้วเรียก InstrumentProvider นอก lock — ไม่เจอหรือไม่ใช่ us_equity คืน 422 `unknown_symbol`, provider ล่ม/timeout คืน 503 `dependency_unavailable` โดยไม่ fallback ไปข้อมูลเดโม; การแก้รายการที่เปลี่ยน symbol ใช้ขั้นนี้กับ symbol ใหม่ และ retry ด้วย idempotency key เดิมไม่ต้องเรียก provider ซ้ำเพราะ symbol ถูกบันทึกแล้วตั้งแต่ครั้งแรก
 1. Begin transaction → `LockOwned(ownerID, portfolioID)` ตรวจสิทธิ์และ serialize การแก้พอร์ต
 2. สร้างรายการ: อ่าน idempotency scope `transactions.create`; require key 1–128 ตัว ASCII ที่พิมพ์ได้
 3. ถ้า key ยังไม่หมดอายุและ hash ตรง คืน transaction representation ที่เก็บไว้ ไม่เขียน event ซ้ำ; hash ไม่ตรงคืน 409
@@ -438,6 +438,8 @@ Base path `/api/v1`; JSON UTF-8; UUID เป็น string; timestamp RFC3339 UTC
 | rate_limited | 429 + Retry-After จำนวนวินาที |
 | dependency_unavailable / feature_disabled / server_busy | 503 (server_busy มี Retry-After) |
 | internal / audit_write_failed | 500 โดยไม่เปิด DB details |
+
+ความหมายที่ใช้จริงใน milestone 7: `insufficient_shares` ใช้เมื่อ**สร้าง**รายการขายที่ทำให้จำนวนหุ้นติดลบ ณ จุดใดของประวัติ ส่วน `invalid_history` ใช้เมื่อ**แก้หรือลบ**รายการย้อนหลังแล้วทำให้ประวัติส่วนที่เหลือติดลบ ทั้งสองคืน 422 และไม่เขียนอะไร. `server_busy` (503 + `Retry-After: 1`) ครอบกรณีฐานข้อมูลชนกันหรือช้าเกิน — deadlock `40P01`, serialization failure `40001`, lock timeout `55P03`, statement timeout `57014` และ deadline ของ request — ไม่ใช่เฉพาะ hash semaphore ของ auth; ลองใหม่ได้ด้วย Idempotency-Key เดิม
 
 | Method + path (ใต้ /api/v1 เว้นระบุ) | Auth | Input → output / success |
 | --- | --- | --- |

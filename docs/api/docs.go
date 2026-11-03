@@ -2454,7 +2454,7 @@ var SwaggerInfo = &swag.Spec{
 	BasePath:         "/",
 	Schemes:          []string{},
 	Title:            "Stock Portfolio Tracker API",
-	Description:      "Records US stock trades and tracks portfolio cost and P&L. It does not place real orders.\nMilestone 7 exposes Health, the Auth endpoints (email and password, email verification, password reset, Google sign-in and linking), Portfolios and Transactions (record, list and read trades; changing and deleting trades is added next); holdings and prices are not implemented yet.",
+	Description:      "Records US stock trades and tracks portfolio cost and P&L. It does not place real orders.\nMilestone 7 exposes Health, the Auth endpoints (email and password, email verification, password reset, Google sign-in and linking), Portfolios and Transactions (record, list, read, edit and delete trades); holdings and prices are not implemented yet.",
 	InfoInstanceName: "swagger",
 	SwaggerTemplate:  docTemplate,
 	LeftDelim:        "{{",

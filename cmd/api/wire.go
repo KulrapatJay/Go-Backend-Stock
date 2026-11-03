@@ -9,11 +9,13 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"go-backend-stock/internal/adapter/demo"
 	httpadapter "go-backend-stock/internal/adapter/http"
 	"go-backend-stock/internal/adapter/identity"
 	"go-backend-stock/internal/adapter/mail"
 	"go-backend-stock/internal/adapter/postgres"
 	"go-backend-stock/internal/config"
+	"go-backend-stock/internal/core/domain"
 	"go-backend-stock/internal/core/port"
 	"go-backend-stock/internal/core/service"
 )
@@ -174,4 +176,41 @@ func buildPortfolios(cfg config.Config, pool *pgxpool.Pool, log *slog.Logger) (h
 		return httpadapter.PortfolioOptions{}, fmt.Errorf("build portfolios: %w", err)
 	}
 	return httpadapter.PortfolioOptions{Service: portfolios}, nil
+}
+
+// noInstrumentProvider is the production port.InstrumentProvider until milestone 8 adds Alpaca. It
+// can verify nothing, so a symbol the database does not know yet is refused with
+// dependency_unavailable (retryable) instead of being checked against sample data.
+type noInstrumentProvider struct{}
+
+func (noInstrumentProvider) Lookup(context.Context, domain.Symbol) (domain.Instrument, error) {
+	return domain.Instrument{}, domain.ErrDependencyUnavailable
+}
+
+// instrumentProvider picks the source that checks new symbols. Production never gets the demo list,
+// and an unavailable real provider is never replaced by sample data.
+func instrumentProvider(cfg config.Config) port.InstrumentProvider {
+	if cfg.IsProduction() {
+		return noInstrumentProvider{}
+	}
+	return demo.NewInstruments()
+}
+
+// buildTransactions wires the trade use cases over the same store as auth and portfolios. It opens
+// no connection. The clock is also the HTTP adapter's, which checks that executed_at is not in the
+// future.
+func buildTransactions(cfg config.Config, pool *pgxpool.Pool, log *slog.Logger) (httpadapter.TransactionOptions, error) {
+	limits, err := buildRateLimits(cfg)
+	if err != nil {
+		return httpadapter.TransactionOptions{}, fmt.Errorf("build transactions: rate limits: %w", err)
+	}
+	store := postgres.NewStore(pool)
+	clock := systemClock{}
+	transactions, err := service.NewTransactions(service.TransactionDeps{
+		Store: store, UnitOfWork: store, Clock: clock, Limits: limits, Instruments: instrumentProvider(cfg), Logger: log,
+	})
+	if err != nil {
+		return httpadapter.TransactionOptions{}, fmt.Errorf("build transactions: %w", err)
+	}
+	return httpadapter.TransactionOptions{Service: transactions, Clock: clock}, nil
 }

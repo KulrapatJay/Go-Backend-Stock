@@ -3,7 +3,7 @@
 // @title           Stock Portfolio Tracker API
 // @version         1.0
 // @description     Records US stock trades and tracks portfolio cost and P&L. It does not place real orders.
-// @description     Milestone 7 exposes Health, the Auth endpoints (email and password, email verification, password reset, Google sign-in and linking), Portfolios and Transactions (record, list and read trades; changing and deleting trades is added next); holdings and prices are not implemented yet.
+// @description     Milestone 7 exposes Health, the Auth endpoints (email and password, email verification, password reset, Google sign-in and linking), Portfolios and Transactions (record, list, read, edit and delete trades); holdings and prices are not implemented yet.
 // @BasePath        /
 // @tag.name        Health
 // @tag.description Liveness and readiness probes
@@ -80,12 +80,17 @@ func run() error {
 	if err != nil {
 		return err
 	}
+	transactions, err := buildTransactions(cfg, pool, log)
+	if err != nil {
+		return err
+	}
 
 	app := httpadapter.NewServer(httpadapter.Options{
-		Logger:     log,
-		Readiness:  pool,
-		Auth:       auth.options,
-		Portfolios: portfolios,
+		Logger:       log,
+		Readiness:    pool,
+		Auth:         auth.options,
+		Portfolios:   portfolios,
+		Transactions: transactions,
 		Docs: httpadapter.DocsOptions{
 			Enabled:         cfg.DocsEnabled,
 			TryItOutEnabled: cfg.DocsTryItOutEnabled,
