@@ -254,8 +254,9 @@ func TestTradesAtTheSameTimeReplayInSequenceOrder(t *testing.T) {
 		}
 	}
 
-	// The trades were stored with UUIDs in the opposite order of their sequences, so a replay that
-	// broke the tie by id would put C before S and accept the delete.
+	// The trades were stored with UUIDs in the opposite order of their sequences, and S was then
+	// rewritten so it lies after C in the table: a replay that broke the tie by id, or left it to
+	// storage order, would put C before S and accept the delete.
 	{
 		p := b.mustCreatePortfolio("Seeded", "")
 		symbol := h.freshSymbol(t)
@@ -277,6 +278,14 @@ func TestTradesAtTheSameTimeReplayInSequenceOrder(t *testing.T) {
 		if seqS, seqC := seqOf(t, h.tradeState(t, sID).Sequence), seqOf(t, h.tradeState(t, cID).Sequence); seqS >= seqC {
 			t.Fatalf("sequence of S %d is not below C %d", seqS, seqC)
 		}
+		// Rewrite S so its live row lies after C in the table: rows that come back in storage
+		// order, with no sequence tie-breaker, would replay C before S and accept the delete.
+		if _, err := h.admin.Exec(context.Background(), `UPDATE app.transactions SET updated_at = updated_at WHERE id = $1`, sID); err != nil {
+			t.Fatalf("move S in the table: %v", err)
+		}
+		if stored := h.storageOrder(t, p.ID, day(2)); !slices.Equal(stored, []string{cID, sID}) {
+			t.Fatalf("rows at the same time in storage order = %v, want C then S", stored)
+		}
 		if ids := b.tradeIDs(p.ID); !slices.Equal(ids, []string{cID, sID, a.ID}) {
 			t.Errorf("list order = %v, want C, S, A by sequence", ids)
 		}
@@ -289,6 +298,22 @@ func TestTradesAtTheSameTimeReplayInSequenceOrder(t *testing.T) {
 			t.Errorf("transactions = %d, want 3", n)
 		}
 	}
+}
+
+// storageOrder lists the IDs of the portfolio's trades executed at one instant in the order their
+// live rows lie in the table (ctid), the order a scan without ORDER BY would meet them.
+func (h *authHarness) storageOrder(t *testing.T, portfolioID string, at time.Time) []string {
+	t.Helper()
+	rows, err := h.admin.Query(context.Background(),
+		`SELECT id::text FROM app.transactions WHERE portfolio_id = $1 AND executed_at = $2 ORDER BY ctid`, portfolioID, at)
+	if err != nil {
+		t.Fatalf("read storage order: %v", err)
+	}
+	ids, err := pgx.CollectRows(rows, pgx.RowTo[string])
+	if err != nil {
+		t.Fatalf("read storage order: %v", err)
+	}
+	return ids
 }
 
 // seqOf is a sequence as a number, for ordering.
