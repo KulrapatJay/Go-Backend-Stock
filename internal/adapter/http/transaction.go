@@ -40,6 +40,8 @@ func registerTransactionRoutes(app *fiber.App, opts TransactionOptions, chain au
 	app.Post("/api/v1/portfolios/:portfolio_id/transactions", chain.session, require, chain.csrf, h.create)
 	getAndHead(app, "/api/v1/portfolios/:portfolio_id/transactions", chain.session, require, h.list)
 	getAndHead(app, "/api/v1/portfolios/:portfolio_id/transactions/:transaction_id", chain.session, require, h.get)
+	app.Put("/api/v1/portfolios/:portfolio_id/transactions/:transaction_id", chain.session, require, chain.csrf, h.update)
+	app.Delete("/api/v1/portfolios/:portfolio_id/transactions/:transaction_id", chain.session, require, chain.csrf, h.delete)
 }
 
 // CreateTransaction godoc
@@ -168,6 +170,112 @@ func (h *transactionHandlers) get(c fiber.Ctx) error {
 		return err
 	}
 	return sendTransaction(c, fiber.StatusOK, found)
+}
+
+// UpdateTransaction godoc
+// @Summary      Replace a trade
+// @Description  Replaces the whole trade: send all six fields (symbol, side, quantity, price, fee, executed_at) with the same rules as when recording it; a body that leaves a field out is refused with 400 and nothing is written. Send the ETag of your last read in If-Match: without it the call is refused with 428 precondition_required; if the trade changed since (version_conflict) the call is refused with 412 and nothing is written. Only the exact form of one version number wrapped in double quotes is accepted: the wildcard, weak validators and lists give 400. The trade stays in its portfolio and keeps its id, sequence and created_at; the version goes up by one. A symbol the API has not seen yet is checked with the instrument provider (422 unknown_symbol, 503 dependency_unavailable, 429 rate_limited) like when recording a trade. The whole history of the portfolio is replayed in time order: a change that would leave fewer than zero shares at any point gives 422 invalid_history and nothing is written. A trade that is not in this portfolio, or in a portfolio of another user, gets the same 404 as one that does not exist. Needs the session cookie and X-CSRF-Token.
+// @Tags         Transactions
+// @ID           updateTransaction
+// @Accept       json
+// @Produce      json
+// @Param        portfolio_id    path    string              true  "Portfolio ID"  format(uuid)
+// @Param        transaction_id  path    string              true  "Transaction ID"  format(uuid)
+// @Param        If-Match        header  string              true  "ETag of the last read: the version number wrapped in double quotes"
+// @Param        X-CSRF-Token    header  string              true  "Token from GET /api/v1/auth/csrf"
+// @Param        body            body    TransactionRequest  true  "The whole trade; every field is required and numbers are decimal strings"
+// @Success      200  {object}  TransactionResponse
+// @Failure      400  {object}  ErrorResponse  "invalid_input (body, portfolio_id, transaction_id or If-Match) or malformed_json"
+// @Failure      401  {object}  ErrorResponse  "unauthenticated"
+// @Failure      403  {object}  ErrorResponse  "csrf_failed"
+// @Failure      404  {object}  ErrorResponse  "not_found"
+// @Failure      412  {object}  ErrorResponse  "version_conflict: read the trade again"
+// @Failure      422  {object}  ErrorResponse  "unknown_symbol or invalid_history"
+// @Failure      428  {object}  ErrorResponse  "precondition_required: send If-Match"
+// @Failure      429  {object}  ErrorResponse  "rate_limited: too many new symbols this hour"
+// @Failure      500  {object}  ErrorResponse  "audit_write_failed or internal"
+// @Failure      503  {object}  ErrorResponse  "dependency_unavailable or server_busy"
+// @Header       429  {integer}  Retry-After  "Seconds to wait"
+// @Header       503  {integer}  Retry-After  "Seconds to wait"
+// @Header       200  {string}  ETag  "The new version number wrapped in double quotes"
+// @Router       /api/v1/portfolios/{portfolio_id}/transactions/{transaction_id} [put]
+func (h *transactionHandlers) update(c fiber.Ctx) error {
+	portfolioID, err := domain.ParseID("portfolio_id", c.Params("portfolio_id"))
+	if err != nil {
+		return err
+	}
+	transactionID, err := domain.ParseID("transaction_id", c.Params("transaction_id"))
+	if err != nil {
+		return err
+	}
+	expected, err := parseIfMatch(c)
+	if err != nil {
+		return err
+	}
+	var req TransactionRequest
+	if err := decodeJSON(c, &req); err != nil {
+		return err
+	}
+	in, err := domain.ParseTransactionInput(req.Symbol, req.Side, req.Quantity, req.Price, req.Fee, req.ExecutedAt, h.clock.Now())
+	if err != nil {
+		return err
+	}
+	meta, err := requestMeta(c, h.clientIP)
+	if err != nil {
+		return err
+	}
+	p, _ := middleware.GetPrincipal(c)
+	updated, err := h.transactions.Update(c.Context(), p, portfolioID, transactionID, expected, in, meta)
+	if err != nil {
+		return err
+	}
+	return sendTransaction(c, fiber.StatusOK, updated)
+}
+
+// DeleteTransaction godoc
+// @Summary      Delete a trade
+// @Description  Removes the trade and replays the history of the portfolio: a deletion that would leave fewer than zero shares at any point (for example removing a buy that a later sale needs) gives 422 invalid_history and nothing is written. Needs If-Match with the ETag of your last read, like PUT. A trade that is not in this portfolio, or in a portfolio of another user, gets the same 404 as one that does not exist, and so does a trade that was already deleted. Needs the session cookie and X-CSRF-Token.
+// @Tags         Transactions
+// @ID           deleteTransaction
+// @Produce      json
+// @Param        portfolio_id    path    string  true  "Portfolio ID"  format(uuid)
+// @Param        transaction_id  path    string  true  "Transaction ID"  format(uuid)
+// @Param        If-Match        header  string  true  "ETag of the last read: the version number wrapped in double quotes"
+// @Param        X-CSRF-Token    header  string  true  "Token from GET /api/v1/auth/csrf"
+// @Success      204  "Deleted"
+// @Failure      400  {object}  ErrorResponse  "invalid_input (portfolio_id, transaction_id or If-Match)"
+// @Failure      401  {object}  ErrorResponse  "unauthenticated"
+// @Failure      403  {object}  ErrorResponse  "csrf_failed"
+// @Failure      404  {object}  ErrorResponse  "not_found"
+// @Failure      412  {object}  ErrorResponse  "version_conflict: read the trade again"
+// @Failure      422  {object}  ErrorResponse  "invalid_history"
+// @Failure      428  {object}  ErrorResponse  "precondition_required: send If-Match"
+// @Failure      500  {object}  ErrorResponse  "audit_write_failed or internal"
+// @Failure      503  {object}  ErrorResponse  "dependency_unavailable or server_busy"
+// @Header       503  {integer}  Retry-After  "Seconds to wait"
+// @Router       /api/v1/portfolios/{portfolio_id}/transactions/{transaction_id} [delete]
+func (h *transactionHandlers) delete(c fiber.Ctx) error {
+	portfolioID, err := domain.ParseID("portfolio_id", c.Params("portfolio_id"))
+	if err != nil {
+		return err
+	}
+	transactionID, err := domain.ParseID("transaction_id", c.Params("transaction_id"))
+	if err != nil {
+		return err
+	}
+	expected, err := parseIfMatch(c)
+	if err != nil {
+		return err
+	}
+	meta, err := requestMeta(c, h.clientIP)
+	if err != nil {
+		return err
+	}
+	p, _ := middleware.GetPrincipal(c)
+	if err := h.transactions.Delete(c.Context(), p, portfolioID, transactionID, expected, meta); err != nil {
+		return err
+	}
+	return c.SendStatus(fiber.StatusNoContent)
 }
 
 // parseTransactionFilter reads limit, cursor, symbol, side, from and to. An empty value does not

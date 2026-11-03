@@ -20,7 +20,7 @@ var documentedPortfolioOperations = []struct {
 }
 
 // documentedTransactionOperations lists the transaction operations with the statuses their handlers
-// can return. PUT and DELETE are added with their handlers.
+// can return.
 var documentedTransactionOperations = []struct {
 	method, path string
 	statuses     []int
@@ -28,6 +28,8 @@ var documentedTransactionOperations = []struct {
 	{"post", "/api/v1/portfolios/{portfolio_id}/transactions", []int{201, 400, 401, 403, 404, 409, 422, 429, 500, 503}},
 	{"get", "/api/v1/portfolios/{portfolio_id}/transactions", []int{200, 400, 401, 404, 500, 503}},
 	{"get", "/api/v1/portfolios/{portfolio_id}/transactions/{transaction_id}", []int{200, 400, 401, 404, 500, 503}},
+	{"put", "/api/v1/portfolios/{portfolio_id}/transactions/{transaction_id}", []int{200, 400, 401, 403, 404, 412, 422, 428, 429, 500, 503}},
+	{"delete", "/api/v1/portfolios/{portfolio_id}/transactions/{transaction_id}", []int{204, 400, 401, 403, 404, 412, 422, 428, 500, 503}},
 }
 
 func TestPortfolioOperationsAreDocumented(t *testing.T) {

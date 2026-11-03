@@ -1088,7 +1088,7 @@
                     },
                     {
                         "type": "string",
-                        "description": "ETag of the last read, with quotes, for example \\",
+                        "description": "ETag of the last read: the version number wrapped in double quotes",
                         "name": "If-Match",
                         "in": "header",
                         "required": true
@@ -1206,7 +1206,7 @@
                     },
                     {
                         "type": "string",
-                        "description": "ETag of the last read, with quotes, for example \\",
+                        "description": "ETag of the last read: the version number wrapped in double quotes",
                         "name": "If-Match",
                         "in": "header",
                         "required": true
@@ -1589,6 +1589,255 @@
                     },
                     "500": {
                         "description": "internal",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "dependency_unavailable or server_busy",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        },
+                        "headers": {
+                            "Retry-After": {
+                                "type": "integer",
+                                "description": "Seconds to wait"
+                            }
+                        }
+                    }
+                }
+            },
+            "put": {
+                "description": "Replaces the whole trade: send all six fields (symbol, side, quantity, price, fee, executed_at) with the same rules as when recording it; a body that leaves a field out is refused with 400 and nothing is written. Send the ETag of your last read in If-Match: without it the call is refused with 428 precondition_required; if the trade changed since (version_conflict) the call is refused with 412 and nothing is written. Only the exact form of one version number wrapped in double quotes is accepted: the wildcard, weak validators and lists give 400. The trade stays in its portfolio and keeps its id, sequence and created_at; the version goes up by one. A symbol the API has not seen yet is checked with the instrument provider (422 unknown_symbol, 503 dependency_unavailable, 429 rate_limited) like when recording a trade. The whole history of the portfolio is replayed in time order: a change that would leave fewer than zero shares at any point gives 422 invalid_history and nothing is written. A trade that is not in this portfolio, or in a portfolio of another user, gets the same 404 as one that does not exist. Needs the session cookie and X-CSRF-Token.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Transactions"
+                ],
+                "summary": "Replace a trade",
+                "operationId": "updateTransaction",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "format": "uuid",
+                        "description": "Portfolio ID",
+                        "name": "portfolio_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "format": "uuid",
+                        "description": "Transaction ID",
+                        "name": "transaction_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "ETag of the last read: the version number wrapped in double quotes",
+                        "name": "If-Match",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Token from GET /api/v1/auth/csrf",
+                        "name": "X-CSRF-Token",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "description": "The whole trade; every field is required and numbers are decimal strings",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/http.TransactionRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/http.TransactionResponse"
+                        },
+                        "headers": {
+                            "ETag": {
+                                "type": "string",
+                                "description": "The new version number wrapped in double quotes"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "invalid_input (body, portfolio_id, transaction_id or If-Match) or malformed_json",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "unauthenticated",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "csrf_failed",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "not_found",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
+                    },
+                    "412": {
+                        "description": "version_conflict: read the trade again",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "unknown_symbol or invalid_history",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
+                    },
+                    "428": {
+                        "description": "precondition_required: send If-Match",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
+                    },
+                    "429": {
+                        "description": "rate_limited: too many new symbols this hour",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        },
+                        "headers": {
+                            "Retry-After": {
+                                "type": "integer",
+                                "description": "Seconds to wait"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "audit_write_failed or internal",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "dependency_unavailable or server_busy",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        },
+                        "headers": {
+                            "Retry-After": {
+                                "type": "integer",
+                                "description": "Seconds to wait"
+                            }
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "description": "Removes the trade and replays the history of the portfolio: a deletion that would leave fewer than zero shares at any point (for example removing a buy that a later sale needs) gives 422 invalid_history and nothing is written. Needs If-Match with the ETag of your last read, like PUT. A trade that is not in this portfolio, or in a portfolio of another user, gets the same 404 as one that does not exist, and so does a trade that was already deleted. Needs the session cookie and X-CSRF-Token.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Transactions"
+                ],
+                "summary": "Delete a trade",
+                "operationId": "deleteTransaction",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "format": "uuid",
+                        "description": "Portfolio ID",
+                        "name": "portfolio_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "format": "uuid",
+                        "description": "Transaction ID",
+                        "name": "transaction_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "ETag of the last read: the version number wrapped in double quotes",
+                        "name": "If-Match",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Token from GET /api/v1/auth/csrf",
+                        "name": "X-CSRF-Token",
+                        "in": "header",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "Deleted"
+                    },
+                    "400": {
+                        "description": "invalid_input (portfolio_id, transaction_id or If-Match)",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "unauthenticated",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "csrf_failed",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "not_found",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
+                    },
+                    "412": {
+                        "description": "version_conflict: read the trade again",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "invalid_history",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
+                    },
+                    "428": {
+                        "description": "precondition_required: send If-Match",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "audit_write_failed or internal",
                         "schema": {
                             "$ref": "#/definitions/http.ErrorResponse"
                         }

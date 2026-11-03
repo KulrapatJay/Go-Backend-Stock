@@ -142,7 +142,7 @@ func (h *portfolioHandlers) get(c fiber.Ctx) error {
 // @Accept       json
 // @Produce      json
 // @Param        portfolio_id  path    string            true  "Portfolio ID"  format(uuid)
-// @Param        If-Match      header  string            true  "ETag of the last read, with quotes, for example \"3\""
+// @Param        If-Match      header  string            true  "ETag of the last read: the version number wrapped in double quotes"
 // @Param        X-CSRF-Token  header  string            true  "Token from GET /api/v1/auth/csrf"
 // @Param        body          body    UpdatePortfolioRequest  true  "New name and description; description is required, send an empty string to clear it"
 // @Success      200  {object}  PortfolioResponse
@@ -197,7 +197,7 @@ func (h *portfolioHandlers) update(c fiber.Ctx) error {
 // @ID           deletePortfolio
 // @Produce      json
 // @Param        portfolio_id  path    string  true  "Portfolio ID"  format(uuid)
-// @Param        If-Match      header  string  true  "ETag of the last read, with quotes, for example \"3\""
+// @Param        If-Match      header  string  true  "ETag of the last read: the version number wrapped in double quotes"
 // @Param        X-CSRF-Token  header  string  true  "Token from GET /api/v1/auth/csrf"
 // @Success      204  "Deleted"
 // @Failure      400  {object}  ErrorResponse  "invalid_input (portfolio_id or If-Match)"
