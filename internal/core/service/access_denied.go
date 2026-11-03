@@ -77,7 +77,7 @@ func (d accessDenials) record(ctx context.Context, p domain.Principal, portfolio
 
 func (d accessDenials) logFailure(msg string, err error, meta domain.RequestMeta) {
 	d.log.Error(msg,
-		slog.String("event", "portfolio.denial_bookkeeping_failed"),
+		slog.String("event", "access_denial.bookkeeping_failed"),
 		slog.String("error", err.Error()),
 		slog.String("request_id", meta.RequestID.String()))
 }
