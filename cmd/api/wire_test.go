@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"io"
 	"log/slog"
 	nethttp "net/http"
@@ -14,6 +15,7 @@ import (
 
 	httpadapter "go-backend-stock/internal/adapter/http"
 	"go-backend-stock/internal/config"
+	"go-backend-stock/internal/core/domain"
 )
 
 func wireConfig(t *testing.T, origin string, extra ...map[string]string) config.Config {
@@ -170,5 +172,66 @@ func TestBuildServesThePortfolioRoutes(t *testing.T) {
 	defer resp.Body.Close()
 	if resp.StatusCode != nethttp.StatusUnauthorized {
 		t.Errorf("GET /api/v1/portfolios without a session = %d, want 401 (404 means the route is not wired)", resp.StatusCode)
+	}
+}
+
+func TestBuildServesTheTransactionRoutes(t *testing.T) {
+	cfg := wireConfig(t, "http://localhost:8080")
+	pool, err := pgxpool.New(t.Context(), cfg.DatabaseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pool.Close()
+	log := slog.New(slog.NewJSONHandler(io.Discard, nil))
+
+	auth, err := buildAuth(cfg, pool, log)
+	if err != nil {
+		t.Fatalf("buildAuth() error = %v", err)
+	}
+	defer func() { _ = auth.mail.Close(context.Background()) }()
+	portfolios, err := buildPortfolios(cfg, pool, log)
+	if err != nil {
+		t.Fatalf("buildPortfolios() error = %v", err)
+	}
+	transactions, err := buildTransactions(cfg, pool, log)
+	if err != nil {
+		t.Fatalf("buildTransactions() error = %v", err)
+	}
+	if transactions.Service == nil || transactions.Clock == nil {
+		t.Fatalf("buildTransactions() = %+v, want the service and the clock set", transactions)
+	}
+
+	app := httpadapter.NewServer(httpadapter.Options{
+		Logger: log, Readiness: pool, Auth: auth.options, Portfolios: portfolios, Transactions: transactions,
+	})
+	resp, err := app.Test(httptest.NewRequestWithContext(t.Context(), nethttp.MethodGet,
+		"/api/v1/portfolios/00000000-0000-4000-8000-000000000000/transactions", nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != nethttp.StatusUnauthorized {
+		t.Errorf("GET /api/v1/portfolios/{id}/transactions without a session = %d, want 401 (404 means the route is not wired)", resp.StatusCode)
+	}
+}
+
+// Demo instruments are sample data, so a production API must never answer from them: a symbol the
+// database does not know yet is refused until milestone 8 brings the real provider.
+func TestProductionNeverUsesTheDemoInstruments(t *testing.T) {
+	symbol, err := domain.ParseSymbol("AAPL")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	prod := config.Config{Env: config.EnvProduction}
+	if _, err := instrumentProvider(prod).Lookup(t.Context(), symbol); !errors.Is(err, domain.ErrDependencyUnavailable) {
+		t.Errorf("production Lookup(AAPL) error = %v, want dependency_unavailable", err)
+	}
+
+	for _, env := range []config.Environment{config.EnvDevelopment, config.EnvTest} {
+		got, err := instrumentProvider(config.Config{Env: env}).Lookup(t.Context(), symbol)
+		if err != nil || got.Symbol.String() != "AAPL" {
+			t.Errorf("%s Lookup(AAPL) = %+v, %v, want the demo instrument", env, got, err)
+		}
 	}
 }

@@ -30,8 +30,8 @@ func registerPortfolioRoutes(app *fiber.App, opts PortfolioOptions, chain authCh
 	require := middleware.RequireAuth()
 
 	app.Post("/api/v1/portfolios", chain.session, require, chain.csrf, h.create)
-	app.Get("/api/v1/portfolios", chain.session, require, h.list)
-	app.Get("/api/v1/portfolios/:portfolio_id", chain.session, require, h.get)
+	getAndHead(app, "/api/v1/portfolios", chain.session, require, h.list)
+	getAndHead(app, "/api/v1/portfolios/:portfolio_id", chain.session, require, h.get)
 	app.Put("/api/v1/portfolios/:portfolio_id", chain.session, require, chain.csrf, h.update)
 	app.Delete("/api/v1/portfolios/:portfolio_id", chain.session, require, chain.csrf, h.delete)
 }
@@ -51,8 +51,9 @@ func registerPortfolioRoutes(app *fiber.App, opts PortfolioOptions, chain authCh
 // @Failure      403  {object}  ErrorResponse  "csrf_failed"
 // @Failure      409  {object}  ErrorResponse  "portfolio_name_conflict"
 // @Failure      500  {object}  ErrorResponse  "audit_write_failed or internal"
-// @Failure      503  {object}  ErrorResponse  "dependency_unavailable"
-// @Header       201  {string}  ETag  "The portfolio version in quotes, for example \"1\""
+// @Failure      503  {object}  ErrorResponse  "dependency_unavailable or server_busy"
+// @Header       503  {integer}  Retry-After  "Seconds to wait; only sent with server_busy, not with dependency_unavailable"
+// @Header       201  {string}  ETag  "The portfolio version number wrapped in double quotes"
 // @Router       /api/v1/portfolios [post]
 func (h *portfolioHandlers) create(c fiber.Ctx) error {
 	var req PortfolioRequest
@@ -87,7 +88,8 @@ func (h *portfolioHandlers) create(c fiber.Ctx) error {
 // @Failure      400  {object}  ErrorResponse  "invalid_input: bad limit or cursor"
 // @Failure      401  {object}  ErrorResponse  "unauthenticated"
 // @Failure      500  {object}  ErrorResponse  "internal"
-// @Failure      503  {object}  ErrorResponse  "dependency_unavailable"
+// @Failure      503  {object}  ErrorResponse  "dependency_unavailable or server_busy"
+// @Header       503  {integer}  Retry-After  "Seconds to wait; only sent with server_busy, not with dependency_unavailable"
 // @Router       /api/v1/portfolios [get]
 func (h *portfolioHandlers) list(c fiber.Ctx) error {
 	page, err := domain.ParsePage(strings.Clone(c.Query("limit")), strings.Clone(c.Query("cursor")))
@@ -115,8 +117,9 @@ func (h *portfolioHandlers) list(c fiber.Ctx) error {
 // @Failure      401  {object}  ErrorResponse  "unauthenticated"
 // @Failure      404  {object}  ErrorResponse  "not_found"
 // @Failure      500  {object}  ErrorResponse  "internal"
-// @Failure      503  {object}  ErrorResponse  "dependency_unavailable"
-// @Header       200  {string}  ETag  "The portfolio version in quotes, for example \"1\""
+// @Failure      503  {object}  ErrorResponse  "dependency_unavailable or server_busy"
+// @Header       503  {integer}  Retry-After  "Seconds to wait; only sent with server_busy, not with dependency_unavailable"
+// @Header       200  {string}  ETag  "The portfolio version number wrapped in double quotes"
 // @Router       /api/v1/portfolios/{portfolio_id} [get]
 func (h *portfolioHandlers) get(c fiber.Ctx) error {
 	id, err := domain.ParseID("portfolio_id", c.Params("portfolio_id"))
@@ -139,7 +142,7 @@ func (h *portfolioHandlers) get(c fiber.Ctx) error {
 // @Accept       json
 // @Produce      json
 // @Param        portfolio_id  path    string            true  "Portfolio ID"  format(uuid)
-// @Param        If-Match      header  string            true  "ETag of the last read, with quotes, for example \"3\""
+// @Param        If-Match      header  string            true  "ETag of the last read: the version number wrapped in double quotes"
 // @Param        X-CSRF-Token  header  string            true  "Token from GET /api/v1/auth/csrf"
 // @Param        body          body    UpdatePortfolioRequest  true  "New name and description; description is required, send an empty string to clear it"
 // @Success      200  {object}  PortfolioResponse
@@ -151,8 +154,9 @@ func (h *portfolioHandlers) get(c fiber.Ctx) error {
 // @Failure      412  {object}  ErrorResponse  "version_conflict: read the portfolio again"
 // @Failure      428  {object}  ErrorResponse  "precondition_required: send If-Match"
 // @Failure      500  {object}  ErrorResponse  "audit_write_failed or internal"
-// @Failure      503  {object}  ErrorResponse  "dependency_unavailable"
-// @Header       200  {string}  ETag  "The new version in quotes, for example \"4\""
+// @Failure      503  {object}  ErrorResponse  "dependency_unavailable or server_busy"
+// @Header       503  {integer}  Retry-After  "Seconds to wait; only sent with server_busy, not with dependency_unavailable"
+// @Header       200  {string}  ETag  "The new version number wrapped in double quotes"
 // @Router       /api/v1/portfolios/{portfolio_id} [put]
 func (h *portfolioHandlers) update(c fiber.Ctx) error {
 	id, err := domain.ParseID("portfolio_id", c.Params("portfolio_id"))
@@ -193,7 +197,7 @@ func (h *portfolioHandlers) update(c fiber.Ctx) error {
 // @ID           deletePortfolio
 // @Produce      json
 // @Param        portfolio_id  path    string  true  "Portfolio ID"  format(uuid)
-// @Param        If-Match      header  string  true  "ETag of the last read, with quotes, for example \"3\""
+// @Param        If-Match      header  string  true  "ETag of the last read: the version number wrapped in double quotes"
 // @Param        X-CSRF-Token  header  string  true  "Token from GET /api/v1/auth/csrf"
 // @Success      204  "Deleted"
 // @Failure      400  {object}  ErrorResponse  "invalid_input (portfolio_id or If-Match)"
@@ -204,7 +208,8 @@ func (h *portfolioHandlers) update(c fiber.Ctx) error {
 // @Failure      412  {object}  ErrorResponse  "version_conflict: read the portfolio again"
 // @Failure      428  {object}  ErrorResponse  "precondition_required: send If-Match"
 // @Failure      500  {object}  ErrorResponse  "audit_write_failed or internal"
-// @Failure      503  {object}  ErrorResponse  "dependency_unavailable"
+// @Failure      503  {object}  ErrorResponse  "dependency_unavailable or server_busy"
+// @Header       503  {integer}  Retry-After  "Seconds to wait; only sent with server_busy, not with dependency_unavailable"
 // @Router       /api/v1/portfolios/{portfolio_id} [delete]
 func (h *portfolioHandlers) delete(c fiber.Ctx) error {
 	id, err := domain.ParseID("portfolio_id", c.Params("portfolio_id"))

@@ -21,6 +21,9 @@ const (
 	writeTimeout    = 15 * time.Second
 	idleTimeout     = 60 * time.Second
 	readinessBudget = time.Second
+	// requestTimeout is the deadline of a request's context. It is above the database lock_timeout
+	// (3s) and statement_timeout (5s), so a database wait ends first with its own retryable error.
+	requestTimeout = 12 * time.Second
 )
 
 // Options are the dependencies of the HTTP server, assembled in cmd/api/main.go.
@@ -30,36 +33,81 @@ type Options struct {
 	Docs       DocsOptions
 	Auth       AuthOptions
 	Portfolios PortfolioOptions
+	// Transactions serves the trades of a portfolio; it needs Portfolios and Auth too.
+	Transactions TransactionOptions
 }
 
 // NewServer builds the Fiber app with the full middleware chain and every route.
 func NewServer(opts Options) *fiber.App {
 	app := newApp(opts.Logger)
 	registerRoutes(app, opts)
-	app.Use(middleware.NotFound(staticRouteMethods(app)))
+	app.Use(middleware.NotFound(routeMethods(app)))
 	return app
 }
 
-// staticRouteMethods returns, for a registered path without parameters, the methods it accepts.
-// The table is built on first use, when every route has been registered.
-func staticRouteMethods(app *fiber.App) func(path string) []string {
+// routeMethods returns, for a request path, the methods of the registered routes that match it.
+// A route segment starting with ':' matches any non-empty segment of the same position, so
+// /api/v1/portfolios/<id> is found through /api/v1/portfolios/:portfolio_id. Routes with a
+// wildcard ('*' or '+') are left out. The table is built on first use, when every route has been
+// registered; methods are sorted and unique.
+func routeMethods(app *fiber.App) func(path string) []string {
+	type route struct {
+		segments []string
+		methods  []string
+	}
 	var once sync.Once
-	var table map[string][]string
+	var routes []*route
 	return func(path string) []string {
 		once.Do(func() {
-			table = map[string][]string{}
+			byPath := map[string]*route{}
 			for _, r := range app.GetRoutes(true) {
-				if strings.ContainsAny(r.Path, ":*+") || slices.Contains(table[r.Path], r.Method) {
+				if strings.ContainsAny(r.Path, "*+") {
 					continue
 				}
-				table[r.Path] = append(table[r.Path], r.Method)
-			}
-			for path := range table {
-				slices.Sort(table[path])
+				entry := byPath[r.Path]
+				if entry == nil {
+					entry = &route{segments: strings.Split(r.Path, "/")}
+					byPath[r.Path] = entry
+					routes = append(routes, entry)
+				}
+				if !slices.Contains(entry.methods, r.Method) {
+					entry.methods = append(entry.methods, r.Method)
+				}
 			}
 		})
-		return table[path]
+		segments := strings.Split(path, "/")
+		var methods []string
+		for _, r := range routes {
+			if matchSegments(r.segments, segments) {
+				for _, m := range r.methods {
+					if !slices.Contains(methods, m) {
+						methods = append(methods, m)
+					}
+				}
+			}
+		}
+		slices.Sort(methods)
+		return methods
 	}
+}
+
+// matchSegments reports whether a concrete path matches a route pattern, segment by segment.
+func matchSegments(pattern, path []string) bool {
+	if len(pattern) != len(path) {
+		return false
+	}
+	for i, seg := range pattern {
+		if strings.HasPrefix(seg, ":") {
+			if path[i] == "" {
+				return false
+			}
+			continue
+		}
+		if seg != path[i] {
+			return false
+		}
+	}
+	return true
 }
 
 func newApp(log *slog.Logger) *fiber.App {
@@ -80,6 +128,7 @@ func newApp(log *slog.Logger) *fiber.App {
 	app.Use(middleware.RequestID())
 	app.Use(middleware.AccessLog(log, errorHandler))
 	app.Use(middleware.Recover(log))
+	app.Use(middleware.RequestTimeout(requestTimeout))
 	app.Use(middleware.SecurityHeaders())
 	// Fiber's default server error handler runs the Use chain (including NotFound and
 	// AccessLog) before it renders the error, so an oversized body would be logged as 404.
@@ -128,20 +177,21 @@ func registerRoutes(app *fiber.App, opts Options) {
 	getAndHead(app, "/readyz", health.Readyz)
 	registerDocs(app, opts.Docs)
 	if opts.Auth.Service == nil {
-		if opts.Portfolios.Service != nil {
-			panic("http: portfolio routes need Options.Auth.Service to resolve the session")
+		if opts.Portfolios.Service != nil || opts.Transactions.Service != nil {
+			panic("http: portfolio and transaction routes need Options.Auth.Service to resolve the session")
 		}
 		return
 	}
 	chain := newAuthChain(opts.Auth)
 	registerAuthRoutes(app, opts.Auth, chain)
 	registerPortfolioRoutes(app, opts.Portfolios, chain)
+	registerTransactionRoutes(app, opts.Transactions, chain)
 }
 
 // getAndHead registers handler for GET and HEAD. Fiber's automatic HEAD routes are added at
 // startup, after the catch-all NotFound middleware, so they would never match; fasthttp drops
 // the body of HEAD responses itself.
-func getAndHead(app *fiber.App, path string, handler fiber.Handler) {
-	app.Get(path, handler)
-	app.Head(path, handler)
+func getAndHead(app *fiber.App, path string, handler any, handlers ...any) {
+	app.Get(path, handler, handlers...)
+	app.Head(path, handler, handlers...)
 }

@@ -71,10 +71,19 @@ func (h *authHarness) countRows(t *testing.T, table, portfolioID string) int {
 	return n
 }
 
+// freshSymbol returns a symbol no other test uses: "Z" and the last 12 hex characters of a UUIDv7.
+// The first characters of a UUIDv7 are a millisecond timestamp, so symbols built from them collide
+// when two are made within about a minute; the last ones are random.
+func (h *authHarness) freshSymbol(t *testing.T) string {
+	t.Helper()
+	id := strings.ToUpper(strings.ReplaceAll(mustTestID(t).String(), "-", ""))
+	return "Z" + id[len(id)-12:]
+}
+
 // seedTrade gives the portfolio a transaction in a fresh instrument, so it can no longer be deleted.
 func (h *authHarness) seedTrade(t *testing.T, portfolioID string) {
 	t.Helper()
-	symbol := "Z" + strings.ToUpper(strings.ReplaceAll(mustTestID(t).String(), "-", ""))[:8]
+	symbol := h.freshSymbol(t)
 	instrumentID := mustTestID(t).String()
 	now := time.Now().UTC()
 	_, err := h.admin.Exec(context.Background(),

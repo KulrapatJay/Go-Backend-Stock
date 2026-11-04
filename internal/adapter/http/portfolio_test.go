@@ -169,6 +169,31 @@ func TestListPortfoliosPagesNewestFirst(t *testing.T) {
 	}
 }
 
+func TestHeadOnPortfolioRoutes(t *testing.T) {
+	h := newAuthHarness(t, withPortfolios())
+	b, _ := signedIn(t, h)
+	created := b.mustCreatePortfolio("Long term", "")
+
+	resp, body := b.do(nethttp.MethodHead, "/api/v1/portfolios", nil, nil)
+	if resp.StatusCode != nethttp.StatusOK || len(body) != 0 {
+		t.Errorf("HEAD list = %d with %d body bytes, want 200 without a body", resp.StatusCode, len(body))
+	}
+	resp, body = b.do(nethttp.MethodHead, "/api/v1/portfolios/"+created.ID, nil, nil)
+	if resp.StatusCode != nethttp.StatusOK || len(body) != 0 {
+		t.Errorf("HEAD one = %d with %d body bytes, want 200 without a body", resp.StatusCode, len(body))
+	}
+	if v := resp.Header.Get("ETag"); v != `"1"` {
+		t.Errorf("HEAD one ETag = %q, want \"1\"", v)
+	}
+
+	anon := h.newBrowser(t)
+	for _, path := range []string{"/api/v1/portfolios", "/api/v1/portfolios/" + created.ID} {
+		if resp, _ := anon.do(nethttp.MethodHead, path, nil, nil); resp.StatusCode != nethttp.StatusUnauthorized {
+			t.Errorf("HEAD %s without a session = %d, want 401", path, resp.StatusCode)
+		}
+	}
+}
+
 // errorCode reads error.code from an ErrorResponse body.
 func errorCode(t *testing.T, body []byte) string {
 	t.Helper()

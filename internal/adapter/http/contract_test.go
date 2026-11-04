@@ -19,11 +19,25 @@ type swaggerSpec struct {
 
 type swaggerOperation struct {
 	OperationID string                     `json:"operationId"`
+	Summary     string                     `json:"summary"`
+	Description string                     `json:"description"`
+	Parameters  []swaggerParameter         `json:"parameters"`
 	Responses   map[string]swaggerResponse `json:"responses"`
 }
 
+type swaggerParameter struct {
+	Name        string `json:"name"`
+	In          string `json:"in"`
+	Description string `json:"description"`
+}
+
 type swaggerResponse struct {
-	Schema *swaggerSchema `json:"schema"`
+	Schema  *swaggerSchema           `json:"schema"`
+	Headers map[string]swaggerHeader `json:"headers"`
+}
+
+type swaggerHeader struct {
+	Description string `json:"description"`
 }
 
 type swaggerSchema struct {
@@ -44,6 +58,37 @@ func loadSpec(t *testing.T) swaggerSpec {
 		t.Fatalf("parse swagger.json: %v", err)
 	}
 	return spec
+}
+
+// TestSwaggerTextHasNoBackslash: swag does not unescape an embedded quote in the text of a @Header
+// or @Param line, it renders the backslash and loses the closing quote. The guard covers every
+// description a reader sees: operation summaries and descriptions, request parameters and response
+// headers.
+func TestSwaggerTextHasNoBackslash(t *testing.T) {
+	spec := loadSpec(t)
+	for path, ops := range spec.Paths {
+		for method, op := range ops {
+			where := strings.ToUpper(method) + " " + path
+			if strings.Contains(op.Summary, `\`) {
+				t.Errorf("%s summary %q has a backslash", where, op.Summary)
+			}
+			if strings.Contains(op.Description, `\`) {
+				t.Errorf("%s description %q has a backslash", where, op.Description)
+			}
+			for _, param := range op.Parameters {
+				if strings.Contains(param.Description, `\`) {
+					t.Errorf("%s %s parameter %s description %q has a backslash", where, param.In, param.Name, param.Description)
+				}
+			}
+			for status, resp := range op.Responses {
+				for name, header := range resp.Headers {
+					if strings.Contains(header.Description, `\`) {
+						t.Errorf("%s %s header %s description %q has a backslash", where, status, name, header.Description)
+					}
+				}
+			}
+		}
+	}
 }
 
 func TestSwaggerOperationIDsAreUnique(t *testing.T) {

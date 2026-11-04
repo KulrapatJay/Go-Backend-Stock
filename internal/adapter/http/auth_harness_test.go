@@ -167,6 +167,7 @@ type harnessConfig struct {
 	floor      time.Duration
 	failAudit  bool
 	portfolios bool                  // serve the portfolio routes
+	trades     bool                  // serve the transaction routes (needs portfolios)
 	identity   port.IdentityProvider // nil = Google sign-in off
 }
 
@@ -206,6 +207,9 @@ type authHarness struct {
 	clock  *testClock
 	logs   *syncBuffer
 	origin string
+	// instruments is the fake the transaction service asks about unknown symbols; nil unless the
+	// harness was built withTransactions.
+	instruments *fakeInstrumentProvider
 }
 
 func newAuthHarness(t *testing.T, opts ...harnessOption) *authHarness {
@@ -272,8 +276,20 @@ func newAuthHarness(t *testing.T, opts ...harnessOption) *authHarness {
 		must(err)
 		options.Portfolios = PortfolioOptions{Service: portfolios}
 	}
+	var instruments *fakeInstrumentProvider
+	if cfg.trades {
+		instruments = &fakeInstrumentProvider{calls: map[string]int{}}
+		trades, err := service.NewTransactions(service.TransactionDeps{
+			Store: store, UnitOfWork: uow, Clock: clock, Limits: limits, Instruments: instruments, Logger: log,
+		})
+		must(err)
+		options.Transactions = TransactionOptions{Service: trades, Clock: clock}
+	}
 	app := NewServer(options)
-	return &authHarness{app: app, pool: pool, admin: admin, store: store, mailer: mailer, clock: clock, logs: logs, origin: testOrigin}
+	return &authHarness{
+		app: app, pool: pool, admin: admin, store: store, mailer: mailer, clock: clock, logs: logs, origin: testOrigin,
+		instruments: instruments,
+	}
 }
 
 // browser plays one browser: it keeps cookies like a cookie jar, sends Origin and the CSRF token on

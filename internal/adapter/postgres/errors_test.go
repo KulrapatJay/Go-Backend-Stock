@@ -1,11 +1,13 @@
 package postgres
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"math/big"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -44,6 +46,13 @@ func TestMapError(t *testing.T) {
 		{"other foreign key", &pgconn.PgError{Code: "23503", ConstraintName: "idempotency_keys_portfolio_id_fkey"}, domain.ErrInternal},
 		{"check violation", &pgconn.PgError{Code: "23514", ConstraintName: "audit_events_metadata_object"}, domain.ErrInternal},
 		{"connection error", errors.New("dial tcp 127.0.0.1:5432: connection refused"), domain.ErrInternal},
+		{"deadlock", &pgconn.PgError{Code: "40P01"}, errDatabaseBusy},
+		{"serialization failure", fmt.Errorf("q: %w", &pgconn.PgError{Code: "40001"}), errDatabaseBusy},
+		{"lock timeout", &pgconn.PgError{Code: "55P03"}, errDatabaseBusy},
+		{"statement timeout", &pgconn.PgError{Code: "57014"}, errDatabaseBusy},
+		{"context deadline", fmt.Errorf("q: %w", context.DeadlineExceeded), errDatabaseBusy},
+		// A client that went away is not contention; do not tell it to retry.
+		{"context canceled", fmt.Errorf("q: %w", context.Canceled), domain.ErrInternal},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -64,5 +73,29 @@ func TestMapError(t *testing.T) {
 	raw := &pgconn.PgError{Code: "23514", ConstraintName: "x"}
 	if got := mapError(raw); !errors.As(got, new(*pgconn.PgError)) {
 		t.Errorf("internal error %v lost the original database error", got)
+	}
+}
+
+func TestMapErrorBusyAsksToRetryAfterOneSecond(t *testing.T) {
+	for _, in := range []error{
+		&pgconn.PgError{Code: "40P01"},
+		&pgconn.PgError{Code: "40001"},
+		&pgconn.PgError{Code: "55P03"},
+		&pgconn.PgError{Code: "57014"},
+		fmt.Errorf("q: %w", context.DeadlineExceeded),
+	} {
+		got := mapError(in)
+		var de *domain.Error
+		if !errors.As(got, &de) || de.Code != domain.CodeServerBusy || de.RetryAfter != time.Second {
+			t.Errorf("mapError(%v) = %+v, want server_busy with RetryAfter 1s", in, de)
+		}
+		// The database error stays in the chain for server-side logs.
+		if errors.Is(in, context.DeadlineExceeded) {
+			if !errors.Is(got, context.DeadlineExceeded) {
+				t.Errorf("busy error lost its cause: %v", got)
+			}
+		} else if !errors.As(got, new(*pgconn.PgError)) {
+			t.Errorf("busy error lost its cause: %v", got)
+		}
 	}
 }

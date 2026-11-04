@@ -1,7 +1,7 @@
 {
     "swagger": "2.0",
     "info": {
-        "description": "Records US stock trades and tracks portfolio cost and P\u0026L. It does not place real orders.\nMilestone 6 exposes Health, the Auth endpoints (email and password, email verification, password reset, Google sign-in and linking) and Portfolios; transactions and holdings are not implemented yet.",
+        "description": "Records US stock trades and tracks portfolio cost and P\u0026L. It does not place real orders.\nMilestone 7 exposes Health, the Auth endpoints (email and password, email verification, password reset, Google sign-in and linking), Portfolios and Transactions (record, list, read, edit and delete trades); holdings and prices are not implemented yet.",
         "title": "Stock Portfolio Tracker API",
         "contact": {},
         "version": "1.0"
@@ -890,9 +890,15 @@
                         }
                     },
                     "503": {
-                        "description": "dependency_unavailable",
+                        "description": "dependency_unavailable or server_busy",
                         "schema": {
                             "$ref": "#/definitions/http.ErrorResponse"
+                        },
+                        "headers": {
+                            "Retry-After": {
+                                "type": "integer",
+                                "description": "Seconds to wait; only sent with server_busy, not with dependency_unavailable"
+                            }
                         }
                     }
                 }
@@ -937,7 +943,7 @@
                         "headers": {
                             "ETag": {
                                 "type": "string",
-                                "description": "The portfolio version in quotes, for example \\\"1\\"
+                                "description": "The portfolio version number wrapped in double quotes"
                             }
                         }
                     },
@@ -972,9 +978,15 @@
                         }
                     },
                     "503": {
-                        "description": "dependency_unavailable",
+                        "description": "dependency_unavailable or server_busy",
                         "schema": {
                             "$ref": "#/definitions/http.ErrorResponse"
+                        },
+                        "headers": {
+                            "Retry-After": {
+                                "type": "integer",
+                                "description": "Seconds to wait; only sent with server_busy, not with dependency_unavailable"
+                            }
                         }
                     }
                 }
@@ -1010,7 +1022,7 @@
                         "headers": {
                             "ETag": {
                                 "type": "string",
-                                "description": "The portfolio version in quotes, for example \\\"1\\"
+                                "description": "The portfolio version number wrapped in double quotes"
                             }
                         }
                     },
@@ -1039,9 +1051,15 @@
                         }
                     },
                     "503": {
-                        "description": "dependency_unavailable",
+                        "description": "dependency_unavailable or server_busy",
                         "schema": {
                             "$ref": "#/definitions/http.ErrorResponse"
+                        },
+                        "headers": {
+                            "Retry-After": {
+                                "type": "integer",
+                                "description": "Seconds to wait; only sent with server_busy, not with dependency_unavailable"
+                            }
                         }
                     }
                 }
@@ -1070,7 +1088,7 @@
                     },
                     {
                         "type": "string",
-                        "description": "ETag of the last read, with quotes, for example \\",
+                        "description": "ETag of the last read: the version number wrapped in double quotes",
                         "name": "If-Match",
                         "in": "header",
                         "required": true
@@ -1101,7 +1119,7 @@
                         "headers": {
                             "ETag": {
                                 "type": "string",
-                                "description": "The new version in quotes, for example \\\"4\\"
+                                "description": "The new version number wrapped in double quotes"
                             }
                         }
                     },
@@ -1154,9 +1172,15 @@
                         }
                     },
                     "503": {
-                        "description": "dependency_unavailable",
+                        "description": "dependency_unavailable or server_busy",
                         "schema": {
                             "$ref": "#/definitions/http.ErrorResponse"
+                        },
+                        "headers": {
+                            "Retry-After": {
+                                "type": "integer",
+                                "description": "Seconds to wait; only sent with server_busy, not with dependency_unavailable"
+                            }
                         }
                     }
                 }
@@ -1182,7 +1206,7 @@
                     },
                     {
                         "type": "string",
-                        "description": "ETag of the last read, with quotes, for example \\",
+                        "description": "ETag of the last read: the version number wrapped in double quotes",
                         "name": "If-Match",
                         "in": "header",
                         "required": true
@@ -1248,9 +1272,586 @@
                         }
                     },
                     "503": {
-                        "description": "dependency_unavailable",
+                        "description": "dependency_unavailable or server_busy",
                         "schema": {
                             "$ref": "#/definitions/http.ErrorResponse"
+                        },
+                        "headers": {
+                            "Retry-After": {
+                                "type": "integer",
+                                "description": "Seconds to wait; only sent with server_busy, not with dependency_unavailable"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/portfolios/{portfolio_id}/transactions": {
+            "get": {
+                "description": "Newest first by executed_at, trades executed at the same time by sequence. Pass the next_cursor of a page as cursor to get the following page; next_cursor is null on the last page. A cursor is opaque and only valid for the portfolio and the filters it was issued for: with other filters it gives 400. symbol, side, from and to narrow the list; an empty value does not filter. from and to include the instant itself. Write a timezone offset such as +02:00 as %2B02:00 in the query. A portfolio of another user gives the same 404 as one that does not exist.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Transactions"
+                ],
+                "summary": "List the trades of a portfolio",
+                "operationId": "listTransactions",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "format": "uuid",
+                        "description": "Portfolio ID",
+                        "name": "portfolio_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "maximum": 100,
+                        "minimum": 1,
+                        "type": "integer",
+                        "default": 20,
+                        "description": "Page size, 1-100 (default 20)",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "next_cursor of the previous page",
+                        "name": "cursor",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Only this symbol, for example AAPL",
+                        "name": "symbol",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "buy",
+                            "sell"
+                        ],
+                        "type": "string",
+                        "description": "Only this side",
+                        "name": "side",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "format": "date-time",
+                        "description": "Only trades executed at or after this RFC 3339 time",
+                        "name": "from",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "format": "date-time",
+                        "description": "Only trades executed at or before this RFC 3339 time",
+                        "name": "to",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/http.TransactionPageResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "invalid_input: bad portfolio_id, limit, cursor, symbol, side, from or to",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "unauthenticated",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "not_found",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "internal",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "dependency_unavailable or server_busy",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        },
+                        "headers": {
+                            "Retry-After": {
+                                "type": "integer",
+                                "description": "Seconds to wait; only sent with server_busy, not with dependency_unavailable"
+                            }
+                        }
+                    }
+                }
+            },
+            "post": {
+                "description": "Records a buy or sell the user made elsewhere; this API never places an order. Every field is required. quantity, price and fee are decimal strings (a JSON number is refused with 400 malformed_json): quantity and price must be greater than zero, fee may be \"0\", and each has at most 10 decimals and 18 digits before the point. executed_at is an RFC 3339 timestamp with a timezone, not in the future and with at most microsecond precision. The symbol is upper-cased; a symbol the API has not seen yet is checked with the instrument provider (422 unknown_symbol when it does not exist, 503 dependency_unavailable when the provider cannot answer, so retry), at most 30 new symbols per user per hour (429 rate_limited). The whole history of the portfolio is replayed in time order: a sale that would leave fewer than zero shares at any point gives 422 insufficient_shares and nothing is written. Idempotency-Key (1-128 visible ASCII characters) is required: the same key with the same trade returns the first result again with 201 and records nothing more; the same key with another trade gives 409 idempotency_conflict. A key keeps its result for 24 hours from the first request. The ETag header carries the version to send in If-Match when the trade is changed or deleted. A portfolio of another user gives the same 404 as one that does not exist. Needs the session cookie and X-CSRF-Token.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Transactions"
+                ],
+                "summary": "Record a trade in a portfolio",
+                "operationId": "createTransaction",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "format": "uuid",
+                        "description": "Portfolio ID",
+                        "name": "portfolio_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "maxLength": 128,
+                        "minLength": 1,
+                        "type": "string",
+                        "description": "Unique key of this request, 1-128 visible ASCII characters, for example a UUID",
+                        "name": "Idempotency-Key",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Token from GET /api/v1/auth/csrf",
+                        "name": "X-CSRF-Token",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "description": "The trade; every field is required and numbers are decimal strings",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/http.TransactionRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/http.TransactionResponse"
+                        },
+                        "headers": {
+                            "ETag": {
+                                "type": "string",
+                                "description": "The transaction version number wrapped in double quotes"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "invalid_input (body, portfolio_id or Idempotency-Key) or malformed_json",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "unauthenticated",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "csrf_failed",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "not_found",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "idempotency_conflict: the key was used for another trade",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "unknown_symbol or insufficient_shares",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
+                    },
+                    "429": {
+                        "description": "rate_limited: too many new symbols this hour",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        },
+                        "headers": {
+                            "Retry-After": {
+                                "type": "integer",
+                                "description": "Seconds to wait"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "audit_write_failed or internal",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "dependency_unavailable or server_busy",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        },
+                        "headers": {
+                            "Retry-After": {
+                                "type": "integer",
+                                "description": "Seconds to wait; only sent with server_busy, not with dependency_unavailable"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/portfolios/{portfolio_id}/transactions/{transaction_id}": {
+            "get": {
+                "description": "A trade in a portfolio of another user, or in another portfolio of yours, gets exactly the same 404 as one that does not exist. The ETag header carries the version to send in If-Match.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Transactions"
+                ],
+                "summary": "Get one trade",
+                "operationId": "getTransaction",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "format": "uuid",
+                        "description": "Portfolio ID",
+                        "name": "portfolio_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "format": "uuid",
+                        "description": "Transaction ID",
+                        "name": "transaction_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/http.TransactionResponse"
+                        },
+                        "headers": {
+                            "ETag": {
+                                "type": "string",
+                                "description": "The transaction version number wrapped in double quotes"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "invalid_input: portfolio_id or transaction_id is not a UUID",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "unauthenticated",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "not_found",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "internal",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "dependency_unavailable or server_busy",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        },
+                        "headers": {
+                            "Retry-After": {
+                                "type": "integer",
+                                "description": "Seconds to wait; only sent with server_busy, not with dependency_unavailable"
+                            }
+                        }
+                    }
+                }
+            },
+            "put": {
+                "description": "Replaces the whole trade: send all six fields (symbol, side, quantity, price, fee, executed_at) with the same rules as when recording it; a body that leaves a field out is refused with 400 and nothing is written. Send the ETag of your last read in If-Match: without it the call is refused with 428 precondition_required; if the trade changed since (version_conflict) the call is refused with 412 and nothing is written. Only the exact form of one version number wrapped in double quotes is accepted: the wildcard, weak validators and lists give 400. The trade stays in its portfolio and keeps its id, sequence and created_at; the version goes up by one. A symbol the API has not seen yet is checked with the instrument provider (422 unknown_symbol, 503 dependency_unavailable, 429 rate_limited) like when recording a trade. The whole history of the portfolio is replayed in time order: a change that would leave fewer than zero shares at any point gives 422 invalid_history and nothing is written. A trade that is not in this portfolio, or in a portfolio of another user, gets the same 404 as one that does not exist. Needs the session cookie and X-CSRF-Token.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Transactions"
+                ],
+                "summary": "Replace a trade",
+                "operationId": "updateTransaction",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "format": "uuid",
+                        "description": "Portfolio ID",
+                        "name": "portfolio_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "format": "uuid",
+                        "description": "Transaction ID",
+                        "name": "transaction_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "ETag of the last read: the version number wrapped in double quotes",
+                        "name": "If-Match",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Token from GET /api/v1/auth/csrf",
+                        "name": "X-CSRF-Token",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "description": "The whole trade; every field is required and numbers are decimal strings",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/http.TransactionRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/http.TransactionResponse"
+                        },
+                        "headers": {
+                            "ETag": {
+                                "type": "string",
+                                "description": "The new version number wrapped in double quotes"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "invalid_input (body, portfolio_id, transaction_id or If-Match) or malformed_json",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "unauthenticated",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "csrf_failed",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "not_found",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
+                    },
+                    "412": {
+                        "description": "version_conflict: read the trade again",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "unknown_symbol or invalid_history",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
+                    },
+                    "428": {
+                        "description": "precondition_required: send If-Match",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
+                    },
+                    "429": {
+                        "description": "rate_limited: too many new symbols this hour",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        },
+                        "headers": {
+                            "Retry-After": {
+                                "type": "integer",
+                                "description": "Seconds to wait"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "audit_write_failed or internal",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "dependency_unavailable or server_busy",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        },
+                        "headers": {
+                            "Retry-After": {
+                                "type": "integer",
+                                "description": "Seconds to wait; only sent with server_busy, not with dependency_unavailable"
+                            }
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "description": "Removes the trade and replays the history of the portfolio: a deletion that would leave fewer than zero shares at any point (for example removing a buy that a later sale needs) gives 422 invalid_history and nothing is written. Needs If-Match with the ETag of your last read, like PUT. A trade that is not in this portfolio, or in a portfolio of another user, gets the same 404 as one that does not exist, and so does a trade that was already deleted. Needs the session cookie and X-CSRF-Token.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Transactions"
+                ],
+                "summary": "Delete a trade",
+                "operationId": "deleteTransaction",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "format": "uuid",
+                        "description": "Portfolio ID",
+                        "name": "portfolio_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "format": "uuid",
+                        "description": "Transaction ID",
+                        "name": "transaction_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "ETag of the last read: the version number wrapped in double quotes",
+                        "name": "If-Match",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Token from GET /api/v1/auth/csrf",
+                        "name": "X-CSRF-Token",
+                        "in": "header",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "Deleted"
+                    },
+                    "400": {
+                        "description": "invalid_input (portfolio_id, transaction_id or If-Match)",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "unauthenticated",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "csrf_failed",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "not_found",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
+                    },
+                    "412": {
+                        "description": "version_conflict: read the trade again",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "invalid_history",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
+                    },
+                    "428": {
+                        "description": "precondition_required: send If-Match",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "audit_write_failed or internal",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "dependency_unavailable or server_busy",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        },
+                        "headers": {
+                            "Retry-After": {
+                                "type": "integer",
+                                "description": "Seconds to wait; only sent with server_busy, not with dependency_unavailable"
+                            }
                         }
                     }
                 }
@@ -1632,6 +2233,144 @@
                 }
             }
         },
+        "http.TransactionPageResponse": {
+            "type": "object",
+            "required": [
+                "data",
+                "next_cursor"
+            ],
+            "properties": {
+                "data": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/http.TransactionResponse"
+                    }
+                },
+                "next_cursor": {
+                    "type": "string",
+                    "x-nullable": true,
+                    "example": "eyJrIjoidHJhbnNhY3Rpb25zIn0"
+                }
+            }
+        },
+        "http.TransactionRequest": {
+            "type": "object",
+            "required": [
+                "executed_at",
+                "fee",
+                "price",
+                "quantity",
+                "side",
+                "symbol"
+            ],
+            "properties": {
+                "executed_at": {
+                    "type": "string",
+                    "format": "date-time",
+                    "example": "2026-10-01T14:30:00Z"
+                },
+                "fee": {
+                    "type": "string",
+                    "example": "1"
+                },
+                "price": {
+                    "type": "string",
+                    "example": "200.25"
+                },
+                "quantity": {
+                    "type": "string",
+                    "example": "0.5"
+                },
+                "side": {
+                    "type": "string",
+                    "enum": [
+                        "buy",
+                        "sell"
+                    ],
+                    "example": "buy"
+                },
+                "symbol": {
+                    "type": "string",
+                    "maxLength": 15,
+                    "minLength": 1,
+                    "example": "AAPL"
+                }
+            }
+        },
+        "http.TransactionResponse": {
+            "type": "object",
+            "required": [
+                "created_at",
+                "executed_at",
+                "fee",
+                "id",
+                "portfolio_id",
+                "price",
+                "quantity",
+                "sequence",
+                "side",
+                "symbol",
+                "updated_at",
+                "version"
+            ],
+            "properties": {
+                "created_at": {
+                    "type": "string",
+                    "format": "date-time",
+                    "example": "2026-10-29T09:30:00Z"
+                },
+                "executed_at": {
+                    "type": "string",
+                    "format": "date-time",
+                    "example": "2026-10-01T14:30:00Z"
+                },
+                "fee": {
+                    "type": "string",
+                    "example": "1"
+                },
+                "id": {
+                    "type": "string",
+                    "example": "0192f0c1-7a8e-7cc4-9d2b-3f6c1a2b4c5d"
+                },
+                "portfolio_id": {
+                    "type": "string",
+                    "example": "0192f0c1-7a8e-7cc4-9d2b-3f6c1a2b4c5e"
+                },
+                "price": {
+                    "type": "string",
+                    "example": "200.25"
+                },
+                "quantity": {
+                    "type": "string",
+                    "example": "0.5"
+                },
+                "sequence": {
+                    "type": "string",
+                    "example": "42"
+                },
+                "side": {
+                    "type": "string",
+                    "enum": [
+                        "buy",
+                        "sell"
+                    ],
+                    "example": "buy"
+                },
+                "symbol": {
+                    "type": "string",
+                    "example": "AAPL"
+                },
+                "updated_at": {
+                    "type": "string",
+                    "format": "date-time",
+                    "example": "2026-10-29T09:30:00Z"
+                },
+                "version": {
+                    "type": "integer",
+                    "example": 1
+                }
+            }
+        },
         "http.UpdatePortfolioRequest": {
             "type": "object",
             "required": [
@@ -1693,6 +2432,10 @@
         {
             "description": "A user can own many portfolios, all in USD. Every call needs the session cookie; another user's portfolio looks exactly like a missing one (404). Reading returns an ETag with the portfolio version; changing or deleting a portfolio needs it back in If-Match.",
             "name": "Portfolios"
+        },
+        {
+            "description": "Buys and sells a user recorded in one of their portfolios; the API never places orders. Every call needs the session cookie; a portfolio of another user looks exactly like a missing one (404). Quantity, price and fee are decimal strings. Creating a trade needs an Idempotency-Key, so a retry never records it twice; reading returns an ETag with the trade version.",
+            "name": "Transactions"
         }
     ]
 }

@@ -3,7 +3,7 @@
 Go API สำหรับบันทึกรายการซื้อขายหุ้นสหรัฐฯ และติดตามต้นทุน/กำไรขาดทุนของหลายพอร์ต
 ระบบนี้บันทึกการลงทุนที่ทำผ่านช่องทางอื่น ไม่ใช่ระบบส่งคำสั่งซื้อขายจริง
 
-> **สถานะ:** Milestone 6 — สมัครด้วยอีเมล+รหัสผ่าน, ยืนยันอีเมลด้วย OTP, login/logout, session ฝั่ง server, ลืมรหัสผ่านด้วย OTP, Google sign-in/เชื่อมบัญชี (เปิดเมื่อตั้งค่า `GOOGLE_*`) และสร้าง/ดู/แก้/ลบพอร์ตหลายพอร์ต (ETag/If-Match) ใช้งานผ่าน API ได้แล้ว; รายการซื้อขายและราคายังไม่เปิดใช้งาน
+> **สถานะ:** Milestone 7 (ลงมือครบแล้ว รอตรวจรับ) — สมัครด้วยอีเมล+รหัสผ่าน, ยืนยันอีเมลด้วย OTP, login/logout, session ฝั่ง server, ลืมรหัสผ่านด้วย OTP, Google sign-in/เชื่อมบัญชี (เปิดเมื่อตั้งค่า `GOOGLE_*`), สร้าง/ดู/แก้/ลบพอร์ตหลายพอร์ต (ETag/If-Match) และบันทึก/ดู/แก้/ลบรายการซื้อขาย (`Idempotency-Key`, ETag/If-Match, ตรวจประวัติไม่ให้จำนวนหุ้นติดลบ) ใช้งานผ่าน API ได้แล้ว; ราคาและการคำนวณต้นทุนเฉลี่ย/กำไรขาดทุนของพอร์ตยังไม่เปิดใช้งาน (milestone 8)
 
 ## เริ่มใช้งาน (dev พร้อม hot reload)
 
@@ -115,7 +115,8 @@ post /auth/login "{\"email\":\"$EMAIL\",\"password\":\"$NEW_PASSWORD\"}"
 
 # 12 พอร์ต: สร้างสองพอร์ต ได้ 201 พร้อม header ETag: "1" (ชื่อซ้ำกันไม่ได้ภายในผู้ใช้เดียว ไม่สนตัวพิมพ์เล็ก/ใหญ่)
 post /portfolios '{"name":"ระยะยาว","description":"ถือยาว ทบทวนปีละครั้ง"}' | tee /dev/stderr > "$JAR.p1"
-post /portfolios '{"name":"ระยะสั้น"}'
+post /portfolios '{"name":"ระยะสั้น"}' | tee /dev/stderr > "$JAR.p2"
+SHORT=$(sed -nE 's/.*"id":"([^"]+)".*/\1/p' "$JAR.p2" | head -1)
 PORTFOLIO=$(sed -nE 's/.*"id":"([^"]+)".*/\1/p' "$JAR.p1" | head -1)
 
 # 13 ดูรายการพอร์ต (ใหม่สุดก่อน; ใส่ ?limit=&cursor= เพื่อแบ่งหน้า) และดูพอร์ตเดียว ซึ่งตอบ header ETag
@@ -134,13 +135,51 @@ put '"1"' '{"name":"ระยะยาว (ปรับซ้ำ)","description"
 curl -s -b "$JAR" -c "$JAR" -X DELETE -H "Origin: http://localhost:8080" -H "X-CSRF-Token: $(csrf)" \
   -H 'If-Match: "2"' -w 'HTTP %{http_code}\n' "$API/portfolios/$PORTFOLIO"
 
-rm -f "$JAR" "$JAR.reg" "$JAR.reset" "$JAR.p1"
+# 16 บันทึกรายการซื้อในพอร์ต "ระยะสั้น" ต้องมี Idempotency-Key (1–128 ตัวอักษร ASCII) ได้ 201 พร้อม header ETag: "1"
+# quantity, price, fee เป็น string ทศนิยมเท่านั้น (เลข JSON ได้ 400 malformed_json) และ executed_at ต้องมี timezone และไม่อยู่ในอนาคต
+# symbol ที่ใช้ได้ในโหมดเดโม: AAPL, MSFT, NVDA, GOOGL, AMZN, META, TSLA, SPY
+tpost() { curl -s -b "$JAR" -c "$JAR" -H "Origin: http://localhost:8080" -H "X-CSRF-Token: $(csrf)" \
+  -H 'Content-Type: application/json' -H "Idempotency-Key: $1" -w '\nHTTP %{http_code}\n' -d "$2" "$API/portfolios/$SHORT/transactions"; }
+KEY="buy-$RANDOM-$RANDOM"
+BUY='{"symbol":"AAPL","side":"buy","quantity":"0.5","price":"200","fee":"1","executed_at":"2026-10-01T14:30:00Z"}'
+tpost "$KEY" "$BUY" | tee /dev/stderr > "$JAR.t1"
+TRADE=$(sed -nE 's/.*"id":"([^"]+)".*/\1/p' "$JAR.t1" | head -1)
+
+# 17 ส่งซ้ำด้วย key เดิมและรายการเดิม (เหมือน client ที่ลองใหม่หลัง timeout) ได้ 201 และ body เดิมทุกตัวอักษร โดยไม่บันทึกซ้ำ
+# key เดิมแต่รายการต่างกันได้ 409 idempotency_conflict; key เก็บผลไว้ 24 ชั่วโมงนับจากครั้งแรก
+tpost "$KEY" "$BUY" > "$JAR.t1again"
+cmp -s "$JAR.t1" "$JAR.t1again" && echo "same response as step 16" || echo "DIFFERENT from step 16"
+
+# 18 ขายเกินจำนวนที่ถือ (ถืออยู่ 0.5) ได้ 422 insufficient_shares และไม่เขียนอะไร
+tpost "sell-$RANDOM-$RANDOM" '{"symbol":"AAPL","side":"sell","quantity":"1","price":"210","fee":"0","executed_at":"2026-10-02T14:30:00Z"}'
+
+# 19 ดูรายการ (ใหม่สุดก่อน; ใส่ limit/cursor เพื่อแบ่งหน้า) กรองด้วย symbol, side, from, to ได้ ส่วน + ของ offset ใน query ต้องเขียนเป็น %2B
+curl -s -b "$JAR" -c "$JAR" -w '\nHTTP %{http_code}\n' \
+  "$API/portfolios/$SHORT/transactions?symbol=AAPL&side=buy&from=2026-10-01T00:00:00%2B07:00&to=2026-10-31T23:59:59Z"
+curl -s -i -b "$JAR" -c "$JAR" "$API/portfolios/$SHORT/transactions/$TRADE" | grep -iE '^(HTTP|etag)'
+
+# 20 แก้รายการ ต้องส่งครบทั้งหกฟิลด์และ If-Match เป็น ETag ล่าสุด (มี quote) ได้ 200 และ ETag: "2"; sequence กับ id ไม่เปลี่ยน
+# ส่ง If-Match ซ้ำด้วย "1" จะได้ 412 version_conflict; ไม่ส่ง header ได้ 428 precondition_required
+# แก้หรือลบรายการที่ทำให้จำนวนหุ้นติดลบ ณ จุดใดของประวัติ ได้ 422 invalid_history และไม่เขียนอะไร
+tupdate() { curl -s -b "$JAR" -c "$JAR" -X PUT -H "Origin: http://localhost:8080" -H "X-CSRF-Token: $(csrf)" \
+  -H 'Content-Type: application/json' -H "If-Match: $1" -w '\nHTTP %{http_code}\n' -d "$2" "$API/portfolios/$SHORT/transactions/$TRADE"; }
+tupdate '"1"' '{"symbol":"AAPL","side":"buy","quantity":"0.5","price":"201.5","fee":"1","executed_at":"2026-10-01T14:30:00Z"}'
+tupdate '"1"' '{"symbol":"AAPL","side":"buy","quantity":"0.5","price":"202","fee":"1","executed_at":"2026-10-01T14:30:00Z"}'
+
+# 21 ลบรายการ ต้องมี If-Match เช่นกัน ได้ 204; หลังลบพอร์ต "ระยะสั้น" ว่างอีกครั้ง
+curl -s -b "$JAR" -c "$JAR" -X DELETE -H "Origin: http://localhost:8080" -H "X-CSRF-Token: $(csrf)" \
+  -H 'If-Match: "2"' -w 'HTTP %{http_code}\n' "$API/portfolios/$SHORT/transactions/$TRADE"
+
+rm -f "$JAR" "$JAR.reg" "$JAR.reset" "$JAR.p1" "$JAR.p2" "$JAR.t1" "$JAR.t1again"
 ```
 
 - ขอรหัสใหม่: `post /auth/email-verification/request "{\"email\":\"$EMAIL\"}"` (เว้น 60 วินาทีจากครั้งก่อน และไม่เกิน 5 ครั้งต่อชั่วโมงต่ออีเมล)
 - ถูกจำกัดความถี่จะได้ 429 `rate_limited` พร้อม header `Retry-After` (วินาที)
 - ลืมรหัสผ่าน (ขั้น 8–11): รหัสใช้ได้ 10 นาที กรอกผิดได้ 5 ครั้งต่อรหัส; เมื่อสำเร็จ session เดิมทุกเครื่องของบัญชีถูกออกจากระบบ, มีอีเมลแจ้งว่าเปลี่ยนรหัสผ่านใน Mailpit และ login ใหม่ด้วยรหัสผ่านใหม่
 - พอร์ต (ขั้น 12–15): พอร์ตของผู้ใช้อื่นกับพอร์ตที่ไม่มีอยู่ตอบ `404 not_found` เหมือนกันทุกประการ; `PUT`/`DELETE` ต้องมี `If-Match: "<version>"` ตรงตัว (ไม่รับ `*`, `W/"3"` หรือหลายค่า → 400) ถ้า version ไม่ตรงได้ `412 version_conflict` โดยไม่เขียนอะไร ให้อ่านพอร์ตใหม่แล้วลองอีกครั้ง
+- รายการซื้อขาย (ขั้น 16–21): พอร์ตหรือรายการของผู้ใช้อื่นตอบ `404 not_found` เหมือนไม่มีอยู่; ทุกครั้งที่เพิ่ม แก้ หรือลบ ระบบ replay ประวัติทั้งพอร์ตตามลำดับเวลา (`executed_at` แล้วตาม `sequence`) และปฏิเสธทั้งการเปลี่ยนแปลงถ้าจำนวนหุ้นติดลบ ณ จุดใด (สร้าง → `422 insufficient_shares`, แก้/ลบ → `422 invalid_history`); ถ้าฐานข้อมูลชนกันหรือช้าเกิน (lock/statement timeout, deadlock) ได้ `503 server_busy` พร้อม `Retry-After: 1` ให้ลองใหม่ด้วย key เดิม
+- symbol ที่ระบบยังไม่เคยบันทึกต้องผ่านการตรวจกับ instrument provider ก่อน: ในโหมดเดโมใช้ได้เฉพาะ AAPL, MSFT, NVDA, GOOGL, AMZN, META, TSLA และ SPY (symbol อื่นได้ `422 unknown_symbol`); **symbol ที่ยังไม่อยู่ในตาราง instruments จะบันทึกไม่ได้ในช่วงที่ provider ล่ม** (ได้ `503 dependency_unavailable` ให้ลองใหม่) โดยไม่ถอยไปใช้ข้อมูลเดโม ส่วน symbol ที่เคยบันทึกแล้วยังบันทึกต่อได้ตามปกติ; ผู้ใช้หนึ่งคนเพิ่ม symbol ใหม่ได้ไม่เกิน 30 ตัวต่อชั่วโมง (`429 rate_limited`)
+- production (`APP_ENV=production`) ยังไม่มี provider จนถึง milestone 8 (Alpaca): ไม่ใช้ข้อมูลเดโมเด็ดขาด จึงบันทึกได้เฉพาะ symbol ที่อยู่ในตาราง instruments แล้ว
 - ใน Swagger UI (`http://localhost:8080/docs/`) ให้เรียก `GET /api/v1/auth/csrf` ก่อน แล้วคัดลอก `csrf_token` ไปใส่ช่อง `X-CSRF-Token` ของ POST; browser ส่ง cookie ให้เอง ขอ token ใหม่หลัง login และหลัง logout เพราะ binding เปลี่ยน
 - ข้อความ error ทุกอันมี `request_id` ตรงกับ header `X-Request-ID` ใช้ค้น log ได้
 
@@ -188,6 +227,7 @@ make check            # tidy + vet + lint + swagger + tests + ตรวจว่
 
 ## ข้อจำกัดของ phase 1
 
+- ตอนนี้รายการซื้อขายถูกตรวจแค่ว่าจำนวนหุ้นไม่ติดลบ (replay) ส่วนจำนวนหุ้นที่ถือ ต้นทุนเฉลี่ย และกำไร-ขาดทุน realized/unrealized จะมีใน milestone 8 พร้อมราคา
 - ไม่รองรับ dividends, stock splits, mergers และการเปลี่ยน symbol: พอร์ตที่ได้รับผลจาก corporate actions เหล่านี้จะคำนวณได้ไม่ครบถ้วน
 - ถ้า provider เปลี่ยน symbol ของหุ้นที่ระบบบันทึกไว้แล้ว (เช่น FB → META) การบันทึกรายการด้วย symbol ใหม่จะได้ `422 unknown_symbol` พร้อมข้อความว่า symbol ถูกเปลี่ยนชื่อ
 - ผลคำนวณเป็นการติดตามพอร์ตด้วย moving weighted-average cost ไม่ใช่รายงานภาษี

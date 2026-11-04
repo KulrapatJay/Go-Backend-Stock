@@ -21,6 +21,7 @@ const (
 	resetConfirmIP          = 20 // per loginWindow
 	resetConfirmSpan        = loginWindow
 	accessDeniedPerHourUser = 20 // security.access_denied events audited per user per hourWindow
+	instrumentLookupPerHour = 30 // provider lookups of unknown symbols per user per hourWindow
 )
 
 // RateLimitKeys turns an email or an IP address into the opaque key stored in rate_limit_keys, so
@@ -123,6 +124,12 @@ func (p *RateLimitPolicy) GoogleStart(ip netip.Addr) ([]domain.RateLimitRule, er
 // does not refuse the request: past the limit the answer is the same, only the audit row is skipped.
 func (p *RateLimitPolicy) AccessDenied(user domain.ID) ([]domain.RateLimitRule, error) {
 	return p.build(p.spec(domain.RateLimitAccessDeniedUser, user.String(), accessDeniedPerHourUser, hourWindow))
+}
+
+// InstrumentLookup limits how often one user makes the service ask the instrument provider about
+// a symbol it has not stored yet, so the provider quota cannot be spent by one account.
+func (p *RateLimitPolicy) InstrumentLookup(user domain.ID) ([]domain.RateLimitRule, error) {
+	return p.build(p.spec(domain.RateLimitInstrumentLookupUser, user.String(), instrumentLookupPerHour, hourWindow))
 }
 
 // verificationEmailSpecs are the two rules on one email key: at most one code per cooldown and at

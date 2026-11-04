@@ -1,8 +1,10 @@
 package postgres
 
 import (
+	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -16,7 +18,17 @@ const (
 	// that still has trades (PortfolioRepository.DeleteOwnedEmpty). Elsewhere it is internal; an
 	// insert into a missing portfolio, for example, is not "portfolio not empty".
 	sqlStateForeignKeyViolation = "23503"
+
+	// Contention and timeouts. The statement did nothing, so the client may send the request again.
+	sqlStateSerializationFailure = "40001"
+	sqlStateDeadlockDetected     = "40P01"
+	sqlStateLockNotAvailable     = "55P03" // lock_timeout
+	sqlStateQueryCanceled        = "57014" // statement_timeout
 )
+
+// errDatabaseBusy is what a lock wait, deadlock, serialization failure or timeout becomes: the
+// request did nothing and can be sent again at once (ADR-0016).
+var errDatabaseBusy = domain.NewRetryError(domain.CodeServerBusy, "the database is busy, try again shortly", time.Second)
 
 // uniqueConflicts maps unique constraints to the domain errors the core expects. Constraint names
 // are set explicitly in migrations/, so renaming one there must update this map.
@@ -43,9 +55,16 @@ func mapError(err error) error {
 	if errors.Is(err, pgx.ErrNoRows) {
 		return domain.ErrNotFound
 	}
+	// The request ran out of time. context.Canceled (the client left) stays internal: nobody is
+	// left to retry.
+	if errors.Is(err, context.DeadlineExceeded) {
+		return fmt.Errorf("%w: %w", errDatabaseBusy, err)
+	}
 	var pgErr *pgconn.PgError
 	if errors.As(err, &pgErr) {
 		switch pgErr.Code {
+		case sqlStateDeadlockDetected, sqlStateSerializationFailure, sqlStateLockNotAvailable, sqlStateQueryCanceled:
+			return fmt.Errorf("%w: %w", errDatabaseBusy, err)
 		case sqlStateUniqueViolation:
 			if de, ok := uniqueConflicts[pgErr.ConstraintName]; ok {
 				return de
