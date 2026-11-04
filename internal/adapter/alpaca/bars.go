@@ -29,8 +29,9 @@ type barsAnswer struct {
 // readBars asks the Market Data API for the minute bars of symbols whose start lies in [start, end]:
 // delayed SIP, unadjusted, newest first. It follows next_page_token for at most five pages and stops as
 // soon as every symbol has a bar. A bar whose time or close cannot be read is skipped. Any HTTP status
-// but 200 is an error that names the status and nothing Alpaca said.
-func readBars(ctx context.Context, c *apiClient, baseURL string, symbols []string, start, end time.Time) (map[string][]bar, error) {
+// but 200 is an error that names the status and nothing Alpaca said. unread is true when the page limit
+// ended the read with more pages to come and some symbol without a bar: Alpaca was never heard on it.
+func readBars(ctx context.Context, c *apiClient, baseURL string, symbols []string, start, end time.Time) (bars map[string][]bar, unread bool, err error) {
 	out := make(map[string][]bar, len(symbols))
 	token := ""
 	for page := 0; page < barsMaxPages; page++ {
@@ -44,16 +45,16 @@ func readBars(ctx context.Context, c *apiClient, baseURL string, symbols []strin
 		}
 		status, body, err := c.get(ctx, baseURL+"/v2/stocks/bars?"+q.Encode(), barsMaxBytes)
 		if err != nil {
-			return nil, fmt.Errorf("alpaca bars: %w", err)
+			return nil, false, fmt.Errorf("alpaca bars: %w", err)
 		}
 		if status != 200 {
-			return nil, statusError("alpaca bars", status)
+			return nil, false, statusError("alpaca bars", status)
 		}
 		var answer barsAnswer
 		dec := json.NewDecoder(bytes.NewReader(body))
 		dec.UseNumber()
 		if err := dec.Decode(&answer); err != nil {
-			return nil, errors.New("alpaca bars: answer is not JSON bars")
+			return nil, false, errors.New("alpaca bars: answer is not JSON bars")
 		}
 		for symbol, list := range answer.Bars {
 			for _, b := range list {
@@ -65,11 +66,11 @@ func readBars(ctx context.Context, c *apiClient, baseURL string, symbols []strin
 			}
 		}
 		if everySymbolHasABar(out, symbols) || answer.NextPageToken == nil || *answer.NextPageToken == "" {
-			break
+			return out, false, nil
 		}
 		token = *answer.NextPageToken
 	}
-	return out, nil
+	return out, true, nil
 }
 
 func everySymbolHasABar(bars map[string][]bar, symbols []string) bool {

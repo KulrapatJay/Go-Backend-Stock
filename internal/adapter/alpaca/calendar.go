@@ -13,7 +13,9 @@ import (
 const (
 	calendarMaxBytes = 256 << 10
 	calendarTTL      = 6 * time.Hour
-	calendarDays     = 10 // how far back sessions are asked for
+	calendarDays     = 10               // how far back sessions are asked for
+	calendarTimeout  = 2 * time.Second  // the calendar is asked once, and for no longer than this
+	calendarPause    = 30 * time.Second // after a failed read the calendar is not asked again for this long
 )
 
 // session is one regular trading session of the market, in UTC.
@@ -28,8 +30,10 @@ type calendar struct {
 	baseURL string
 	now     func() time.Time
 
-	mu      sync.Mutex
-	entries map[string]calendarEntry // keyed by the UTC date of the cutoff
+	mu         sync.Mutex
+	entries    map[string]calendarEntry // keyed by the UTC date of the cutoff
+	failedAt   time.Time
+	failureErr error
 }
 
 type calendarEntry struct {
@@ -50,15 +54,45 @@ type calendarAnswer struct {
 }
 
 // sessions returns the regular sessions of the days up to cutoff, oldest first. Holidays and weekends
-// are simply not in the list. The answer is kept for six hours per cutoff date; an error is not.
+// are simply not in the list. The answer is kept for six hours per cutoff date. When a read fails, an
+// entry past that time is still used (the calendar of a date does not change), and the failure is
+// remembered for thirty seconds so that a calendar that is down does not take time from every request.
 func (k *calendar) sessions(ctx context.Context, cutoff time.Time) ([]session, error) {
 	day := cutoff.UTC().Format(time.DateOnly)
 	k.mu.Lock()
 	entry, ok := k.entries[day]
+	paused := k.failureErr != nil && k.now().Sub(k.failedAt) < calendarPause
+	failure := k.failureErr
 	k.mu.Unlock()
 	if ok && k.now().Sub(entry.at) < calendarTTL {
 		return entry.sessions, nil
 	}
+	if paused {
+		if ok {
+			return entry.sessions, nil
+		}
+		return nil, failure
+	}
+	sessions, err := k.read(ctx, cutoff, day)
+	if err != nil {
+		if ctx.Err() == nil {
+			k.mu.Lock()
+			k.failedAt, k.failureErr = k.now(), err
+			k.mu.Unlock()
+		}
+		if ok {
+			return entry.sessions, nil
+		}
+		return nil, err
+	}
+	k.mu.Lock()
+	k.entries[day] = calendarEntry{sessions: sessions, at: k.now()}
+	k.failureErr = nil
+	k.mu.Unlock()
+	return sessions, nil
+}
+
+func (k *calendar) read(ctx context.Context, cutoff time.Time, day string) ([]session, error) {
 
 	start := cutoff.UTC().AddDate(0, 0, -calendarDays).Format(time.DateOnly)
 	rawURL := fmt.Sprintf("%s/v3/calendar/XNYS?start=%s&end=%s&timezone=UTC", k.baseURL, start, day)
@@ -69,14 +103,7 @@ func (k *calendar) sessions(ctx context.Context, cutoff time.Time) ([]session, e
 	if status != 200 {
 		return nil, statusError("alpaca calendar", status)
 	}
-	sessions, err := parseCalendar(body)
-	if err != nil {
-		return nil, err
-	}
-	k.mu.Lock()
-	k.entries[day] = calendarEntry{sessions: sessions, at: k.now()}
-	k.mu.Unlock()
-	return sessions, nil
+	return parseCalendar(body)
 }
 
 func parseCalendar(body []byte) ([]session, error) {

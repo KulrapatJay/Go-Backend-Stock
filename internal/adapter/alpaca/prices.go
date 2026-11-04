@@ -50,9 +50,10 @@ func NewPrices(cfg PricesConfig) (*Prices, error) {
 	if p.now == nil {
 		p.now = time.Now
 	}
-	// Market data and the calendar are read-only and safe to ask twice: one retry.
+	// Market data is read-only and safe to ask twice: one retry. The calendar is optional (prices
+	// without it say session unknown), so it gets one short attempt and never takes the bars' time.
 	p.client = newAPIClient(cfg.KeyID, cfg.Secret, cfg.Timeout, cfg.Client, 1)
-	p.cal = newCalendar(p.client, cfg.TradingBaseURL, p.now)
+	p.cal = newCalendar(newAPIClient(cfg.KeyID, cfg.Secret, min(cfg.Timeout, calendarTimeout), cfg.Client, 0), cfg.TradingBaseURL, p.now)
 	return p, nil
 }
 
@@ -60,7 +61,8 @@ func NewPrices(cfg PricesConfig) (*Prices, error) {
 // cache, marked cached, and only the other symbols are asked for. A calendar that cannot be read does
 // not stop it: the prices then say session unknown and stale. When the bars cannot be read, the
 // stored quote of a symbol up to seven days old is used, marked cached and stale with its own as_of;
-// a symbol with none is left out of both lists (the provider never answered about it), and with no
+// a symbol with none is left out of both lists (the provider never answered about it; so is a symbol
+// the page limit stopped the read before), and with no
 // stored quote at all it is an error, never a substitute price. A symbol with no usable bar, or a
 // close domain.ParsePrice refuses (an exponent, more than ten decimals), is Unavailable: a number is
 // never rounded to fit.
@@ -124,12 +126,15 @@ func (p *Prices) fetch(ctx context.Context, symbols []domain.Symbol, cutoff time
 	for i, s := range symbols {
 		names[i] = s.String()
 	}
-	bars, err := readBars(ctx, p.client, p.data, names, start, end)
+	bars, unread, err := readBars(ctx, p.client, p.data, names, start, end)
 	if err != nil {
 		return domain.QuoteBatch{}, err
 	}
 	fetchedAt := p.now().UTC()
 	for _, symbol := range symbols {
+		if unread && len(bars[symbol.String()]) == 0 {
+			continue // the page limit ended the read before Alpaca said anything about it
+		}
 		quote, priced := p.quoteFor(symbol, bars[symbol.String()], sessions, cutoff, fetchedAt)
 		if !priced {
 			batch.Unavailable = append(batch.Unavailable, symbol)

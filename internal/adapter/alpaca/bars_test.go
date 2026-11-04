@@ -39,7 +39,7 @@ func TestReadBarsAsksForDelayedRawSIPMinuteBars(t *testing.T) {
 	s := newBarsServer(t, func(url.Values) (int, string) { return 200, `{"bars":{},"next_page_token":null}` })
 	start, end := utc(2026, 11, 3, 14, 30), utc(2026, 11, 3, 14, 44)
 
-	if _, err := readBars(t.Context(), newTestClient(1), s.URL, []string{"AAPL", "MSFT"}, start, end); err != nil {
+	if _, _, err := readBars(t.Context(), newTestClient(1), s.URL, []string{"AAPL", "MSFT"}, start, end); err != nil {
 		t.Fatalf("readBars() error = %v", err)
 	}
 
@@ -66,7 +66,7 @@ func TestReadBarsFollowsPagesUpToFive(t *testing.T) {
 			}
 			return 200, `{"bars":{"MSFT":[{"t":"2026-11-03T14:44:00Z","c":2}]},"next_page_token":"p3"}`
 		})
-		got, err := readBars(t.Context(), newTestClient(1), s.URL, []string{"AAPL", "MSFT"}, utc(2026, 11, 3, 14, 30), utc(2026, 11, 3, 14, 44))
+		got, _, err := readBars(t.Context(), newTestClient(1), s.URL, []string{"AAPL", "MSFT"}, utc(2026, 11, 3, 14, 30), utc(2026, 11, 3, 14, 44))
 		if err != nil || len(got["AAPL"]) != 1 || len(got["MSFT"]) != 1 || len(s.queries) != 2 {
 			t.Fatalf("got %+v, %v after %d requests; want both symbols after 2", got, err, len(s.queries))
 		}
@@ -78,7 +78,7 @@ func TestReadBarsFollowsPagesUpToFive(t *testing.T) {
 		s := newBarsServer(t, func(url.Values) (int, string) {
 			return 200, `{"bars":{"AAPL":[{"t":"2026-11-03T14:44:00Z","c":1}]},"next_page_token":"more"}`
 		})
-		_, _ = readBars(t.Context(), newTestClient(1), s.URL, []string{"AAPL"}, utc(2026, 11, 3, 14, 30), utc(2026, 11, 3, 14, 44))
+		_, _, _ = readBars(t.Context(), newTestClient(1), s.URL, []string{"AAPL"}, utc(2026, 11, 3, 14, 30), utc(2026, 11, 3, 14, 44))
 		if len(s.queries) != 1 {
 			t.Errorf("%d requests, want 1: the only symbol already has a bar", len(s.queries))
 		}
@@ -87,7 +87,7 @@ func TestReadBarsFollowsPagesUpToFive(t *testing.T) {
 		s := newBarsServer(t, func(url.Values) (int, string) {
 			return 200, `{"bars":{"AAPL":[{"t":"2026-11-03T14:44:00Z","c":1}]},"next_page_token":"again"}`
 		})
-		got, err := readBars(t.Context(), newTestClient(1), s.URL, []string{"AAPL", "MSFT"}, utc(2026, 11, 3, 14, 30), utc(2026, 11, 3, 14, 44))
+		got, _, err := readBars(t.Context(), newTestClient(1), s.URL, []string{"AAPL", "MSFT"}, utc(2026, 11, 3, 14, 30), utc(2026, 11, 3, 14, 44))
 		if err != nil || len(s.queries) != 5 || len(got["MSFT"]) != 0 {
 			t.Errorf("got %+v, %v after %d requests; want 5 pages and nothing for MSFT", got, err, len(s.queries))
 		}
@@ -98,7 +98,7 @@ func TestReadBarsSkipsBarsItCannotRead(t *testing.T) {
 	s := newBarsServer(t, func(url.Values) (int, string) {
 		return 200, `{"bars":{"AAPL":[{"t":"yesterday","c":1},{"t":"2026-11-03T14:44:00Z"},{"t":"2026-11-03T14:43:00Z","c":3.25}]},"next_page_token":null}`
 	})
-	got, err := readBars(t.Context(), newTestClient(1), s.URL, []string{"AAPL"}, utc(2026, 11, 3, 14, 30), utc(2026, 11, 3, 14, 44))
+	got, _, err := readBars(t.Context(), newTestClient(1), s.URL, []string{"AAPL"}, utc(2026, 11, 3, 14, 30), utc(2026, 11, 3, 14, 44))
 	if err != nil || len(got["AAPL"]) != 1 || got["AAPL"][0].Close != "3.25" || !got["AAPL"][0].Start.Equal(utc(2026, 11, 3, 14, 43)) {
 		t.Fatalf("got %+v, %v; want only the readable 14:43 bar with close 3.25", got, err)
 	}
@@ -117,7 +117,7 @@ func TestReadBarsFailsOnBadAnswers(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			s := newBarsServer(t, func(url.Values) (int, string) { return tc.status, tc.body })
 			c := newAPIClient(testKeyID, testSecret, 5*time.Second, nil, 0)
-			if _, err := readBars(t.Context(), c, s.URL, []string{"AAPL"}, utc(2026, 11, 3, 14, 30), utc(2026, 11, 3, 14, 44)); err == nil {
+			if _, _, err := readBars(t.Context(), c, s.URL, []string{"AAPL"}, utc(2026, 11, 3, 14, 30), utc(2026, 11, 3, 14, 44)); err == nil {
 				t.Fatal("readBars() error = nil")
 			}
 		})

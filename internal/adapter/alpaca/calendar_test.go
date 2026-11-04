@@ -96,13 +96,15 @@ func TestCalendarKeepsADayPerCutoffDate(t *testing.T) {
 	}
 }
 
-func TestCalendarErrorsAreNotCached(t *testing.T) {
+// A failure is not kept as an answer: once the pause is over the calendar is asked again.
+func TestCalendarErrorsAreOnlyRememberedForAPause(t *testing.T) {
 	f := newFakeAlpaca(t, sequence(status(500), status(500), ok(novemberCalendar)))
 	k, clk := newTestCalendar(t, f)
 
 	if _, err := k.sessions(t.Context(), clk.now); err == nil {
 		t.Fatal("sessions() error = nil after two 500s, want an error")
 	}
+	clk.advance(calendarPause + time.Second)
 	if _, err := k.sessions(t.Context(), clk.now); err != nil {
 		t.Fatalf("second sessions() error = %v, want the calendar once Alpaca answers", err)
 	}

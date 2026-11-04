@@ -243,7 +243,7 @@ ALPACA_SECRET=<secret ของ paper trading — ห้าม commit>
 
 - ราคาคือ close ของแท่ง 1 นาทีล่าสุดของ regular session ที่จบก่อน "ตอนนี้ − 15 นาที" จาก feed SIP ย้อนหลัง (บัญชีฟรีอ่าน SIP ได้เมื่อข้อมูลเก่าอย่างน้อย 15 นาที) แท่ง extended hours ไม่ถูกใช้
 - `quote.as_of` คือเวลาจบแท่ง ไม่ใช่เวลาที่ดึงข้อมูล; `quote.source` = `alpaca`, `quote.feed` = `sip`
-- `session_status`: `open` = ตลาดเปิดอยู่ ณ เวลาอ้างอิง; `market_closed` = ตลาดปิด/วันหยุด/สุดสัปดาห์ จึงใช้แท่งปิดของ session ล่าสุดและแสดงเวลาจริงของแท่งนั้น (ไม่ใช่การอัปเดตของวันนี้); `unknown` = อ่านปฏิทินตลาดไม่ได้ ระบบไม่เดาว่าวันนั้นเป็นวันทำการและติด `stale`
+- `session_status`: `open` = ตลาดเปิดอยู่ ณ เวลาอ้างอิง; `market_closed` = ตลาดปิด/วันหยุด/สุดสัปดาห์ จึงใช้แท่งปิดของ session ล่าสุดและแสดงเวลาจริงของแท่งนั้น (ไม่ใช่การอัปเดตของวันนี้); `unknown` = อ่านปฏิทินตลาดไม่ได้ ระบบไม่เดาว่าวันนั้นเป็นวันทำการและติด `stale` — **กรณีนี้ราคาอาจมาจากแท่งนอก regular session (pre-market/after-hours) เพราะไม่มีปฏิทินให้กรอง** จึงไม่รับประกันว่าเป็น close ของ regular session
 - `quote.stale: true` เมื่อแท่งล่าสุดที่ได้เก่ากว่าแท่งที่ควรมีเกิน 5 นาที (เช่น หุ้นไม่มีการซื้อขาย)
 - `quote.cached: true` เมื่อใช้ราคาที่เก็บไว้ในหน่วยความจำของ API: ปกติเก็บ 60 วินาทีเพื่อไม่ให้เกินโควตาฟรี 200 ครั้ง/นาที; ถ้า Alpaca ล่ม ใช้ราคาที่เก็บไว้ได้ไม่เกิน 7 วันพร้อมติด `cached` และ `stale` และ `as_of` ตามจริง; ไม่มีราคาที่เก็บไว้ = `coverage` เป็น `unavailable` (ไม่ถอยไปใช้ราคาเดโม) ส่วน cache หายเมื่อ API restart
 - หุ้นที่ไม่มีการซื้อขายเลยใน session อ้างอิงถือว่าไม่มีราคา (`null` ไม่ใช่ `0`)
@@ -267,7 +267,7 @@ make check            # tidy + vet + lint + swagger + tests + ตรวจว่
 
 ## ข้อจำกัดของ phase 1
 
-- ราคาที่ใช้ประเมินมูลค่าเป็นราคาล่าช้า (close ของแท่ง 1 นาทีก่อน "ตอนนี้ − 15 นาที") ไม่ใช่ราคา live และไม่รวม pre-market/after-hours: `PRICE_PROVIDER=demo` ใช้ราคาตัวอย่าง (`is_demo: true`) ส่วน `alpaca` ใช้ SIP จริง และถ้า Alpaca ใช้ไม่ได้จะได้ `coverage: "unavailable"` ไม่ใช่ราคาเดโม; holdings และ realized P&L ดูได้เสมอ
+- ราคาที่ใช้ประเมินมูลค่าเป็นราคาล่าช้า (close ของแท่ง 1 นาทีก่อน "ตอนนี้ − 15 นาที") ไม่ใช่ราคา live และปกติไม่รวม pre-market/after-hours (ยกเว้นเมื่อ `session_status` เป็น `unknown` ตามที่อธิบายข้างบน): `PRICE_PROVIDER=demo` ใช้ราคาตัวอย่าง (`is_demo: true`) ส่วน `alpaca` ใช้ SIP จริง และถ้า Alpaca ใช้ไม่ได้จะได้ `coverage: "unavailable"` ไม่ใช่ราคาเดโม; holdings และ realized P&L ดูได้เสมอ
 - ไม่รองรับ dividends, stock splits, mergers และการเปลี่ยน symbol: พอร์ตที่ได้รับผลจาก corporate actions เหล่านี้จะคำนวณได้ไม่ครบถ้วน
 - ถ้า provider เปลี่ยน symbol ของหุ้นที่ระบบบันทึกไว้แล้ว (เช่น FB → META) การบันทึกรายการด้วย symbol ใหม่จะได้ `422 unknown_symbol` พร้อมข้อความว่า symbol ถูกเปลี่ยนชื่อ
 - ผลคำนวณเป็นการติดตามพอร์ตด้วย moving weighted-average cost ไม่ใช่รายงานภาษี
