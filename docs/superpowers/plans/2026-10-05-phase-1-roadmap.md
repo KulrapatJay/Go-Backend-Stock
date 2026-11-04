@@ -222,13 +222,13 @@
 **แผนลงมือ:** แบ่งเป็น 8a [ตรวจ symbol กับ Alpaca](2026-11-04-milestone-8a-alpaca-instruments.md) (ลงมือครบ รอตรวจรับ), 8b [holdings + valuation + demo PriceProvider](2026-11-04-milestone-8b-holdings-valuation.md) (ลงมือครบ รอตรวจรับ), 8c [Alpaca PriceProvider](2026-11-05-milestone-8c-alpaca-prices.md) (ลงมือครบ รอตรวจรับ)
 
 - [x] เพิ่ม Alpaca InstrumentProvider ผ่าน Assets API พร้อม HTTP fixtures (พบ/ไม่พบ/inactive/ไม่ใช่ us_equity/timeout) (แผน 8a)
-- [x] ตรวจสิทธิ์ Assets API ด้วยบัญชี paper จริง: `make smoke-alpaca` ผ่านเมื่อ 2026-11-04 (AAPL = us_equity/active มี asset id, BRK.B พบ, symbol ที่ไม่มีได้ unknown_symbol; key paper ของผู้ใช้เรียก Assets API ได้ ส่วนสิทธิ์ market data/SIP ยังไม่ได้ตรวจ — แผน 8c)
+- [x] ตรวจสิทธิ์ Assets API ด้วยบัญชี paper จริง: `make smoke-alpaca` ผ่านเมื่อ 2026-11-04 (AAPL = us_equity/active มี asset id, BRK.B พบ, symbol ที่ไม่มีได้ unknown_symbol; key paper ของผู้ใช้เรียก Assets API ได้ ส่วนสิทธิ์ market data/SIP ตรวจแล้วในแผน 8c เมื่อ 2026-11-05)
 - [x] เพิ่ม demo PriceProvider ที่ติดป้ายชัดเจน (`is_demo`) (แผน 8b)
 - [x] เพิ่ม Alpaca PriceProvider ตาม feed/cutoff ที่ยืนยัน โดยใช้ HTTP fixtures ใน tests (แผน 8c: แท่ง 1 นาที SIP ย้อนหลัง + ปฏิทิน NYSE)
 - [x] ใช้ replay จาก milestone 7 สรุป holdings/cost/realized P&L แล้วเติมราคาเพื่อคำนวณ market value/unrealized P&L (แผน 8b: `GET .../holdings`, `GET .../valuation`; ราคาเป็น null ไม่ใช่ศูนย์เมื่อไม่มี, coverage complete/partial/unavailable)
 - [x] เพิ่ม batch/cache, timeout, bounded retry และ quote metadata ได้แก่ as_of/source/feed/fetched_at (แผน 8c: cache 60 วินาที, ใช้ราคาเก็บไว้ไม่เกิน 7 วันเมื่อ Alpaca ล่ม, retry 1 ครั้ง)
 - [x] ทดสอบ fees/rounding/full-sale residual, ตลาดปิด/วันหยุด, stale/missing price และ partial portfolio valuation (แผน 8b + 8c)
-- [ ] ตรวจ Alpaca จริงแบบ smoke test เมื่อมี credentials โดยไม่ทำให้ CI หรือโหมดเดโมพึ่งบริการจริง
+- [x] ตรวจ Alpaca จริงแบบ smoke test เมื่อมี credentials โดยไม่ทำให้ CI หรือโหมดเดโมพึ่งบริการจริง: `make smoke-alpaca` ผ่านเมื่อ 2026-11-05 (key paper ของผู้ใช้อ่านแท่ง SIP ย้อนหลังและปฏิทิน NYSE ได้: AAPL กับ SPY มีราคา feed sip, as_of ไม่เกิน cutoff, session_status ไม่ใช่ unknown)
 
 **ผ่านเมื่อ:** ผลคำนวณตรงตัวอย่างที่ตรวจด้วยมือ, ราคา unavailable ไม่ถูกแทนด้วยศูนย์, realized ยังดูได้เมื่อ provider ล้มเหลว และไม่มีการ fallback ไปข้อมูลเดโมเงียบ ๆ
 
