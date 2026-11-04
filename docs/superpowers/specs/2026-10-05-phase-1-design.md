@@ -439,7 +439,7 @@ Base path `/api/v1`; JSON UTF-8; UUID เป็น string; timestamp RFC3339 UTC
 | dependency_unavailable / feature_disabled / server_busy | 503 (server_busy มี Retry-After) |
 | internal / audit_write_failed | 500 โดยไม่เปิด DB details |
 
-ความหมายที่ใช้จริงใน milestone 7: `insufficient_shares` ใช้เมื่อ**สร้าง**รายการขายที่ทำให้จำนวนหุ้นติดลบ ณ จุดใดของประวัติ ส่วน `invalid_history` ใช้เมื่อ**แก้หรือลบ**รายการย้อนหลังแล้วทำให้ประวัติส่วนที่เหลือติดลบ ทั้งสองคืน 422 และไม่เขียนอะไร. `server_busy` (503 + `Retry-After: 1`) ครอบกรณีฐานข้อมูลชนกันหรือช้าเกิน — deadlock `40P01`, serialization failure `40001`, lock timeout `55P03`, statement timeout `57014` และ deadline ของ request — ไม่ใช่เฉพาะ hash semaphore ของ auth; ลองใหม่ได้ด้วย Idempotency-Key เดิม
+ความหมายที่ผู้ใช้ยืนยันแล้ว (2026-11-04) และใช้จริงใน milestone 7: `insufficient_shares` ใช้เมื่อ**สร้าง**รายการขายที่ทำให้จำนวนหุ้นติดลบ ณ จุดใดของประวัติ ส่วน `invalid_history` ใช้เมื่อ**แก้หรือลบ**รายการย้อนหลังแล้วทำให้ประวัติส่วนที่เหลือติดลบ ทั้งสองคืน 422 และไม่เขียนอะไร. `server_busy` (503 + `Retry-After: 1`) ครอบกรณีฐานข้อมูลชนกันหรือช้าเกิน — deadlock `40P01`, serialization failure `40001`, lock timeout `55P03`, statement timeout `57014` และ deadline ของ request — ไม่ใช่เฉพาะ hash semaphore ของ auth; ลองใหม่ได้ด้วย Idempotency-Key เดิม
 
 | Method + path (ใต้ /api/v1 เว้นระบุ) | Auth | Input → output / success |
 | --- | --- | --- |

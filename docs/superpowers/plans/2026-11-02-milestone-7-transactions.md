@@ -37,7 +37,7 @@
 - Docker: ใช้ได้เฉพาะ `docker compose ps` และ `docker compose config --quiet`; ห้ามเรียก API ที่ผู้ใช้รันอยู่
 - commit message ไม่มี `Co-Authored-By` หรือชื่อ Claude; commit ในเครื่องเท่านั้น ห้าม push; `git add` เฉพาะไฟล์ของ task
 
-## การตัดสินใจที่แผนนี้เสนอ (รอผู้ใช้ยืนยันตอนรีวิวแผน)
+## การตัดสินใจที่แผนนี้เสนอ (ข้อ 4–7 ผู้ใช้ยืนยันแล้วเมื่อ 2026-11-04; ข้ออื่นยังเป็นข้อเสนอที่รอยืนยัน)
 
 1. **ค่า timeout เป็นค่าคงที่ ไม่เพิ่ม env:** `lock_timeout` 3 วินาที, `statement_timeout` 5 วินาที (ตั้งใน `AfterConnect` เพราะ session pooler ไม่รับประกันการส่ง startup parameters) และ deadline ต่อคำขอ 12 วินาที (น้อยกว่า `writeTimeout` 15 วินาที)
 2. **ชนกันที่ DB ตอบ 503 `server_busy` + `Retry-After: 1`:** ครอบ `40P01`, `40001`, `55P03`, `57014` และ deadline ของ context; ไม่จัดลำดับ lock เพราะทุกคำขอถือ portfolio lock ตัวเดียว ส่วน deadlock จากการสลับชื่อสองพอร์ตพร้อมกันเกิดได้ยากและลองใหม่ได้
