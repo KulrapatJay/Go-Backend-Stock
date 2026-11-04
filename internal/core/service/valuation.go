@@ -17,6 +17,9 @@ const (
 	priceDelay = 15 * time.Minute
 	// priceTimeout bounds the one call to the price provider (spec section 12).
 	priceTimeout = 10 * time.Second
+	// priceMargin is the time of the request itself that the provider never gets, so that a slow
+	// provider leaves enough to answer with the valuation that has no prices.
+	priceMargin = time.Second
 )
 
 // ValuationDeps are what Valuation needs; every field is required.
@@ -70,23 +73,44 @@ func (s *Valuation) Value(ctx context.Context, p domain.Principal, portfolioID d
 	var batch domain.QuoteBatch
 	failed := false
 	if open := domain.OpenSymbols(holdings); len(open) > 0 {
-		priceCtx, cancel := context.WithTimeout(ctx, priceTimeout)
-		defer cancel()
-		batch, err = s.prices.Quotes(priceCtx, open, at.Add(-priceDelay))
+		batch, failed, err = s.quotes(ctx, open, at, portfolioID)
 		if err != nil {
-			if ctx.Err() != nil {
-				return domain.PortfolioValuation{}, ctx.Err()
-			}
-			// The provider's own text may name accounts or keys, so only its kind is logged.
-			s.log.Warn("could not get prices, valuing without them",
-				slog.String("event", "valuation.prices_failed"),
-				slog.String("error_class", errorClass(err)),
-				slog.String("portfolio_id", portfolioID.String()),
-				slog.Int("symbols", len(open)))
-			batch, failed = domain.QuoteBatch{}, true
+			return domain.PortfolioValuation{}, err
 		}
 	}
 	return domain.ValuePortfolio(portfolioID, at, holdings, batch, failed), nil
+}
+
+// quotes asks the provider once. The provider gets priceTimeout, or less when the request's own
+// deadline is closer, keeping priceMargin for the answer: a provider that is slow or down leaves the
+// positions unpriced (failed) and is never an error. Only a request that was cancelled is.
+func (s *Valuation) quotes(ctx context.Context, symbols []domain.Symbol, at time.Time, portfolioID domain.ID) (domain.QuoteBatch, bool, error) {
+	timeout := priceTimeout
+	if deadline, ok := ctx.Deadline(); ok {
+		timeout = min(timeout, time.Until(deadline)-priceMargin)
+	}
+	var batch domain.QuoteBatch
+	var err error
+	if timeout > 0 {
+		priceCtx, cancel := context.WithTimeout(ctx, timeout)
+		defer cancel()
+		batch, err = s.prices.Quotes(priceCtx, symbols, at.Add(-priceDelay))
+	} else {
+		err = context.DeadlineExceeded // no time left to wait for a provider
+	}
+	if err == nil {
+		return batch, false, nil
+	}
+	if errors.Is(ctx.Err(), context.Canceled) {
+		return domain.QuoteBatch{}, false, ctx.Err()
+	}
+	// The provider's own text may name accounts or keys, so only its kind is logged.
+	s.log.Warn("could not get prices, valuing without them",
+		slog.String("event", "valuation.prices_failed"),
+		slog.String("error_class", errorClass(err)),
+		slog.String("portfolio_id", portfolioID.String()),
+		slog.Int("symbols", len(symbols)))
+	return domain.QuoteBatch{}, true, nil
 }
 
 // snapshot reads and replays the history and names the instruments. at is the moment the history was

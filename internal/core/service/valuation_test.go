@@ -58,6 +58,7 @@ func (s valStore) Instruments() port.InstrumentRepository   { return s.instrumen
 type valPrices struct {
 	batch    domain.QuoteBatch
 	err      error
+	block    bool
 	calls    int
 	symbols  []domain.Symbol
 	cutoff   time.Time
@@ -68,6 +69,10 @@ func (f *valPrices) Quotes(ctx context.Context, symbols []domain.Symbol, cutoff 
 	f.calls++
 	f.symbols, f.cutoff = symbols, cutoff
 	f.deadline, _ = ctx.Deadline()
+	if f.block {
+		<-ctx.Done() // a provider that hangs until its context ends
+		return domain.QuoteBatch{}, ctx.Err()
+	}
 	if f.err != nil {
 		return domain.QuoteBatch{}, f.err
 	}
@@ -348,5 +353,48 @@ func TestNewValuationNeedsEveryDependency(t *testing.T) {
 		if _, err := NewValuation(d); err == nil {
 			t.Errorf("NewValuation(no %s) error = nil", name)
 		}
+	}
+}
+
+// The request has a deadline of its own (12 s). When it, and not the provider's 10 s, is what ends
+// the wait, the valuation must still be a 200 without prices, not a bare deadline error (a 500).
+func TestValueWithoutPricesWhenTheRequestDeadlineEndsTheWait(t *testing.T) {
+	tv := newTestValuation(t)
+	id := mustID(t)
+	tv.transactions.history = []domain.Transaction{
+		valTrade(t, id, "AAPL", domain.SideBuy, "2", "100"),
+		valTrade(t, id, "AAPL", domain.SideSell, "1", "130"),
+	}
+	tv.prices.block = true
+	ctx, cancel := context.WithTimeout(t.Context(), 1500*time.Millisecond)
+	defer cancel()
+
+	start := time.Now()
+	got, err := tv.svc.Value(ctx, tv.caller, tv.portfolio)
+
+	if err != nil {
+		t.Fatalf("Value() error = %v, want a valuation without prices", err)
+	}
+	if got.Coverage != domain.CoverageUnavailable || got.Positions[0].Reason != domain.ReasonProviderUnavailable || got.RealizedPnL.String() != "30" {
+		t.Errorf("valuation = %+v, want unavailable, provider_unavailable and realized 30", got)
+	}
+	if took := time.Since(start); took > 1400*time.Millisecond {
+		t.Errorf("Value() took %v, want it to give up before the request deadline and leave time to answer", took)
+	}
+}
+
+func TestValueSkipsTheProviderWhenTheRequestHasNoTimeLeft(t *testing.T) {
+	tv := newTestValuation(t)
+	tv.transactions.history = []domain.Transaction{valTrade(t, mustID(t), "AAPL", domain.SideBuy, "1", "10")}
+	ctx, cancel := context.WithTimeout(t.Context(), 100*time.Millisecond) // less than the margin kept for the answer
+	defer cancel()
+
+	got, err := tv.svc.Value(ctx, tv.caller, tv.portfolio)
+
+	if err != nil || got.Coverage != domain.CoverageUnavailable || got.Positions[0].Reason != domain.ReasonProviderUnavailable {
+		t.Fatalf("Value() = %+v, %v; want an unavailable valuation", got, err)
+	}
+	if tv.prices.calls != 0 {
+		t.Errorf("the provider was called %d times with no time left to wait for it", tv.prices.calls)
 	}
 }
