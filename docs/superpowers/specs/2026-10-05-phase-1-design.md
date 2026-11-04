@@ -245,7 +245,7 @@ type ValuationService interface {
 }
 type Clock interface { Now() time.Time }
 type PriceProvider interface {
-    Quotes(context.Context, []string, time.Time) (domain.QuoteBatch, error) // symbols, cutoff
+    Quotes(context.Context, []domain.Symbol, time.Time) (domain.QuoteBatch, error) // symbols, cutoff; error = เรียก provider ไม่ได้ ส่วน symbol ที่ไม่มีราคาอยู่ใน Unavailable
 }
 type InstrumentProvider interface { // external lookup: Alpaca Assets API หรือ demo list
     Lookup(context.Context, domain.Symbol) (domain.Instrument, error) // ErrUnknownSymbol / ErrDependencyUnavailable (milestone 7: รับ symbol ที่ normalize แล้ว; ผลไม่มี ID/เวลา service เติมก่อนบันทึก)
@@ -488,7 +488,7 @@ Lists = `{data:[],next_cursor:null}`; limit default 20 max 100, opaque base64url
 
 Holdings จัดกลุ่มตาม instrument_id แต่แสดง symbol ปัจจุบัน และแสดง symbols ที่เคยมีรายการรวม positions ปิดแล้วเพื่อเก็บ realized P&L; Holding = `{symbol,instrument_name,quantity,cost_basis,average_cost,realized_pnl}` ทุกตัวเลขเป็น string
 
-PortfolioValuation = `{portfolio_id,currency,calculated_at,coverage,market_value,unrealized_pnl,realized_pnl,priced_market_value,missing_symbols,positions}`. coverage = complete/partial/unavailable; ถ้าขาดราคาหุ้นที่ยังถืออยู่ totals market_value/unrealized_pnl เป็น null และ priced_market_value คือ subtotal เท่านั้น ไม่แสดง subtotal ว่าเป็นยอดเต็ม. Position = Holding + `{quote,market_value,unrealized_pnl}`; quote null ได้และมี unavailable reason. พอร์ตว่าง/หุ้นที่ขายหมดมี market value/unrealized เป็น `"0"` โดยไม่ต้องดึงราคา
+PortfolioValuation = `{portfolio_id,currency,calculated_at,coverage,market_value,unrealized_pnl,realized_pnl,priced_market_value,missing_symbols,positions}`. coverage = complete/partial/unavailable; ถ้าขาดราคาหุ้นที่ยังถืออยู่ totals market_value/unrealized_pnl เป็น null และ priced_market_value คือ subtotal เท่านั้น ไม่แสดง subtotal ว่าเป็นยอดเต็ม. Position = Holding + `{quote,market_value,unrealized_pnl,unavailable_reason}`; quote null ได้ และ unavailable_reason เป็น `no_price` (provider ตอบแต่ไม่มีราคา) หรือ `provider_unavailable` (เรียก provider ไม่ได้) เมื่อหุ้นที่ยังถืออยู่ไม่มีราคา เป็น null เมื่อมีราคาหรือขายหมดแล้ว; field ที่เป็น null ได้ส่งเป็น `null` เสมอ (ไม่ละ key). `GET .../holdings` รวมหุ้นที่ขายหมดแล้ว (quantity `"0"`) เรียงตาม symbol และไม่เรียก provider. พอร์ตว่าง/หุ้นที่ขายหมดมี market value/unrealized เป็น `"0"` โดยไม่ต้องดึงราคา
 
 quote = `{price,currency,as_of,fetched_at,source,feed,is_demo,stale,cached,session_status}`. ทุก optional/null field ต้องระบุ `x-nullable`/description ตาม Swagger 2.0 และ contract tests ตรวจความหมายจริง ไม่ใช้ syntax OAS3 ปนกัน
 
@@ -508,7 +508,7 @@ quote = `{price,currency,as_of,fetched_at,source,feed,is_demo,stale,cached,sessi
 - ถ้าข้อมูล calendar ไม่พร้อม ส่ง session_status unknown/stale=true และเวลาจริง ไม่เดาว่าวันนั้นเป็นวันทำการ. early-close/วันหยุดต้องมี fixtures
 - Cache ใน adapter TTL 60s สูงสุด 500 symbols; bounded latest cache สำหรับ outage ไม่เกิน 7 วัน โดยติด stale/cached ตามจริง; ไม่มี cache และ provider ล้มเหลวคืน quote unavailable
 - External request timeout 5s, valuation รวมไม่เกิน 10s; retry read สูงสุด 1 ครั้งเฉพาะ transient failure ภายใน budget เคารพ Retry-After ไม่ retry invalid credentials
-- Demo provider deterministic ใน dev/test เท่านั้น `is_demo=true`; ไม่มี silent fallback จาก Alpaca
+- Demo provider deterministic ใน dev/test เท่านั้น `is_demo=true` ราคาตัวอย่างคงที่ (AAPL 200, MSFT 420, NVDA 130, GOOGL 175, AMZN 190, META 520, TSLA 250, SPY 540; `session_status=unknown`); ไม่มี silent fallback จาก Alpaca — ก่อนแผน 8c `PRICE_PROVIDER=alpaca` ไม่มีราคา (valuation เป็น `unavailable`) ไม่ใช่ราคา demo
 - Instrument lookup: Alpaca adapter ใช้ Assets API (`GET /v2/assets/{symbol}` ของ Trading API ซึ่งแยกจาก Market Data API) timeout 5 วินาที ไม่ retry (404 หรือ class ที่ไม่ใช่ us_equity = `unknown_symbol` และจำไว้ใน negative cache 10 นาที สูงสุด 1,000 symbol ต่อ process; error อื่นไม่ถูกจำ); `PRICE_PROVIDER` (`demo` หรือ `alpaca`) เลือกทั้ง instrument และ price provider — ไม่ตั้ง = `demo` นอก production, production ต้องเป็น `alpaca` พร้อม `ALPACA_KEY`/`ALPACA_SECRET` มิฉะนั้น API ไม่เริ่ม; demo adapter ใช้รายชื่อตายตัว เช่น AAPL, MSFT, NVDA, GOOGL, AMZN, META, TSLA, SPY; สิทธิ์การใช้ Assets API ด้วยบัญชี paper/free ต้องตรวจด้วยบัญชีจริงก่อนยืนยันว่าใช้ได้ (`make smoke-alpaca` ใน milestone 8a ผ่านเมื่อ 2026-11-04 ด้วยบัญชี paper: Assets API ใช้ได้; สิทธิ์ market data/SIP ยังต้องตรวจใน milestone 8c)
 
 สิทธิ์ historical SIP และ calendar ต้องตรวจด้วยบัญชีจริงก่อนเปิดออนไลน์ ตาม [Alpaca Market Data FAQ](https://docs.alpaca.markets/us/docs/market-data-faq) ไม่ถือว่าการอ่านเอกสารเท่ากับตรวจ entitlement แล้ว
