@@ -101,6 +101,14 @@ type PortfolioValuation struct {
 	Positions         []PositionValuation
 }
 
+// trustworthy reports whether a quote can be used as the price of symbol at the valuation time: a price
+// above zero, in USD, for that symbol and not from after the valuation. A provider adapter builds its
+// quotes with NewPriceQuote, but the valuation does not rely on it: one wrong number would be shown as
+// a market value.
+func trustworthy(q PriceQuote, symbol Symbol, at time.Time) bool {
+	return !q.Price.IsZero() && q.Currency == "USD" && q.Symbol == symbol && !q.AsOf.After(at)
+}
+
 // ValuePortfolio prices holdings with batch. failed means the provider could not be asked at all: every
 // position still held then has no price because of ReasonProviderUnavailable and batch is ignored.
 // market value = quantity x price and unrealized = market value - remaining cost, both exact; nothing
@@ -109,6 +117,10 @@ func ValuePortfolio(portfolioID ID, at time.Time, holdings []Holding, batch Quot
 	v := PortfolioValuation{
 		PortfolioID: portfolioID, CalculatedAt: at.UTC(),
 		MissingSymbols: []Symbol{}, Positions: make([]PositionValuation, 0, len(holdings)),
+	}
+	answered := make(map[string]bool, len(batch.Unavailable))
+	for _, s := range batch.Unavailable {
+		answered[s.String()] = true
 	}
 	var priced, unrealized decimal.Decimal
 	open, pricedCount := 0, 0
@@ -126,8 +138,12 @@ func ValuePortfolio(portfolioID ID, at time.Time, holdings []Holding, batch Quot
 		switch {
 		case failed:
 			position.Reason = ReasonProviderUnavailable
-		case !ok:
+		case ok && !trustworthy(quote, h.Symbol, at):
+			position.Reason = ReasonProviderUnavailable // a quote that cannot be right is not a price
+		case !ok && answered[h.Symbol.String()]:
 			position.Reason = ReasonNoPrice
+		case !ok:
+			position.Reason = ReasonProviderUnavailable // the provider never answered about this symbol
 		default:
 			value := h.Quantity.Mul(quote.Price.Decimal())
 			pnl := value.Sub(h.CostBasis)

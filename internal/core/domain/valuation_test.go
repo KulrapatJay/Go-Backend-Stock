@@ -149,7 +149,9 @@ func TestValuePartiallyPricedPortfolio(t *testing.T) {
 		tradeIn(t, msft, "MSFT", SideBuy, "1", "30", "0"),
 	}, nil)
 
-	got := ValuePortfolio(mustNewID(t), valuedAt, holdings, batchOf(quoteOf(t, "AAPL", "110")), false)
+	batch := batchOf(quoteOf(t, "AAPL", "110"))
+	batch.Unavailable = []Symbol{symbolOf(t, "MSFT"), symbolOf(t, "NVDA")} // the provider answered: no price for these
+	got := ValuePortfolio(mustNewID(t), valuedAt, holdings, batch, false)
 
 	if got.Coverage != CoveragePartial || got.MarketValue != nil || got.UnrealizedPnL != nil {
 		t.Fatalf("coverage = %q, market value = %v, unrealized = %v; want partial with both totals nil", got.Coverage, got.MarketValue, got.UnrealizedPnL)
@@ -281,5 +283,72 @@ func TestOpenSymbolsListsOnlyWhatIsStillHeld(t *testing.T) {
 	}
 	if got := OpenSymbols(nil); got == nil || len(got) != 0 {
 		t.Errorf("OpenSymbols(nil) = %#v, want an empty, non-nil slice", got)
+	}
+}
+
+func TestValueDistrustsMalformedQuotes(t *testing.T) {
+	id := mustNewID(t)
+	holdings := holdingsOf(t, []Transaction{tradeIn(t, id, "AAPL", SideBuy, "1", "100", "0")}, nil)
+	good := quoteOf(t, "AAPL", "110")
+
+	cases := map[string]func(*PriceQuote){
+		"a zero price":         func(q *PriceQuote) { q.Price = Price{} },
+		"another currency":     func(q *PriceQuote) { q.Currency = "EUR" },
+		"another symbol":       func(q *PriceQuote) { q.Symbol = symbolOf(t, "MSFT") },
+		"no symbol":            func(q *PriceQuote) { q.Symbol = Symbol{} },
+		"data from the future": func(q *PriceQuote) { q.AsOf = valuedAt.Add(time.Second) },
+	}
+	for name, mutate := range cases {
+		t.Run(name, func(t *testing.T) {
+			q := good
+			mutate(&q)
+			batch := QuoteBatch{Quotes: map[string]PriceQuote{"AAPL": q}}
+
+			got := ValuePortfolio(mustNewID(t), valuedAt, holdings, batch, false)
+
+			if got.Coverage != CoverageUnavailable || got.MarketValue != nil || got.UnrealizedPnL != nil {
+				t.Fatalf("coverage = %q, totals = %v / %v; a malformed quote must not be valued", got.Coverage, got.MarketValue, got.UnrealizedPnL)
+			}
+			p := got.Positions[0]
+			if p.Reason != ReasonProviderUnavailable || p.Quote != nil || p.MarketValue != nil {
+				t.Errorf("position = %+v, want provider_unavailable and nothing priced", p)
+			}
+			requireDecimal(t, "priced market value", got.PricedMarketValue, "0")
+		})
+	}
+
+	t.Run("a quote as old as the valuation is fine", func(t *testing.T) {
+		q := good
+		q.AsOf = valuedAt
+		got := ValuePortfolio(mustNewID(t), valuedAt, holdings, QuoteBatch{Quotes: map[string]PriceQuote{"AAPL": q}}, false)
+		if got.Coverage != CoverageComplete {
+			t.Errorf("coverage = %q, want complete: as_of equal to the valuation time is allowed", got.Coverage)
+		}
+	})
+}
+
+func TestValueTellsNoPriceFromNoAnswer(t *testing.T) {
+	a, b, c := mustNewID(t), mustNewID(t), mustNewID(t)
+	holdings := holdingsOf(t, []Transaction{
+		tradeIn(t, a, "AAPL", SideBuy, "1", "100", "0"),
+		tradeIn(t, b, "MSFT", SideBuy, "1", "100", "0"),
+		tradeIn(t, c, "NVDA", SideBuy, "1", "100", "0"),
+	}, nil)
+	// AAPL is priced, MSFT is listed as having no price, NVDA is in neither list: the provider
+	// never answered about it.
+	batch := batchOf(quoteOf(t, "AAPL", "110"))
+	batch.Unavailable = []Symbol{symbolOf(t, "MSFT")}
+
+	got := ValuePortfolio(mustNewID(t), valuedAt, holdings, batch, false)
+
+	reasons := map[string]UnavailableReason{}
+	for _, p := range got.Positions {
+		reasons[p.Holding.Symbol.String()] = p.Reason
+	}
+	if reasons["AAPL"] != "" || reasons["MSFT"] != ReasonNoPrice || reasons["NVDA"] != ReasonProviderUnavailable {
+		t.Errorf("reasons = %v, want AAPL priced, MSFT no_price and NVDA provider_unavailable", reasons)
+	}
+	if got.Coverage != CoveragePartial || len(got.MissingSymbols) != 2 {
+		t.Errorf("coverage = %q, missing = %v; want partial with both unpriced symbols missing", got.Coverage, got.MissingSymbols)
 	}
 }
