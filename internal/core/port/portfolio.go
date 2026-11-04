@@ -61,6 +61,9 @@ type InstrumentRepository interface {
 	// (the provider renamed it, FB -> META) it returns an unknown_symbol error: phase 1 does not
 	// follow symbol changes. Neither case aborts the transaction.
 	Upsert(ctx context.Context, instrument domain.Instrument) (domain.Instrument, error)
+	// ByIDs returns the stored instruments among ids, keyed by ID. An ID with no instrument is left
+	// out, not an error, and an empty list returns an empty map without querying.
+	ByIDs(ctx context.Context, ids []domain.ID) (map[domain.ID]domain.Instrument, error)
 }
 
 // IdempotencyRepository stores the first result of each idempotent request.
