@@ -34,6 +34,8 @@ type Config struct {
 	Auth                AuthConfig
 	SMTP                SMTPConfig
 	Google              GoogleConfig
+	PriceProvider       ProviderName
+	Alpaca              AlpacaConfig
 }
 
 // IsProduction reports whether production-only rules apply.
@@ -79,13 +81,15 @@ func Load(getenv func(string) string) (Config, error) {
 	cfg.ShutdownTimeout, err = parseDurationInRange("SHUTDOWN_TIMEOUT", getenv("SHUTDOWN_TIMEOUT"), 10*time.Second, time.Second, time.Minute)
 	add(err)
 
-	var authErrs, smtpErrs, googleErrs []error
+	var authErrs, smtpErrs, googleErrs, providerErrs []error
 	cfg.Auth, authErrs = loadAuth(getenv, prod)
 	cfg.SMTP, smtpErrs = loadSMTP(getenv, prod)
 	cfg.Google, googleErrs = loadGoogle(getenv, cfg.PublicOrigin)
+	cfg.PriceProvider, cfg.Alpaca, providerErrs = loadProvider(getenv, prod)
 	errs = append(errs, authErrs...)
 	errs = append(errs, smtpErrs...)
 	errs = append(errs, googleErrs...)
+	errs = append(errs, providerErrs...)
 
 	if len(errs) > 0 {
 		return Config{}, errors.Join(errs...)

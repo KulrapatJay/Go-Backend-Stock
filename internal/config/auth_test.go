@@ -33,6 +33,9 @@ func validProdEnv() map[string]string {
 		"SMTP_PORT":         "587",
 		"SMTP_FROM":         "no-reply@example.com",
 		"SMTP_TLS":          "starttls",
+		"PRICE_PROVIDER":    "alpaca",
+		"ALPACA_KEY":        "PKPRODKEYID0123456789",
+		"ALPACA_SECRET":     strings.Repeat("a", 40),
 	}
 }
 
