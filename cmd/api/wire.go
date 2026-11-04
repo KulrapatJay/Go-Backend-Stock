@@ -248,3 +248,19 @@ func buildTransactions(cfg config.Config, pool *pgxpool.Pool, log *slog.Logger) 
 	}
 	return httpadapter.TransactionOptions{Service: transactions, Clock: clock}, nil
 }
+
+// buildValuation wires the holdings and valuation use cases over the same store as the others. It
+// opens no connection.
+func buildValuation(cfg config.Config, pool *pgxpool.Pool, log *slog.Logger) (httpadapter.ValuationOptions, error) {
+	prices, err := priceProvider(cfg, systemClock{})
+	if err != nil {
+		return httpadapter.ValuationOptions{}, fmt.Errorf("build valuation: %w", err)
+	}
+	valuation, err := service.NewValuation(service.ValuationDeps{
+		Store: postgres.NewStore(pool), Prices: prices, Clock: systemClock{}, Logger: log,
+	})
+	if err != nil {
+		return httpadapter.ValuationOptions{}, fmt.Errorf("build valuation: %w", err)
+	}
+	return httpadapter.ValuationOptions{Service: valuation}, nil
+}

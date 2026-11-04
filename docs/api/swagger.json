@@ -1,7 +1,7 @@
 {
     "swagger": "2.0",
     "info": {
-        "description": "Records US stock trades and tracks portfolio cost and P\u0026L. It does not place real orders.\nMilestone 7 exposes Health, the Auth endpoints (email and password, email verification, password reset, Google sign-in and linking), Portfolios and Transactions (record, list, read, edit and delete trades); holdings and prices are not implemented yet.",
+        "description": "Records US stock trades and tracks portfolio cost and P\u0026L. It does not place real orders.\nMilestone 8b exposes Health, the Auth endpoints (email and password, email verification, password reset, Google sign-in and linking), Portfolios, Transactions (record, list, read, edit and delete trades) and Holdings/Prices (what a portfolio holds and is worth); prices are sample data in demo mode and real prices are not implemented yet.",
         "title": "Stock Portfolio Tracker API",
         "contact": {},
         "version": "1.0"
@@ -1286,6 +1286,73 @@
                 }
             }
         },
+        "/api/v1/portfolios/{portfolio_id}/holdings": {
+            "get": {
+                "description": "One entry per stock ever traded in the portfolio, sorted by symbol, calculated from its transactions with a moving weighted-average cost. A stock that was sold out stays with quantity \"0\" because of its realized profit and loss. No prices are used, so this works even when the price provider does not. Numbers are exact decimal strings; round them for display only. A portfolio that belongs to someone else gets exactly the same 404 as one that does not exist. Needs the session cookie.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Holdings/Prices"
+                ],
+                "summary": "List what a portfolio holds",
+                "operationId": "listHoldings",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "format": "uuid",
+                        "description": "Portfolio ID",
+                        "name": "portfolio_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/http.HoldingsResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "invalid_input: portfolio_id is not a UUID",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "unauthenticated",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "not_found",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "internal",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "dependency_unavailable or server_busy",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        },
+                        "headers": {
+                            "Retry-After": {
+                                "type": "integer",
+                                "description": "Seconds to wait; only sent with server_busy, not with dependency_unavailable"
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/api/v1/portfolios/{portfolio_id}/transactions": {
             "get": {
                 "description": "Newest first by executed_at, trades executed at the same time by sequence. Pass the next_cursor of a page as cursor to get the following page; next_cursor is null on the last page. A cursor is opaque and only valid for the portfolio and the filters it was issued for: with other filters it gives 400. symbol, side, from and to narrow the list; an empty value does not filter. from and to include the instant itself. Write a timezone offset such as +02:00 as %2B02:00 in the query. A portfolio of another user gives the same 404 as one that does not exist.",
@@ -1857,6 +1924,73 @@
                 }
             }
         },
+        "/api/v1/portfolios/{portfolio_id}/valuation": {
+            "get": {
+                "description": "Prices every stock still held with a delayed reference price: the close of the last bar before 15 minutes ago. It is not a bid or ask price and not a price one could trade at. A price that is missing is null and never \"0\": coverage says whether every stock still held has a price (complete), some do (partial) or none does (unavailable, which is also the answer when the price provider cannot be reached). Unless coverage is complete, market_value and unrealized_pnl are null and priced_market_value is only the subtotal of the priced stocks; realized_pnl and the holdings never depend on prices. unrealized_pnl = quantity x price - remaining cost, without any selling fee. With PRICE_PROVIDER=demo the prices are sample data and is_demo is true. calculated_at is when the transactions were read. A portfolio that belongs to someone else gets exactly the same 404 as one that does not exist. Needs the session cookie.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Holdings/Prices"
+                ],
+                "summary": "Value a portfolio with delayed prices",
+                "operationId": "getValuation",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "format": "uuid",
+                        "description": "Portfolio ID",
+                        "name": "portfolio_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/http.ValuationResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "invalid_input: portfolio_id is not a UUID",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "unauthenticated",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "not_found",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "internal",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "dependency_unavailable or server_busy",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        },
+                        "headers": {
+                            "Retry-After": {
+                                "type": "integer",
+                                "description": "Seconds to wait; only sent with server_busy, not with dependency_unavailable"
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/healthz": {
             "get": {
                 "description": "Returns 200 while the process is running. Does not check the database.",
@@ -2043,6 +2177,57 @@
                 }
             }
         },
+        "http.HoldingResponse": {
+            "type": "object",
+            "required": [
+                "average_cost",
+                "cost_basis",
+                "instrument_name",
+                "quantity",
+                "realized_pnl",
+                "symbol"
+            ],
+            "properties": {
+                "average_cost": {
+                    "type": "string",
+                    "example": "101"
+                },
+                "cost_basis": {
+                    "type": "string",
+                    "example": "151.5"
+                },
+                "instrument_name": {
+                    "type": "string",
+                    "example": "Apple Inc."
+                },
+                "quantity": {
+                    "type": "string",
+                    "example": "1.5"
+                },
+                "realized_pnl": {
+                    "type": "string",
+                    "example": "8.5"
+                },
+                "symbol": {
+                    "type": "string",
+                    "example": "AAPL"
+                }
+            }
+        },
+        "http.HoldingsResponse": {
+            "type": "object",
+            "required": [
+                "data"
+            ],
+            "properties": {
+                "data": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/http.HoldingResponse"
+                    }
+                }
+            }
+        },
         "http.LoginRequest": {
             "type": "object",
             "required": [
@@ -2165,6 +2350,141 @@
                 "version": {
                     "type": "integer",
                     "example": 1
+                }
+            }
+        },
+        "http.PositionResponse": {
+            "type": "object",
+            "required": [
+                "average_cost",
+                "cost_basis",
+                "instrument_name",
+                "market_value",
+                "quantity",
+                "quote",
+                "realized_pnl",
+                "symbol",
+                "unavailable_reason",
+                "unrealized_pnl"
+            ],
+            "properties": {
+                "average_cost": {
+                    "type": "string",
+                    "example": "101"
+                },
+                "cost_basis": {
+                    "type": "string",
+                    "example": "151.5"
+                },
+                "instrument_name": {
+                    "type": "string",
+                    "example": "Apple Inc."
+                },
+                "market_value": {
+                    "type": "string",
+                    "x-nullable": true,
+                    "example": "165"
+                },
+                "quantity": {
+                    "type": "string",
+                    "example": "1.5"
+                },
+                "quote": {
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/http.QuoteResponse"
+                        }
+                    ],
+                    "x-nullable": true
+                },
+                "realized_pnl": {
+                    "type": "string",
+                    "example": "8.5"
+                },
+                "symbol": {
+                    "type": "string",
+                    "example": "AAPL"
+                },
+                "unavailable_reason": {
+                    "type": "string",
+                    "enum": [
+                        "no_price",
+                        "provider_unavailable"
+                    ],
+                    "x-nullable": true,
+                    "example": "no_price"
+                },
+                "unrealized_pnl": {
+                    "type": "string",
+                    "x-nullable": true,
+                    "example": "13.5"
+                }
+            }
+        },
+        "http.QuoteResponse": {
+            "type": "object",
+            "required": [
+                "as_of",
+                "cached",
+                "currency",
+                "feed",
+                "fetched_at",
+                "is_demo",
+                "price",
+                "session_status",
+                "source",
+                "stale"
+            ],
+            "properties": {
+                "as_of": {
+                    "type": "string",
+                    "format": "date-time",
+                    "example": "2026-11-04T14:30:00Z"
+                },
+                "cached": {
+                    "type": "boolean",
+                    "example": false
+                },
+                "currency": {
+                    "type": "string",
+                    "enum": [
+                        "USD"
+                    ],
+                    "example": "USD"
+                },
+                "feed": {
+                    "type": "string",
+                    "example": "demo"
+                },
+                "fetched_at": {
+                    "type": "string",
+                    "format": "date-time",
+                    "example": "2026-11-04T14:46:00Z"
+                },
+                "is_demo": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "price": {
+                    "type": "string",
+                    "example": "110"
+                },
+                "session_status": {
+                    "type": "string",
+                    "enum": [
+                        "open",
+                        "market_closed",
+                        "unknown"
+                    ],
+                    "example": "unknown"
+                },
+                "source": {
+                    "type": "string",
+                    "example": "demo"
+                },
+                "stale": {
+                    "type": "boolean",
+                    "example": false
                 }
             }
         },
@@ -2418,6 +2738,82 @@
                     "example": "0192f0c1-7a8e-7cc4-9d2b-3f6c1a2b4c5d"
                 }
             }
+        },
+        "http.ValuationResponse": {
+            "type": "object",
+            "required": [
+                "calculated_at",
+                "coverage",
+                "currency",
+                "market_value",
+                "missing_symbols",
+                "portfolio_id",
+                "positions",
+                "priced_market_value",
+                "realized_pnl",
+                "unrealized_pnl"
+            ],
+            "properties": {
+                "calculated_at": {
+                    "type": "string",
+                    "format": "date-time",
+                    "example": "2026-11-04T15:00:00Z"
+                },
+                "coverage": {
+                    "type": "string",
+                    "enum": [
+                        "complete",
+                        "partial",
+                        "unavailable"
+                    ],
+                    "example": "complete"
+                },
+                "currency": {
+                    "type": "string",
+                    "enum": [
+                        "USD"
+                    ],
+                    "example": "USD"
+                },
+                "market_value": {
+                    "type": "string",
+                    "x-nullable": true,
+                    "example": "165"
+                },
+                "missing_symbols": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "MSFT",
+                        "NVDA"
+                    ]
+                },
+                "portfolio_id": {
+                    "type": "string",
+                    "example": "0192f0c1-7a8e-7cc4-9d2b-3f6c1a2b4c5d"
+                },
+                "positions": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/http.PositionResponse"
+                    }
+                },
+                "priced_market_value": {
+                    "type": "string",
+                    "example": "165"
+                },
+                "realized_pnl": {
+                    "type": "string",
+                    "example": "8.5"
+                },
+                "unrealized_pnl": {
+                    "type": "string",
+                    "x-nullable": true,
+                    "example": "13.5"
+                }
+            }
         }
     },
     "tags": [
@@ -2428,6 +2824,10 @@
         {
             "description": "Registration, email verification, sessions and CSRF tokens. Every POST needs the X-CSRF-Token header from GET /api/v1/auth/csrf and must come from the API's own origin.",
             "name": "Auth"
+        },
+        {
+            "description": "What a portfolio holds and what it is worth, with delayed prices. A price that is missing is null, never zero; realized profit and loss never depends on prices. Read-only, needs the session cookie.",
+            "name": "Holdings/Prices"
         },
         {
             "description": "A user can own many portfolios, all in USD. Every call needs the session cookie; another user's portfolio looks exactly like a missing one (404). Reading returns an ETag with the portfolio version; changing or deleting a portfolio needs it back in If-Match.",

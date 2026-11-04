@@ -41,6 +41,7 @@ type swaggerHeader struct {
 }
 
 type swaggerSchema struct {
+	Nullable   bool                     `json:"x-nullable"`
 	Ref        string                   `json:"$ref"`
 	Format     string                   `json:"format"`
 	Required   []string                 `json:"required"`

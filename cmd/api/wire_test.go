@@ -344,3 +344,48 @@ func TestPriceProviderFollowsPriceProvider(t *testing.T) {
 		}
 	})
 }
+
+func TestBuildServesTheValuationRoutes(t *testing.T) {
+	cfg := wireConfig(t, "http://localhost:8080")
+	pool, err := pgxpool.New(t.Context(), cfg.DatabaseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pool.Close()
+	log := slog.New(slog.NewJSONHandler(io.Discard, nil))
+
+	auth, err := buildAuth(cfg, pool, log)
+	if err != nil {
+		t.Fatalf("buildAuth() error = %v", err)
+	}
+	defer func() { _ = auth.mail.Close(context.Background()) }()
+	valuation, err := buildValuation(cfg, pool, log)
+	if err != nil {
+		t.Fatalf("buildValuation() error = %v", err)
+	}
+	if valuation.Service == nil {
+		t.Fatal("buildValuation() left the service unset")
+	}
+
+	app := httpadapter.NewServer(httpadapter.Options{Logger: log, Readiness: pool, Auth: auth.options, Valuation: valuation})
+	for _, path := range []string{"holdings", "valuation"} {
+		resp, err := app.Test(httptest.NewRequestWithContext(t.Context(), nethttp.MethodGet,
+			"/api/v1/portfolios/00000000-0000-4000-8000-000000000000/"+path, nil))
+		if err != nil {
+			t.Fatal(err)
+		}
+		_ = resp.Body.Close()
+		if resp.StatusCode != nethttp.StatusUnauthorized {
+			t.Errorf("GET /api/v1/portfolios/{id}/%s without a session = %d, want 401 (404 means the route is not wired)", path, resp.StatusCode)
+		}
+	}
+}
+
+// With PRICE_PROVIDER=alpaca and no Alpaca price adapter yet, the API still starts and values a
+// portfolio without prices; it must not start with another provider's prices.
+func TestBuildValuationRejectsAProductionDemoProvider(t *testing.T) {
+	cfg := config.Config{Env: config.EnvProduction, PriceProvider: config.ProviderDemo}
+	if _, err := buildValuation(cfg, nil, slog.New(slog.NewJSONHandler(io.Discard, nil))); err == nil {
+		t.Fatal("buildValuation(production, demo) error = nil, want a refusal")
+	}
+}

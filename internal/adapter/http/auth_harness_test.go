@@ -168,6 +168,7 @@ type harnessConfig struct {
 	failAudit  bool
 	portfolios bool                  // serve the portfolio routes
 	trades     bool                  // serve the transaction routes (needs portfolios)
+	valuation  bool                  // serve the holdings and valuation routes
 	identity   port.IdentityProvider // nil = Google sign-in off
 }
 
@@ -210,6 +211,9 @@ type authHarness struct {
 	// instruments is the fake the transaction service asks about unknown symbols; nil unless the
 	// harness was built withTransactions.
 	instruments *fakeInstrumentProvider
+	// prices is the fake price provider of the valuation service; nil unless the harness was built
+	// withValuation.
+	prices *fakePriceProvider
 }
 
 func newAuthHarness(t *testing.T, opts ...harnessOption) *authHarness {
@@ -285,10 +289,17 @@ func newAuthHarness(t *testing.T, opts ...harnessOption) *authHarness {
 		must(err)
 		options.Transactions = TransactionOptions{Service: trades, Clock: clock}
 	}
+	var prices *fakePriceProvider
+	if cfg.valuation {
+		prices = &fakePriceProvider{prices: map[string]string{}}
+		valuation, err := service.NewValuation(service.ValuationDeps{Store: store, Prices: prices, Clock: clock, Logger: log})
+		must(err)
+		options.Valuation = ValuationOptions{Service: valuation}
+	}
 	app := NewServer(options)
 	return &authHarness{
 		app: app, pool: pool, admin: admin, store: store, mailer: mailer, clock: clock, logs: logs, origin: testOrigin,
-		instruments: instruments,
+		instruments: instruments, prices: prices,
 	}
 }
 
