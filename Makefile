@@ -98,6 +98,14 @@ test-mail:
 	TEST_MAILPIT_API_URL="$(MAILPIT_API_URL)" \
 	go test -race -count=1 -run 'TestMailpit' ./internal/adapter/mail/...
 
+.PHONY: smoke-alpaca
+
+# Asks the real Alpaca Assets API about AAPL, BRK.B and a symbol that does not exist, using the key of a
+# free paper account from your .env (never from the command line). The recipe names no secret, so make
+# does not echo one. Not part of make check or CI.
+smoke-alpaca:
+	REQUIRE_ALPACA_SMOKE=1 go test -count=1 -v -run 'TestAlpacaSmoke' ./internal/adapter/alpaca/
+
 .PHONY: lint-install lint check
 
 lint-install:

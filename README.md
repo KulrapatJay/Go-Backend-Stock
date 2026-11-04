@@ -3,7 +3,7 @@
 Go API สำหรับบันทึกรายการซื้อขายหุ้นสหรัฐฯ และติดตามต้นทุน/กำไรขาดทุนของหลายพอร์ต
 ระบบนี้บันทึกการลงทุนที่ทำผ่านช่องทางอื่น ไม่ใช่ระบบส่งคำสั่งซื้อขายจริง
 
-> **สถานะ:** Milestone 7 (ลงมือครบแล้ว รอตรวจรับ) — สมัครด้วยอีเมล+รหัสผ่าน, ยืนยันอีเมลด้วย OTP, login/logout, session ฝั่ง server, ลืมรหัสผ่านด้วย OTP, Google sign-in/เชื่อมบัญชี (เปิดเมื่อตั้งค่า `GOOGLE_*`), สร้าง/ดู/แก้/ลบพอร์ตหลายพอร์ต (ETag/If-Match) และบันทึก/ดู/แก้/ลบรายการซื้อขาย (`Idempotency-Key`, ETag/If-Match, ตรวจประวัติไม่ให้จำนวนหุ้นติดลบ) ใช้งานผ่าน API ได้แล้ว; ราคาและการคำนวณต้นทุนเฉลี่ย/กำไรขาดทุนของพอร์ตยังไม่เปิดใช้งาน (milestone 8)
+> **สถานะ:** Milestone 7 (ลงมือครบแล้ว รอตรวจรับ) — สมัครด้วยอีเมล+รหัสผ่าน, ยืนยันอีเมลด้วย OTP, login/logout, session ฝั่ง server, ลืมรหัสผ่านด้วย OTP, Google sign-in/เชื่อมบัญชี (เปิดเมื่อตั้งค่า `GOOGLE_*`), สร้าง/ดู/แก้/ลบพอร์ตหลายพอร์ต (ETag/If-Match) และบันทึก/ดู/แก้/ลบรายการซื้อขาย (`Idempotency-Key`, ETag/If-Match, ตรวจประวัติไม่ให้จำนวนหุ้นติดลบ) ใช้งานผ่าน API ได้แล้ว; ตรวจ symbol ใหม่กับ Alpaca Assets API ได้เมื่อตั้ง `PRICE_PROVIDER=alpaca` (milestone 8a, ลงมือครบ รอตรวจรับ); ราคาและการคำนวณต้นทุนเฉลี่ย/กำไรขาดทุนของพอร์ตยังไม่เปิดใช้งาน (milestone 8b/8c)
 
 ## เริ่มใช้งาน (dev พร้อม hot reload)
 
@@ -178,8 +178,8 @@ rm -f "$JAR" "$JAR.reg" "$JAR.reset" "$JAR.p1" "$JAR.p2" "$JAR.t1" "$JAR.t1again
 - ลืมรหัสผ่าน (ขั้น 8–11): รหัสใช้ได้ 10 นาที กรอกผิดได้ 5 ครั้งต่อรหัส; เมื่อสำเร็จ session เดิมทุกเครื่องของบัญชีถูกออกจากระบบ, มีอีเมลแจ้งว่าเปลี่ยนรหัสผ่านใน Mailpit และ login ใหม่ด้วยรหัสผ่านใหม่
 - พอร์ต (ขั้น 12–15): พอร์ตของผู้ใช้อื่นกับพอร์ตที่ไม่มีอยู่ตอบ `404 not_found` เหมือนกันทุกประการ; `PUT`/`DELETE` ต้องมี `If-Match: "<version>"` ตรงตัว (ไม่รับ `*`, `W/"3"` หรือหลายค่า → 400) ถ้า version ไม่ตรงได้ `412 version_conflict` โดยไม่เขียนอะไร ให้อ่านพอร์ตใหม่แล้วลองอีกครั้ง
 - รายการซื้อขาย (ขั้น 16–21): พอร์ตหรือรายการของผู้ใช้อื่นตอบ `404 not_found` เหมือนไม่มีอยู่; ทุกครั้งที่เพิ่ม แก้ หรือลบ ระบบ replay ประวัติทั้งพอร์ตตามลำดับเวลา (`executed_at` แล้วตาม `sequence`) และปฏิเสธทั้งการเปลี่ยนแปลงถ้าจำนวนหุ้นติดลบ ณ จุดใด (สร้าง → `422 insufficient_shares`, แก้/ลบ → `422 invalid_history`); ถ้าฐานข้อมูลชนกันหรือช้าเกิน (lock/statement timeout, deadlock) ได้ `503 server_busy` พร้อม `Retry-After: 1` ให้ลองใหม่ด้วย key เดิม
-- symbol ที่ระบบยังไม่เคยบันทึกต้องผ่านการตรวจกับ instrument provider ก่อน: ในโหมดเดโมใช้ได้เฉพาะ AAPL, MSFT, NVDA, GOOGL, AMZN, META, TSLA และ SPY (symbol อื่นได้ `422 unknown_symbol`); **symbol ที่ยังไม่อยู่ในตาราง instruments จะบันทึกไม่ได้ในช่วงที่ provider ล่ม** (ได้ `503 dependency_unavailable` ให้ลองใหม่) โดยไม่ถอยไปใช้ข้อมูลเดโม ส่วน symbol ที่เคยบันทึกแล้วยังบันทึกต่อได้ตามปกติ; ผู้ใช้หนึ่งคนเพิ่ม symbol ใหม่ได้ไม่เกิน 30 ตัวต่อชั่วโมง (`429 rate_limited`)
-- production (`APP_ENV=production`) ยังไม่มี provider จนถึง milestone 8 (Alpaca): ไม่ใช้ข้อมูลเดโมเด็ดขาด จึงบันทึกได้เฉพาะ symbol ที่อยู่ในตาราง instruments แล้ว
+- symbol ที่ระบบยังไม่เคยบันทึกต้องผ่านการตรวจกับ instrument provider ก่อน (เลือกด้วย `PRICE_PROVIDER`; ดูหัวข้อ "ตรวจ symbol กับ Alpaca"): ในโหมดเดโมใช้ได้เฉพาะ AAPL, MSFT, NVDA, GOOGL, AMZN, META, TSLA และ SPY (symbol อื่นได้ `422 unknown_symbol`); **symbol ที่ยังไม่อยู่ในตาราง instruments จะบันทึกไม่ได้ในช่วงที่ provider ล่ม** (ได้ `503 dependency_unavailable` ให้ลองใหม่) โดยไม่ถอยไปใช้ข้อมูลเดโม ส่วน symbol ที่เคยบันทึกแล้วยังบันทึกต่อได้ตามปกติ; ผู้ใช้หนึ่งคนเพิ่ม symbol ใหม่ได้ไม่เกิน 30 ตัวต่อชั่วโมง (`429 rate_limited`)
+- production (`APP_ENV=production`) ต้องตั้ง `PRICE_PROVIDER=alpaca` พร้อม `ALPACA_KEY` และ `ALPACA_SECRET` มิฉะนั้น API ไม่เริ่ม: ไม่ใช้ข้อมูลเดโมเด็ดขาด และถ้า Alpaca ใช้ไม่ได้ symbol ใหม่จะได้ `503 dependency_unavailable` (ไม่ถอยไปใช้ข้อมูลเดโม)
 - ใน Swagger UI (`http://localhost:8080/docs/`) ให้เรียก `GET /api/v1/auth/csrf` ก่อน แล้วคัดลอก `csrf_token` ไปใส่ช่อง `X-CSRF-Token` ของ POST; browser ส่ง cookie ให้เอง ขอ token ใหม่หลัง login และหลัง logout เพราะ binding เปลี่ยน
 - ข้อความ error ทุกอันมี `request_id` ตรงกับ header `X-Request-ID` ใช้ค้น log ได้
 
@@ -209,6 +209,24 @@ GOOGLE_REDIRECT_URI=http://localhost:8080/api/v1/auth/google/callback
 
 ระบบไม่เชื่อมบัญชีให้อัตโนมัติเพียงเพราะอีเมลตรงกัน และบัญชีที่สร้างจาก Google ไม่มีรหัสผ่าน: login ได้ด้วย Google เท่านั้น และ "ลืมรหัสผ่าน" ไม่ส่งรหัสให้บัญชีชนิดนี้
 
+## ตรวจ symbol กับ Alpaca (ไม่บังคับใน dev)
+
+โหมดเริ่มต้น (`PRICE_PROVIDER=demo`) รู้จักแค่ 8 symbol ตัวอย่าง ถ้าจะตรวจ symbol จริงกับ Alpaca (ฟรี ไม่ต้องผูกบัตร):
+
+1. สมัครบัญชี paper ของ Alpaca แล้วสร้าง API key ของ paper trading ห้ามเปิดแผนเสียเงินหรือ auto-upgrade
+2. ใส่ค่าใน `.env` ของคุณเอง (ไฟล์นี้ไม่ถูก commit; ห้ามวาง key ในแชท issue หรือโค้ด) ตัวแปร `ALPACA_TRADING_BASE_URL` เว้นว่างได้ ค่าเริ่มต้นคือ `https://paper-api.alpaca.markets`
+
+```bash
+PRICE_PROVIDER=alpaca
+ALPACA_KEY=<key id ของ paper trading — ห้าม commit>
+ALPACA_SECRET=<secret ของ paper trading — ห้าม commit>
+```
+
+3. รัน `make smoke-alpaca` ซึ่งเรียก Alpaca จริงถามเรื่อง AAPL, BRK.B และ symbol ที่ไม่มีอยู่ แล้วบอกผ่าน/ไม่ผ่านโดยไม่พิมพ์ค่า key (CI และ `make check` ไม่เรียก Alpaca)
+4. `docker compose up -d --build api` แล้วบันทึกรายการด้วย symbol ที่ไม่อยู่ในรายการเดโมได้ เช่น `BRK.B`
+
+ถ้าตั้ง `PRICE_PROVIDER=alpaca` แต่ขาด key หรือ secret API จะไม่เริ่มและบอกว่าขาดตัวไหน; ราคาและกำไร-ขาดทุนยังไม่มีจนถึงแผน 8b/8c
+
 ## พัฒนาและทดสอบ
 
 ```bash
@@ -217,6 +235,7 @@ make lint-install     # ติดตั้ง golangci-lint ลง ./bin
 make test             # unit/HTTP/contract tests (integration tests จะ skip)
 make test-integration # integration tests กับ PostgreSQL ใน compose (ต้องเปิด stack ก่อน); ล้างทุกตารางใน schema app ของ dev DB หลังรันทุกครั้ง
 make test-mail        # ส่งอีเมลจริงไป Mailpit ใน compose แล้วอ่านกลับ (docker compose up -d mailpit)
+make smoke-alpaca     # ถาม Alpaca Assets API จริงด้วย key ใน .env (ดูหัวข้อ "ตรวจ symbol กับ Alpaca")
 make swagger          # generate docs/api จาก annotations แล้ว validate
 make check            # tidy + vet + lint + swagger + tests + ตรวจว่า docs/api commit แล้ว
 ```
