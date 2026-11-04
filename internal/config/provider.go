@@ -21,11 +21,15 @@ const (
 // API, and a paper key is all the free plan needs.
 const defaultAlpacaTradingBaseURL = "https://paper-api.alpaca.markets"
 
+// defaultAlpacaDataBaseURL is the Market Data API, a different host from the Trading API.
+const defaultAlpacaDataBaseURL = "https://data.alpaca.markets"
+
 // AlpacaConfig holds the Alpaca credentials. It is empty unless PRICE_PROVIDER is alpaca.
 type AlpacaConfig struct {
 	Key            Secret
 	Secret         Secret
 	TradingBaseURL string
+	DataBaseURL    string
 }
 
 // loadProvider reads PRICE_PROVIDER and ALPACA_*. Its errors name the variables but never their values.
@@ -57,31 +61,36 @@ func loadProvider(getenv func(string) string, prod bool) (ProviderName, AlpacaCo
 			errs = append(errs, fmt.Errorf("%s is required when PRICE_PROVIDER is alpaca", v.name))
 		}
 	}
-	base, err := parseAlpacaBaseURL(getenv("ALPACA_TRADING_BASE_URL"), prod)
+	base, err := parseAlpacaBaseURL("ALPACA_TRADING_BASE_URL", getenv("ALPACA_TRADING_BASE_URL"), defaultAlpacaTradingBaseURL, prod)
+	if err != nil {
+		errs = append(errs, err)
+	}
+	data, err := parseAlpacaBaseURL("ALPACA_DATA_BASE_URL", getenv("ALPACA_DATA_BASE_URL"), defaultAlpacaDataBaseURL, prod)
 	if err != nil {
 		errs = append(errs, err)
 	}
 	if len(errs) > 0 {
 		return "", AlpacaConfig{}, errs
 	}
-	cfg.TradingBaseURL = base
+	cfg.TradingBaseURL, cfg.DataBaseURL = base, data
 	return ProviderAlpaca, cfg, nil
 }
 
 // parseAlpacaBaseURL accepts an origin only (scheme and host, optional trailing slash) and returns it
-// without the slash. Production needs https. It never echoes the value, which could hold credentials.
-func parseAlpacaBaseURL(raw string, prod bool) (string, error) {
+// without the slash; an empty value is fallback. Production needs https. The error names the variable
+// and never echoes the value, which could hold credentials.
+func parseAlpacaBaseURL(name, raw, fallback string, prod bool) (string, error) {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
-		return defaultAlpacaTradingBaseURL, nil
+		return fallback, nil
 	}
 	u, err := url.Parse(raw)
 	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" ||
 		u.User != nil || (u.Path != "" && u.Path != "/") || u.RawQuery != "" || u.Fragment != "" {
-		return "", errors.New("ALPACA_TRADING_BASE_URL must be an origin such as https://paper-api.alpaca.markets")
+		return "", fmt.Errorf("%s must be an origin such as %s", name, fallback)
 	}
 	if prod && u.Scheme != "https" {
-		return "", errors.New("ALPACA_TRADING_BASE_URL must use https in production")
+		return "", fmt.Errorf("%s must use https in production", name)
 	}
 	return u.Scheme + "://" + u.Host, nil
 }

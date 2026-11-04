@@ -167,3 +167,46 @@ func TestAlpacaSecretsAreRedacted(t *testing.T) {
 		}
 	}
 }
+
+func TestAlpacaDataBaseURLDefaultsToTheMarketDataAPI(t *testing.T) {
+	cfg, err := Load(envFrom(alpacaEnv(validDevEnv())))
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.Alpaca.DataBaseURL != "https://data.alpaca.markets" {
+		t.Errorf("DataBaseURL = %q, want https://data.alpaca.markets", cfg.Alpaca.DataBaseURL)
+	}
+	if demo, err := Load(envFrom(validDevEnv())); err != nil || demo.Alpaca.DataBaseURL != "" {
+		t.Errorf("demo config: DataBaseURL = %q, error = %v; want it empty", demo.Alpaca.DataBaseURL, err)
+	}
+}
+
+func TestAlpacaDataBaseURLRules(t *testing.T) {
+	t.Run("plain http only outside production", func(t *testing.T) {
+		env := alpacaEnv(validDevEnv())
+		env["ALPACA_DATA_BASE_URL"] = "http://localhost:9998/"
+		cfg, err := Load(envFrom(env))
+		if err != nil || cfg.Alpaca.DataBaseURL != "http://localhost:9998" {
+			t.Fatalf("Load() = %q, %v; want http://localhost:9998", cfg.Alpaca.DataBaseURL, err)
+		}
+		prod := validProdEnv()
+		prod["ALPACA_DATA_BASE_URL"] = "http://localhost:9998"
+		if _, err := Load(envFrom(prod)); err == nil || !strings.Contains(err.Error(), "ALPACA_DATA_BASE_URL") {
+			t.Fatalf("Load() error = %v, want an https error naming ALPACA_DATA_BASE_URL", err)
+		}
+	})
+	for _, bad := range []string{"https://data.alpaca.markets/v2", "https://data.alpaca.markets?x=1",
+		"https://data.alpaca.markets#frag", "https://user:pass@data.alpaca.markets", "not a url", "ftp://host"} {
+		t.Run("rejects "+bad, func(t *testing.T) {
+			env := alpacaEnv(validDevEnv())
+			env["ALPACA_DATA_BASE_URL"] = bad
+			_, err := Load(envFrom(env))
+			if err == nil || !strings.Contains(err.Error(), "ALPACA_DATA_BASE_URL") {
+				t.Fatalf("Load() error = %v, want an ALPACA_DATA_BASE_URL error", err)
+			}
+			if strings.Contains(err.Error(), "ALPACA_TRADING_BASE_URL") || strings.Contains(err.Error(), "pass@") {
+				t.Errorf("error %q names the wrong variable or echoes credentials", err)
+			}
+		})
+	}
+}
