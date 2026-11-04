@@ -100,11 +100,12 @@ test-mail:
 
 .PHONY: smoke-alpaca
 
-# Asks the real Alpaca Assets API about AAPL, BRK.B and a symbol that does not exist, using the key of a
+# Asks the real Alpaca Assets API about AAPL, BRK.B and a symbol that does not exist, and the Market Data
+# API for delayed SIP bars of AAPL and SPY with the market calendar, using the key of a
 # free paper account from your .env (never from the command line). The recipe names no secret, so make
 # does not echo one. Not part of make check or CI.
 smoke-alpaca:
-	REQUIRE_ALPACA_SMOKE=1 go test -count=1 -v -run 'TestAlpacaSmoke' ./internal/adapter/alpaca/
+	REQUIRE_ALPACA_SMOKE=1 go test -count=1 -v -run 'TestAlpaca(Prices)?Smoke' ./internal/adapter/alpaca/
 
 .PHONY: lint-install lint check
 

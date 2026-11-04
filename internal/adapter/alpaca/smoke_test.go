@@ -3,7 +3,9 @@ package alpaca
 import (
 	"errors"
 	"os"
+	"strings"
 	"testing"
+	"time"
 
 	"go-backend-stock/internal/core/domain"
 )
@@ -47,5 +49,54 @@ func TestAlpacaSmoke(t *testing.T) {
 
 	if _, err := assets.Lookup(t.Context(), mustSymbol(t, "ZZZZZZZZ")); !errors.Is(err, domain.ErrUnknownSymbol) {
 		t.Errorf("Lookup(ZZZZZZZZ) error = %v, want unknown_symbol", err)
+	}
+}
+
+// TestAlpacaPricesSmoke asks the real Market Data API for delayed SIP minute bars and the Trading API
+// for the market calendar. Like TestAlpacaSmoke it runs only through `make smoke-alpaca`, with the key
+// of a free account taken from the environment, and it prints no configuration value.
+func TestAlpacaPricesSmoke(t *testing.T) {
+	if os.Getenv("REQUIRE_ALPACA_SMOKE") == "" {
+		t.Skip("set REQUIRE_ALPACA_SMOKE=1 (make smoke-alpaca) to call the real Alpaca Market Data API")
+	}
+	keyID, secret := os.Getenv("ALPACA_KEY"), os.Getenv("ALPACA_SECRET")
+	if keyID == "" || secret == "" {
+		t.Fatal("ALPACA_KEY and ALPACA_SECRET must be set in .env (a free Alpaca paper account)")
+	}
+	tradingURL, dataURL := os.Getenv("ALPACA_TRADING_BASE_URL"), os.Getenv("ALPACA_DATA_BASE_URL")
+	if tradingURL == "" {
+		tradingURL = "https://paper-api.alpaca.markets"
+	}
+	if dataURL == "" {
+		dataURL = "https://data.alpaca.markets"
+	}
+	prices, err := NewPrices(PricesConfig{
+		DataBaseURL: dataURL, TradingBaseURL: tradingURL, KeyID: keyID, Secret: secret, Timeout: DefaultTimeout,
+	})
+	if err != nil {
+		t.Fatalf("NewPrices() error = %v", err)
+	}
+
+	cutoff := time.Now().UTC().Add(-15 * time.Minute)
+	batch, err := prices.Quotes(t.Context(), []domain.Symbol{mustSymbol(t, "AAPL"), mustSymbol(t, "SPY")}, cutoff)
+	if err != nil {
+		if strings.Contains(err.Error(), "HTTP status 403") {
+			t.Fatalf("Quotes() error = %v: the account has no right to read historical SIP bars", err)
+		}
+		t.Fatalf("Quotes() error = %v", err)
+	}
+	for _, sym := range []string{"AAPL", "SPY"} {
+		q, ok := batch.Quotes[sym]
+		if !ok {
+			t.Errorf("Quotes() has no %s; unavailable = %v", sym, batch.Unavailable)
+			continue
+		}
+		if q.Price.IsZero() || q.Feed != "sip" || q.IsDemo || q.AsOf.After(cutoff) {
+			t.Errorf("%s = feed %q, demo %t, as_of after cutoff %t, price set %t; want a sip price at or before the cutoff",
+				sym, q.Feed, q.IsDemo, q.AsOf.After(cutoff), !q.Price.IsZero())
+		}
+		if q.SessionStatus == domain.SessionUnknown {
+			t.Errorf("%s session_status = unknown; the market calendar could not be read", sym)
+		}
 	}
 }

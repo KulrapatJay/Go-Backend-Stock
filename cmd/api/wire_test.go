@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"errors"
 	"io"
 	"log/slog"
 	nethttp "net/http"
@@ -301,8 +300,14 @@ func TestProductionConfigCannotReachTheDemoInstruments(t *testing.T) {
 	}
 }
 
-// PRICE_PROVIDER also decides where prices come from. Until the Alpaca price adapter exists, alpaca
-// means "no prices", never the demo prices.
+// PRICE_PROVIDER also decides where prices come from. alpaca means delayed Alpaca bars, and an Alpaca
+// failure means "no prices", never the demo prices.
+
+// fixedClock is a port.Clock that stands still.
+type fixedClock struct{ at time.Time }
+
+func (c fixedClock) Now() time.Time { return c.at }
+
 func TestPriceProviderFollowsPriceProvider(t *testing.T) {
 	aapl, err := domain.ParseSymbol("AAPL")
 	if err != nil {
@@ -321,14 +326,51 @@ func TestPriceProviderFollowsPriceProvider(t *testing.T) {
 		}
 	})
 
-	t.Run("alpaca has no prices yet", func(t *testing.T) {
-		provider, err := priceProvider(config.Config{Env: config.EnvDevelopment, PriceProvider: config.ProviderAlpaca}, systemClock{})
+	t.Run("alpaca prices from delayed bars", func(t *testing.T) {
+		calendar := httptest.NewServer(nethttp.HandlerFunc(func(w nethttp.ResponseWriter, r *nethttp.Request) {
+			_, _ = io.WriteString(w, `{"calendar":[{"date":"2026-11-03","core_start":"2026-11-03T14:30:00Z","core_end":"2026-11-03T21:00:00Z"}]}`)
+		}))
+		defer calendar.Close()
+		bars := httptest.NewServer(nethttp.HandlerFunc(func(w nethttp.ResponseWriter, r *nethttp.Request) {
+			_, _ = io.WriteString(w, `{"bars":{"AAPL":[{"t":"2026-11-03T14:44:00Z","c":123.45}]},"next_page_token":null}`)
+		}))
+		defer bars.Close()
+		cfg := config.Config{Env: config.EnvDevelopment, PriceProvider: config.ProviderAlpaca, Alpaca: config.AlpacaConfig{
+			Key: "key-id", Secret: "key-secret",
+			TradingBaseURL: calendar.URL, DataBaseURL: bars.URL,
+		}}
+		provider, err := priceProvider(cfg, fixedClock{time.Date(2026, 11, 3, 15, 0, 10, 0, time.UTC)})
+		if err != nil {
+			t.Fatalf("priceProvider() error = %v", err)
+		}
+		batch, err := provider.Quotes(t.Context(), []domain.Symbol{aapl}, time.Date(2026, 11, 3, 14, 45, 10, 0, time.UTC))
+		if q := batch.Quotes["AAPL"]; err != nil || q.IsDemo || q.Price.String() != "123.45" {
+			t.Errorf("Quotes(AAPL) = %+v, %v, want the fixture price 123.45 and never a demo price", batch, err)
+		}
+	})
+
+	t.Run("alpaca down is unavailable, never demo prices", func(t *testing.T) {
+		down := httptest.NewServer(nethttp.HandlerFunc(func(w nethttp.ResponseWriter, r *nethttp.Request) {
+			w.WriteHeader(nethttp.StatusServiceUnavailable)
+		}))
+		defer down.Close()
+		cfg := config.Config{Env: config.EnvDevelopment, PriceProvider: config.ProviderAlpaca, Alpaca: config.AlpacaConfig{
+			Key: "key-id", Secret: "key-secret",
+			TradingBaseURL: down.URL, DataBaseURL: down.URL,
+		}}
+		provider, err := priceProvider(cfg, fixedClock{time.Date(2026, 11, 3, 15, 0, 10, 0, time.UTC)})
 		if err != nil {
 			t.Fatalf("priceProvider() error = %v", err)
 		}
 		batch, err := provider.Quotes(t.Context(), []domain.Symbol{aapl}, cutoff)
-		if !errors.Is(err, domain.ErrDependencyUnavailable) || len(batch.Quotes) != 0 {
-			t.Errorf("Quotes(AAPL) = %+v, %v; want dependency_unavailable and no quote, never a demo price", batch, err)
+		if err == nil || len(batch.Quotes) != 0 {
+			t.Errorf("Quotes(AAPL) = %+v, %v; want an error and no quote, never a demo price", batch, err)
+		}
+	})
+
+	t.Run("alpaca without credentials", func(t *testing.T) {
+		if _, err := priceProvider(config.Config{Env: config.EnvDevelopment, PriceProvider: config.ProviderAlpaca}, systemClock{}); err == nil {
+			t.Error("priceProvider(alpaca, no credentials) error = nil, want an error")
 		}
 	})
 
@@ -381,8 +423,7 @@ func TestBuildServesTheValuationRoutes(t *testing.T) {
 	}
 }
 
-// With PRICE_PROVIDER=alpaca and no Alpaca price adapter yet, the API still starts and values a
-// portfolio without prices; it must not start with another provider's prices.
+// A production API must not start with the demo provider's prices.
 func TestBuildValuationRejectsAProductionDemoProvider(t *testing.T) {
 	cfg := config.Config{Env: config.EnvProduction, PriceProvider: config.ProviderDemo}
 	if _, err := buildValuation(cfg, nil, slog.New(slog.NewJSONHandler(io.Discard, nil))); err == nil {

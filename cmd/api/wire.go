@@ -17,7 +17,6 @@ import (
 	"go-backend-stock/internal/adapter/mail"
 	"go-backend-stock/internal/adapter/postgres"
 	"go-backend-stock/internal/config"
-	"go-backend-stock/internal/core/domain"
 	"go-backend-stock/internal/core/port"
 	"go-backend-stock/internal/core/service"
 )
@@ -203,22 +202,22 @@ func instrumentProvider(cfg config.Config) (port.InstrumentProvider, error) {
 	}
 }
 
-// unavailablePrices is the price provider of PRICE_PROVIDER=alpaca until the Alpaca price adapter
-// exists: it prices nothing and says so, and a portfolio is then valued without prices. It is never
-// replaced by the demo prices.
-type unavailablePrices struct{}
-
-func (unavailablePrices) Quotes(context.Context, []domain.Symbol, time.Time) (domain.QuoteBatch, error) {
-	return domain.QuoteBatch{}, domain.ErrDependencyUnavailable
-}
-
-// priceProvider picks the source of prices from PRICE_PROVIDER, like instrumentProvider.
+// priceProvider picks the source of prices from PRICE_PROVIDER, like instrumentProvider. When Alpaca
+// cannot answer, a portfolio is valued without prices; it is never given the demo prices instead.
 func priceProvider(cfg config.Config, clock port.Clock) (port.PriceProvider, error) {
 	switch {
 	case cfg.PriceProvider == config.ProviderDemo && !cfg.IsProduction():
 		return demo.NewPrices(clock), nil
 	case cfg.PriceProvider == config.ProviderAlpaca:
-		return unavailablePrices{}, nil
+		prices, err := alpaca.NewPrices(alpaca.PricesConfig{
+			DataBaseURL: cfg.Alpaca.DataBaseURL, TradingBaseURL: cfg.Alpaca.TradingBaseURL,
+			KeyID: cfg.Alpaca.Key.Reveal(), Secret: cfg.Alpaca.Secret.Reveal(),
+			Timeout: alpaca.DefaultTimeout, Now: clock.Now,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("alpaca price provider: %w", err)
+		}
+		return prices, nil
 	case cfg.PriceProvider == config.ProviderDemo:
 		return nil, errors.New("the demo price provider cannot be used in production")
 	default:
