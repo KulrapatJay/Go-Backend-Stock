@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"io"
 	"log/slog"
 	nethttp "net/http"
@@ -298,4 +299,48 @@ func TestProductionConfigCannotReachTheDemoInstruments(t *testing.T) {
 	if _, err := instrumentProvider(config.Config{Env: config.EnvProduction, PriceProvider: config.ProviderDemo}); err == nil {
 		t.Error("instrumentProvider(production, demo) error = nil, want a refusal")
 	}
+}
+
+// PRICE_PROVIDER also decides where prices come from. Until the Alpaca price adapter exists, alpaca
+// means "no prices", never the demo prices.
+func TestPriceProviderFollowsPriceProvider(t *testing.T) {
+	aapl, err := domain.ParseSymbol("AAPL")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cutoff := time.Date(2026, 11, 4, 14, 30, 0, 0, time.UTC)
+
+	t.Run("demo", func(t *testing.T) {
+		provider, err := priceProvider(config.Config{Env: config.EnvDevelopment, PriceProvider: config.ProviderDemo}, systemClock{})
+		if err != nil {
+			t.Fatalf("priceProvider() error = %v", err)
+		}
+		batch, err := provider.Quotes(t.Context(), []domain.Symbol{aapl}, cutoff)
+		if q := batch.Quotes["AAPL"]; err != nil || !q.IsDemo || q.Price.String() != "200" {
+			t.Errorf("Quotes(AAPL) = %+v, %v, want the demo price", batch, err)
+		}
+	})
+
+	t.Run("alpaca has no prices yet", func(t *testing.T) {
+		provider, err := priceProvider(config.Config{Env: config.EnvDevelopment, PriceProvider: config.ProviderAlpaca}, systemClock{})
+		if err != nil {
+			t.Fatalf("priceProvider() error = %v", err)
+		}
+		batch, err := provider.Quotes(t.Context(), []domain.Symbol{aapl}, cutoff)
+		if !errors.Is(err, domain.ErrDependencyUnavailable) || len(batch.Quotes) != 0 {
+			t.Errorf("Quotes(AAPL) = %+v, %v; want dependency_unavailable and no quote, never a demo price", batch, err)
+		}
+	})
+
+	t.Run("production never gets demo prices", func(t *testing.T) {
+		if _, err := priceProvider(config.Config{Env: config.EnvProduction, PriceProvider: config.ProviderDemo}, systemClock{}); err == nil {
+			t.Error("priceProvider(production, demo) error = nil, want a refusal")
+		}
+	})
+
+	t.Run("unknown provider", func(t *testing.T) {
+		if _, err := priceProvider(config.Config{Env: config.EnvDevelopment, PriceProvider: "iex"}, systemClock{}); err == nil {
+			t.Error("priceProvider(iex) error = nil, want an error")
+		}
+	})
 }
