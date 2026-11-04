@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"net/url"
 	"strings"
@@ -53,7 +52,7 @@ type Assets struct {
 	secret  string
 	timeout time.Duration
 	now     func() time.Time
-	client  *http.Client
+	api     *apiClient
 	unknown *negativeCache
 }
 
@@ -73,18 +72,12 @@ func NewAssets(cfg AssetsConfig) (*Assets, error) {
 	}
 	a := &Assets{
 		base: cfg.BaseURL, keyID: cfg.KeyID, secret: cfg.Secret, timeout: cfg.Timeout,
-		now: cfg.Now, client: cfg.Client, unknown: newNegativeCache(cfg.NegativeTTL, cfg.NegativeMax),
+		now: cfg.Now, unknown: newNegativeCache(cfg.NegativeTTL, cfg.NegativeMax),
+		// A symbol lookup is not retried (spec section 12): the user asks again.
+		api: newAPIClient(cfg.KeyID, cfg.Secret, cfg.Timeout, cfg.Client, 0),
 	}
 	if a.now == nil {
 		a.now = time.Now
-	}
-	if a.client == nil {
-		a.client = &http.Client{
-			Timeout: cfg.Timeout,
-			// Never follow a redirect: Go copies custom headers such as APCA-API-SECRET-KEY to the new
-			// location, even on another host or over plain http. A 3xx answers as an unexpected status.
-			CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
-		}
 	}
 	return a, nil
 }
@@ -108,38 +101,17 @@ func (a *Assets) Lookup(ctx context.Context, symbol domain.Symbol) (domain.Instr
 	if a.unknown.seen(key, a.now()) {
 		return domain.Instrument{}, domain.ErrUnknownSymbol
 	}
-	ctx, cancel := context.WithTimeout(ctx, a.timeout)
-	defer cancel()
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, a.base+"/v2/assets/"+url.PathEscape(key), http.NoBody)
+	status, raw, err := a.api.get(ctx, a.base+"/v2/assets/"+url.PathEscape(key), maxResponseBytes)
 	if err != nil {
-		return domain.Instrument{}, fmt.Errorf("alpaca assets: build request: %w", err)
+		return domain.Instrument{}, fmt.Errorf("alpaca assets: %w", err)
 	}
-	req.Header.Set("APCA-API-KEY-ID", a.keyID)
-	req.Header.Set("APCA-API-SECRET-KEY", a.secret)
-	req.Header.Set("Accept", "application/json")
-
-	resp, err := a.client.Do(req)
-	if err != nil {
-		return domain.Instrument{}, fmt.Errorf("alpaca assets: request failed: %w", err)
-	}
-	defer resp.Body.Close()
-
-	switch resp.StatusCode {
+	switch status {
 	case http.StatusOK:
 	case http.StatusNotFound:
 		a.unknown.remember(key, a.now())
 		return domain.Instrument{}, domain.ErrUnknownSymbol
 	default:
-		return domain.Instrument{}, fmt.Errorf("alpaca assets: unexpected HTTP status %d", resp.StatusCode)
-	}
-
-	raw, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes+1))
-	if err != nil {
-		return domain.Instrument{}, fmt.Errorf("alpaca assets: read answer: %w", err)
-	}
-	if len(raw) > maxResponseBytes {
-		return domain.Instrument{}, errors.New("alpaca assets: answer is larger than 64 KiB")
+		return domain.Instrument{}, statusError("alpaca assets", status)
 	}
 	var got asset
 	if err := json.Unmarshal(raw, &got); err != nil {
