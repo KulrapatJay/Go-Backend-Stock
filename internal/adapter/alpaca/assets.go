@@ -10,7 +10,10 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"go-backend-stock/internal/core/domain"
 	"go-backend-stock/internal/core/port"
@@ -26,6 +29,8 @@ const (
 
 	maxResponseBytes = 64 << 10
 	maxNameRunes     = 200
+	maxExchangeRunes = 20
+	maxAssetIDRunes  = 64
 )
 
 // AssetsConfig configures Assets. KeyID and Secret are the Alpaca API key pair; BaseURL is the Trading
@@ -74,7 +79,12 @@ func NewAssets(cfg AssetsConfig) (*Assets, error) {
 		a.now = time.Now
 	}
 	if a.client == nil {
-		a.client = &http.Client{Timeout: cfg.Timeout}
+		a.client = &http.Client{
+			Timeout: cfg.Timeout,
+			// Never follow a redirect: Go copies custom headers such as APCA-API-SECRET-KEY to the new
+			// location, even on another host or over plain http. A 3xx answers as an unexpected status.
+			CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
+		}
 	}
 	return a, nil
 }
@@ -158,8 +168,20 @@ func (a *Assets) instrumentFrom(requested string, got asset) (domain.Instrument,
 	if runes := []rune(name); len(runes) > maxNameRunes {
 		name = string(runes[:maxNameRunes])
 	}
+	// The rules of domain.NewInstrument, checked here so that a well-formed but unexpected answer is an
+	// error the caller can retry (503) and not an internal error (500) when the service stores it.
+	if !printable(name, 1, maxNameRunes) || !printable(got.Exchange, 1, maxExchangeRunes) || !printable(got.ID, 1, maxAssetIDRunes) {
+		return domain.Instrument{}, errors.New("alpaca assets: answer has a value the instrument rules refuse")
+	}
 	return domain.Instrument{
 		Symbol: symbol, ProviderAssetID: got.ID, Name: name, Exchange: got.Exchange,
 		AssetClass: domain.AssetClassUSEquity, Status: status, Source: domain.InstrumentSourceAlpaca,
 	}, nil
+}
+
+// printable reports whether s is valid UTF-8 of min..max characters without control characters, the
+// shape domain.NewInstrument requires of the name, the exchange and the provider asset ID.
+func printable(s string, min, max int) bool {
+	n := utf8.RuneCountInString(s)
+	return utf8.ValidString(s) && n >= min && n <= max && strings.IndexFunc(s, unicode.IsControl) < 0
 }

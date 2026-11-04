@@ -365,3 +365,75 @@ func TestNewAssetsValidatesItsConfig(t *testing.T) {
 		})
 	}
 }
+
+// A redirect must never carry the key pair to another host: Go copies custom headers such as
+// APCA-API-SECRET-KEY to the new location, so the adapter must not follow redirects at all.
+func TestRedirectsAreNotFollowedAndNeverCarryTheSecret(t *testing.T) {
+	elsewhere := newFakeAlpaca(t, answerJSON(200, aaplAsset))
+	f := newFakeAlpaca(t, func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, elsewhere.URL+"/v2/assets/AAPL", http.StatusFound)
+	})
+	a, _ := newTestAssets(t, f, nil)
+
+	for range 2 {
+		_, err := a.Lookup(t.Context(), mustSymbol(t, "AAPL"))
+		if err == nil || errors.Is(err, domain.ErrUnknownSymbol) {
+			t.Fatalf("Lookup() error = %v, want a retryable error", err)
+		}
+		if msg := err.Error(); strings.Contains(msg, testSecret) || strings.Contains(msg, testKeyID) || !strings.Contains(msg, "302") {
+			t.Errorf("error %q leaks a credential or hides the HTTP status 302", msg)
+		}
+	}
+	if got := elsewhere.hits.Load(); got != 0 {
+		t.Errorf("the redirect target received %d requests (key %v, secret %v), want none", got, elsewhere.keyID.Load(), elsewhere.secret.Load())
+	}
+	if got := f.hits.Load(); got != 2 {
+		t.Errorf("requests = %d, want 2 (a redirect is not cached)", got)
+	}
+}
+
+// domain.NewInstrument refuses these, and the service turns its refusal into a 500: the adapter must
+// refuse them first, as an error the caller can retry (503).
+func TestAnswersThatTheInstrumentRulesRefuseAreRetryableErrors(t *testing.T) {
+	bodies := map[string]string{
+		"exchange longer than 20":       strings.Replace(aaplAsset, `"NASDAQ"`, `"AVERYLONGEXCHANGENAME123"`, 1),
+		"asset id longer than 64":       strings.Replace(aaplAsset, `"b0b6dd9d-8b9b-48a9-ba46-b9d54906e415"`, `"`+strings.Repeat("a", 65)+`"`, 1),
+		"control character in the name": strings.Replace(aaplAsset, `"Apple Inc. Common Stock"`, `"Apple\u0000Inc"`, 1),
+		"newline in the exchange":       strings.Replace(aaplAsset, `"NASDAQ"`, `"NAS\nDAQ"`, 1),
+		"control character in the id":   strings.Replace(aaplAsset, `"b0b6dd9d-8b9b-48a9-ba46-b9d54906e415"`, `"b0b6\u0007dd9d"`, 1),
+	}
+	for name, body := range bodies {
+		t.Run(name, func(t *testing.T) {
+			f := newFakeAlpaca(t, answerJSON(200, body))
+			a, _ := newTestAssets(t, f, nil)
+			got, err := a.Lookup(t.Context(), mustSymbol(t, "AAPL"))
+			if err == nil || errors.Is(err, domain.ErrUnknownSymbol) {
+				t.Fatalf("Lookup() = %+v, %v; want an error that is not unknown_symbol", got, err)
+			}
+			if strings.Contains(err.Error(), "AVERYLONG") || strings.Contains(err.Error(), "Apple") {
+				t.Errorf("error %q repeats what Alpaca sent", err)
+			}
+			if _, again := a.Lookup(t.Context(), mustSymbol(t, "AAPL")); again == nil || f.hits.Load() != 2 {
+				t.Errorf("hits = %d after two lookups, want 2 (not cached)", f.hits.Load())
+			}
+		})
+	}
+}
+
+// Whatever Lookup returns must be accepted by domain.NewInstrument once the service adds the ID and
+// times: that is what keeps a well-formed answer from turning into a 500.
+func TestEveryAnswerLookupAcceptsPassesTheInstrumentRules(t *testing.T) {
+	for _, exchange := range []string{"NASDAQ", "NYSEARCA", strings.Repeat("X", 20)} {
+		f := newFakeAlpaca(t, answerJSON(200, strings.Replace(aaplAsset, `"NASDAQ"`, `"`+exchange+`"`, 1)))
+		a, _ := newTestAssets(t, f, nil)
+		got, err := a.Lookup(t.Context(), mustSymbol(t, "AAPL"))
+		if err != nil {
+			t.Fatalf("Lookup(%s) error = %v", exchange, err)
+		}
+		id, _ := domain.NewID()
+		got.ID, got.VerifiedAt, got.CreatedAt, got.UpdatedAt = id, time.Now().UTC(), time.Now().UTC(), time.Now().UTC()
+		if _, err := domain.NewInstrument(got); err != nil {
+			t.Errorf("domain.NewInstrument(Lookup() with exchange %q) error = %v", exchange, err)
+		}
+	}
+}
