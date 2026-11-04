@@ -66,7 +66,7 @@ func registerTransactionRoutes(app *fiber.App, opts TransactionOptions, chain au
 // @Failure      500  {object}  ErrorResponse  "audit_write_failed or internal"
 // @Failure      503  {object}  ErrorResponse  "dependency_unavailable or server_busy"
 // @Header       429  {integer}  Retry-After  "Seconds to wait"
-// @Header       503  {integer}  Retry-After  "Seconds to wait"
+// @Header       503  {integer}  Retry-After  "Seconds to wait; only sent with server_busy, not with dependency_unavailable"
 // @Header       201  {string}  ETag  "The transaction version number wrapped in double quotes"
 // @Router       /api/v1/portfolios/{portfolio_id}/transactions [post]
 func (h *transactionHandlers) create(c fiber.Ctx) error {
@@ -118,7 +118,7 @@ func (h *transactionHandlers) create(c fiber.Ctx) error {
 // @Failure      404  {object}  ErrorResponse  "not_found"
 // @Failure      500  {object}  ErrorResponse  "internal"
 // @Failure      503  {object}  ErrorResponse  "dependency_unavailable or server_busy"
-// @Header       503  {integer}  Retry-After  "Seconds to wait"
+// @Header       503  {integer}  Retry-After  "Seconds to wait; only sent with server_busy, not with dependency_unavailable"
 // @Router       /api/v1/portfolios/{portfolio_id}/transactions [get]
 func (h *transactionHandlers) list(c fiber.Ctx) error {
 	portfolioID, err := domain.ParseID("portfolio_id", c.Params("portfolio_id"))
@@ -152,7 +152,7 @@ func (h *transactionHandlers) list(c fiber.Ctx) error {
 // @Failure      404  {object}  ErrorResponse  "not_found"
 // @Failure      500  {object}  ErrorResponse  "internal"
 // @Failure      503  {object}  ErrorResponse  "dependency_unavailable or server_busy"
-// @Header       503  {integer}  Retry-After  "Seconds to wait"
+// @Header       503  {integer}  Retry-After  "Seconds to wait; only sent with server_busy, not with dependency_unavailable"
 // @Header       200  {string}  ETag  "The transaction version number wrapped in double quotes"
 // @Router       /api/v1/portfolios/{portfolio_id}/transactions/{transaction_id} [get]
 func (h *transactionHandlers) get(c fiber.Ctx) error {
@@ -196,7 +196,7 @@ func (h *transactionHandlers) get(c fiber.Ctx) error {
 // @Failure      500  {object}  ErrorResponse  "audit_write_failed or internal"
 // @Failure      503  {object}  ErrorResponse  "dependency_unavailable or server_busy"
 // @Header       429  {integer}  Retry-After  "Seconds to wait"
-// @Header       503  {integer}  Retry-After  "Seconds to wait"
+// @Header       503  {integer}  Retry-After  "Seconds to wait; only sent with server_busy, not with dependency_unavailable"
 // @Header       200  {string}  ETag  "The new version number wrapped in double quotes"
 // @Router       /api/v1/portfolios/{portfolio_id}/transactions/{transaction_id} [put]
 func (h *transactionHandlers) update(c fiber.Ctx) error {
@@ -252,7 +252,7 @@ func (h *transactionHandlers) update(c fiber.Ctx) error {
 // @Failure      428  {object}  ErrorResponse  "precondition_required: send If-Match"
 // @Failure      500  {object}  ErrorResponse  "audit_write_failed or internal"
 // @Failure      503  {object}  ErrorResponse  "dependency_unavailable or server_busy"
-// @Header       503  {integer}  Retry-After  "Seconds to wait"
+// @Header       503  {integer}  Retry-After  "Seconds to wait; only sent with server_busy, not with dependency_unavailable"
 // @Router       /api/v1/portfolios/{portfolio_id}/transactions/{transaction_id} [delete]
 func (h *transactionHandlers) delete(c fiber.Ctx) error {
 	portfolioID, err := domain.ParseID("portfolio_id", c.Params("portfolio_id"))

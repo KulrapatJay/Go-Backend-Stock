@@ -148,7 +148,7 @@ TRADE=$(sed -nE 's/.*"id":"([^"]+)".*/\1/p' "$JAR.t1" | head -1)
 # 17 ส่งซ้ำด้วย key เดิมและรายการเดิม (เหมือน client ที่ลองใหม่หลัง timeout) ได้ 201 และ body เดิมทุกตัวอักษร โดยไม่บันทึกซ้ำ
 # key เดิมแต่รายการต่างกันได้ 409 idempotency_conflict; key เก็บผลไว้ 24 ชั่วโมงนับจากครั้งแรก
 tpost "$KEY" "$BUY" > "$JAR.t1again"
-cmp -s "$JAR.t1" "$JAR.t1again" && echo "same response as step 16"
+cmp -s "$JAR.t1" "$JAR.t1again" && echo "same response as step 16" || echo "DIFFERENT from step 16"
 
 # 18 ขายเกินจำนวนที่ถือ (ถืออยู่ 0.5) ได้ 422 insufficient_shares และไม่เขียนอะไร
 tpost "sell-$RANDOM-$RANDOM" '{"symbol":"AAPL","side":"sell","quantity":"1","price":"210","fee":"0","executed_at":"2026-10-02T14:30:00Z"}'
@@ -161,10 +161,10 @@ curl -s -i -b "$JAR" -c "$JAR" "$API/portfolios/$SHORT/transactions/$TRADE" | gr
 # 20 แก้รายการ ต้องส่งครบทั้งหกฟิลด์และ If-Match เป็น ETag ล่าสุด (มี quote) ได้ 200 และ ETag: "2"; sequence กับ id ไม่เปลี่ยน
 # ส่ง If-Match ซ้ำด้วย "1" จะได้ 412 version_conflict; ไม่ส่ง header ได้ 428 precondition_required
 # แก้หรือลบรายการที่ทำให้จำนวนหุ้นติดลบ ณ จุดใดของประวัติ ได้ 422 invalid_history และไม่เขียนอะไร
-tput() { curl -s -b "$JAR" -c "$JAR" -X PUT -H "Origin: http://localhost:8080" -H "X-CSRF-Token: $(csrf)" \
+tupdate() { curl -s -b "$JAR" -c "$JAR" -X PUT -H "Origin: http://localhost:8080" -H "X-CSRF-Token: $(csrf)" \
   -H 'Content-Type: application/json' -H "If-Match: $1" -w '\nHTTP %{http_code}\n' -d "$2" "$API/portfolios/$SHORT/transactions/$TRADE"; }
-tput '"1"' '{"symbol":"AAPL","side":"buy","quantity":"0.5","price":"201.5","fee":"1","executed_at":"2026-10-01T14:30:00Z"}'
-tput '"1"' '{"symbol":"AAPL","side":"buy","quantity":"0.5","price":"202","fee":"1","executed_at":"2026-10-01T14:30:00Z"}'
+tupdate '"1"' '{"symbol":"AAPL","side":"buy","quantity":"0.5","price":"201.5","fee":"1","executed_at":"2026-10-01T14:30:00Z"}'
+tupdate '"1"' '{"symbol":"AAPL","side":"buy","quantity":"0.5","price":"202","fee":"1","executed_at":"2026-10-01T14:30:00Z"}'
 
 # 21 ลบรายการ ต้องมี If-Match เช่นกัน ได้ 204; หลังลบพอร์ต "ระยะสั้น" ว่างอีกครั้ง
 curl -s -b "$JAR" -c "$JAR" -X DELETE -H "Origin: http://localhost:8080" -H "X-CSRF-Token: $(csrf)" \

@@ -1040,7 +1040,7 @@ paths:
           description: dependency_unavailable or server_busy
           headers:
             Retry-After:
-              description: Seconds to wait
+              description: Seconds to wait; only sent with server_busy, not with dependency_unavailable
               type: integer
           schema:
             $ref: '#/definitions/http.ErrorResponse'
@@ -1105,7 +1105,7 @@ paths:
           description: dependency_unavailable or server_busy
           headers:
             Retry-After:
-              description: Seconds to wait
+              description: Seconds to wait; only sent with server_busy, not with dependency_unavailable
               type: integer
           schema:
             $ref: '#/definitions/http.ErrorResponse'
@@ -1179,7 +1179,7 @@ paths:
           description: dependency_unavailable or server_busy
           headers:
             Retry-After:
-              description: Seconds to wait
+              description: Seconds to wait; only sent with server_busy, not with dependency_unavailable
               type: integer
           schema:
             $ref: '#/definitions/http.ErrorResponse'
@@ -1229,7 +1229,7 @@ paths:
           description: dependency_unavailable or server_busy
           headers:
             Retry-After:
-              description: Seconds to wait
+              description: Seconds to wait; only sent with server_busy, not with dependency_unavailable
               type: integer
           schema:
             $ref: '#/definitions/http.ErrorResponse'
@@ -1323,7 +1323,7 @@ paths:
           description: dependency_unavailable or server_busy
           headers:
             Retry-After:
-              description: Seconds to wait
+              description: Seconds to wait; only sent with server_busy, not with dependency_unavailable
               type: integer
           schema:
             $ref: '#/definitions/http.ErrorResponse'
@@ -1408,7 +1408,7 @@ paths:
           description: dependency_unavailable or server_busy
           headers:
             Retry-After:
-              description: Seconds to wait
+              description: Seconds to wait; only sent with server_busy, not with dependency_unavailable
               type: integer
           schema:
             $ref: '#/definitions/http.ErrorResponse'
@@ -1515,7 +1515,7 @@ paths:
           description: dependency_unavailable or server_busy
           headers:
             Retry-After:
-              description: Seconds to wait
+              description: Seconds to wait; only sent with server_busy, not with dependency_unavailable
               type: integer
           schema:
             $ref: '#/definitions/http.ErrorResponse'
@@ -1597,7 +1597,7 @@ paths:
           description: dependency_unavailable or server_busy
           headers:
             Retry-After:
-              description: Seconds to wait
+              description: Seconds to wait; only sent with server_busy, not with dependency_unavailable
               type: integer
           schema:
             $ref: '#/definitions/http.ErrorResponse'
@@ -1653,7 +1653,7 @@ paths:
           description: dependency_unavailable or server_busy
           headers:
             Retry-After:
-              description: Seconds to wait
+              description: Seconds to wait; only sent with server_busy, not with dependency_unavailable
               type: integer
           schema:
             $ref: '#/definitions/http.ErrorResponse'
@@ -1766,7 +1766,7 @@ paths:
           description: dependency_unavailable or server_busy
           headers:
             Retry-After:
-              description: Seconds to wait
+              description: Seconds to wait; only sent with server_busy, not with dependency_unavailable
               type: integer
           schema:
             $ref: '#/definitions/http.ErrorResponse'

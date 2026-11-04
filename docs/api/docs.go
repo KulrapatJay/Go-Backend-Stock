@@ -904,7 +904,7 @@ const docTemplate = `{
                         "headers": {
                             "Retry-After": {
                                 "type": "integer",
-                                "description": "Seconds to wait"
+                                "description": "Seconds to wait; only sent with server_busy, not with dependency_unavailable"
                             }
                         }
                     }
@@ -992,7 +992,7 @@ const docTemplate = `{
                         "headers": {
                             "Retry-After": {
                                 "type": "integer",
-                                "description": "Seconds to wait"
+                                "description": "Seconds to wait; only sent with server_busy, not with dependency_unavailable"
                             }
                         }
                     }
@@ -1065,7 +1065,7 @@ const docTemplate = `{
                         "headers": {
                             "Retry-After": {
                                 "type": "integer",
-                                "description": "Seconds to wait"
+                                "description": "Seconds to wait; only sent with server_busy, not with dependency_unavailable"
                             }
                         }
                     }
@@ -1186,7 +1186,7 @@ const docTemplate = `{
                         "headers": {
                             "Retry-After": {
                                 "type": "integer",
-                                "description": "Seconds to wait"
+                                "description": "Seconds to wait; only sent with server_busy, not with dependency_unavailable"
                             }
                         }
                     }
@@ -1286,7 +1286,7 @@ const docTemplate = `{
                         "headers": {
                             "Retry-After": {
                                 "type": "integer",
-                                "description": "Seconds to wait"
+                                "description": "Seconds to wait; only sent with server_busy, not with dependency_unavailable"
                             }
                         }
                     }
@@ -1398,7 +1398,7 @@ const docTemplate = `{
                         "headers": {
                             "Retry-After": {
                                 "type": "integer",
-                                "description": "Seconds to wait"
+                                "description": "Seconds to wait; only sent with server_busy, not with dependency_unavailable"
                             }
                         }
                     }
@@ -1527,7 +1527,7 @@ const docTemplate = `{
                         "headers": {
                             "Retry-After": {
                                 "type": "integer",
-                                "description": "Seconds to wait"
+                                "description": "Seconds to wait; only sent with server_busy, not with dependency_unavailable"
                             }
                         }
                     }
@@ -1608,7 +1608,7 @@ const docTemplate = `{
                         "headers": {
                             "Retry-After": {
                                 "type": "integer",
-                                "description": "Seconds to wait"
+                                "description": "Seconds to wait; only sent with server_busy, not with dependency_unavailable"
                             }
                         }
                     }
@@ -1749,7 +1749,7 @@ const docTemplate = `{
                         "headers": {
                             "Retry-After": {
                                 "type": "integer",
-                                "description": "Seconds to wait"
+                                "description": "Seconds to wait; only sent with server_busy, not with dependency_unavailable"
                             }
                         }
                     }
@@ -1857,7 +1857,7 @@ const docTemplate = `{
                         "headers": {
                             "Retry-After": {
                                 "type": "integer",
-                                "description": "Seconds to wait"
+                                "description": "Seconds to wait; only sent with server_busy, not with dependency_unavailable"
                             }
                         }
                     }
