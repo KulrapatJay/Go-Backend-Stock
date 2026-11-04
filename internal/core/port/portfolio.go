@@ -30,6 +30,10 @@ type PortfolioRepository interface {
 	// leaves the transaction usable, except when a caller that skipped LockOwned inserted a trade
 	// at the same time: that path also returns ErrPortfolioNotEmpty but the transaction is aborted.
 	DeleteOwnedEmpty(ctx context.Context, ownerID, portfolioID domain.ID) error
+	// Exists reports whether a portfolio has this ID, whoever owns it. It only decides whether a
+	// request for a portfolio the caller does not own is audited as an access denial; never use it
+	// to decide who may read or write a portfolio.
+	Exists(ctx context.Context, portfolioID domain.ID) (bool, error)
 }
 
 // TransactionRepository stores trades scoped to their owner and portfolio.

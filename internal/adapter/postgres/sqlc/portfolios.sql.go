@@ -187,6 +187,18 @@ func (q *Queries) OwnedPortfolioExists(ctx context.Context, arg OwnedPortfolioEx
 	return exists, err
 }
 
+const portfolioExists = `-- name: PortfolioExists :one
+SELECT EXISTS (SELECT 1 FROM app.portfolios WHERE id = $1)
+`
+
+// Not filtered by owner on purpose: it only tells the service whether to audit an access denial.
+func (q *Queries) PortfolioExists(ctx context.Context, id pgtype.UUID) (bool, error) {
+	row := q.db.QueryRow(ctx, portfolioExists, id)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
+}
+
 const updateOwnedPortfolio = `-- name: UpdateOwnedPortfolio :one
 UPDATE app.portfolios
 SET name = $1, description = $2, version = version + 1, updated_at = $3

@@ -25,10 +25,11 @@ const (
 
 // Options are the dependencies of the HTTP server, assembled in cmd/api/main.go.
 type Options struct {
-	Logger    *slog.Logger
-	Readiness ReadinessChecker
-	Docs      DocsOptions
-	Auth      AuthOptions
+	Logger     *slog.Logger
+	Readiness  ReadinessChecker
+	Docs       DocsOptions
+	Auth       AuthOptions
+	Portfolios PortfolioOptions
 }
 
 // NewServer builds the Fiber app with the full middleware chain and every route.
@@ -126,7 +127,15 @@ func registerRoutes(app *fiber.App, opts Options) {
 	getAndHead(app, "/healthz", health.Healthz)
 	getAndHead(app, "/readyz", health.Readyz)
 	registerDocs(app, opts.Docs)
-	registerAuthRoutes(app, opts.Auth)
+	if opts.Auth.Service == nil {
+		if opts.Portfolios.Service != nil {
+			panic("http: portfolio routes need Options.Auth.Service to resolve the session")
+		}
+		return
+	}
+	chain := newAuthChain(opts.Auth)
+	registerAuthRoutes(app, opts.Auth, chain)
+	registerPortfolioRoutes(app, opts.Portfolios, chain)
 }
 
 // getAndHead registers handler for GET and HEAD. Fiber's automatic HEAD routes are added at

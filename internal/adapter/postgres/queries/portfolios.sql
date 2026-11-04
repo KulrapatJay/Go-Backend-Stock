@@ -38,6 +38,10 @@ RETURNING id, user_id, name, description, currency, version, created_at, updated
 -- name: OwnedPortfolioExists :one
 SELECT EXISTS (SELECT 1 FROM app.portfolios WHERE id = $1 AND user_id = $2);
 
+-- Not filtered by owner on purpose: it only tells the service whether to audit an access denial.
+-- name: PortfolioExists :one
+SELECT EXISTS (SELECT 1 FROM app.portfolios WHERE id = $1);
+
 -- Deletes only an empty portfolio. Zero rows means it is missing, not the owner's, or not empty.
 -- name: DeleteOwnedEmptyPortfolio :execrows
 DELETE FROM app.portfolios p

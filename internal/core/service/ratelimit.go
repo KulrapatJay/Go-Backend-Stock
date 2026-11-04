@@ -20,6 +20,7 @@ const (
 	verificationConfirmSpan = loginWindow
 	resetConfirmIP          = 20 // per loginWindow
 	resetConfirmSpan        = loginWindow
+	accessDeniedPerHourUser = 20 // security.access_denied events audited per user per hourWindow
 )
 
 // RateLimitKeys turns an email or an IP address into the opaque key stored in rate_limit_keys, so
@@ -116,6 +117,12 @@ func (p *RateLimitPolicy) PasswordResetConfirm(ip netip.Addr) ([]domain.RateLimi
 // GoogleStart limits starting a Google sign-in from one client IP.
 func (p *RateLimitPolicy) GoogleStart(ip netip.Addr) ([]domain.RateLimitRule, error) {
 	return p.build(p.spec(domain.RateLimitGoogleStartIP, ipValue(ip), googleStartPerHourIP, hourWindow))
+}
+
+// AccessDenied limits how many refused accesses to someone else's data one user gets audited. It
+// does not refuse the request: past the limit the answer is the same, only the audit row is skipped.
+func (p *RateLimitPolicy) AccessDenied(user domain.ID) ([]domain.RateLimitRule, error) {
+	return p.build(p.spec(domain.RateLimitAccessDeniedUser, user.String(), accessDeniedPerHourUser, hourWindow))
 }
 
 // verificationEmailSpecs are the two rules on one email key: at most one code per cooldown and at

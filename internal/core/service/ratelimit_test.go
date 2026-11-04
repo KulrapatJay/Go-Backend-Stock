@@ -106,6 +106,8 @@ func TestRateLimitPolicyRules(t *testing.T) {
 			map[domain.RateLimitScope][]ruleShape{domain.RateLimitPasswordResetConfirmIP: {{20, quarter}}}},
 		{"google start", func() ([]domain.RateLimitRule, error) { return policy.GoogleStart(ip) },
 			map[domain.RateLimitScope][]ruleShape{domain.RateLimitGoogleStartIP: {{20, hour}}}},
+		{"access denied", func() ([]domain.RateLimitRule, error) { return policy.AccessDenied(mustID(t)) },
+			map[domain.RateLimitScope][]ruleShape{domain.RateLimitAccessDeniedUser: {{20, hour}}}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

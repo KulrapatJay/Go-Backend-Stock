@@ -28,6 +28,17 @@ func admit(t *testing.T, store *Store, at time.Time, rules ...domain.RateLimitRu
 	return d
 }
 
+// TestEveryRateLimitScopeIsAcceptedByTheDatabase keeps rate_limit_keys_scope_allowed in step with
+// domain.RateLimitScopes(): a scope the CHECK refuses fails only when its first request arrives.
+func TestEveryRateLimitScopeIsAcceptedByTheDatabase(t *testing.T) {
+	store := newRuntimeStore(t)
+	for _, scope := range domain.RateLimitScopes() {
+		if d := admit(t, store, now(), rule(t, scope, randomHash(t), 1, time.Hour)); !d.Allowed {
+			t.Errorf("scope %s: first request denied, want allowed", scope)
+		}
+	}
+}
+
 func TestRateLimitAllowsUpToLimitThenDenies(t *testing.T) {
 	store := newRuntimeStore(t)
 	r := rule(t, domain.RateLimitLoginIP, randomHash(t), 3, time.Hour)

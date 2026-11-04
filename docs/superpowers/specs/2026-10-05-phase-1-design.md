@@ -174,7 +174,7 @@ Constraints/indexes เพิ่มเติม:
 - sessions/OTP/OIDC/idempotency ต้อง expires_at > created_at; token/OTP/state/nonce hashes ยาว 32 bytes
 - users.password_hash อยู่ในตาราง users ต่อไป (ยืนยัน 2026-10-14 ไม่แยกตาราง credentials) แต่ query ทั่วไปของ users เช่น current user/ownership ไม่ SELECT column นี้ มีเฉพาะ query ของ login/reset/register ที่อ่านหรือเขียน; domain.User และ User DTO ไม่มี field password hash และ HTTP test ตรวจว่า response ไม่มี hash
 - sessions: CHECK `(revoked_at IS NULL) = (revoke_reason IS NULL)` และ revoke_reason อยู่ใน `logout`, `password_reset`; เพิ่ม reason ใหม่ต้องทำ migration
-- rate_limit_keys.scope อยู่ในรายการ `login_email`, `login_ip`, `signup_ip`, `google_start_ip`, `email_verification_request_email`, `email_verification_request_ip`, `email_verification_confirm_ip`, `password_reset_request_email`, `password_reset_request_ip`, `password_reset_confirm_ip`, `instrument_lookup_user` (30 ครั้ง/ชั่วโมงต่อผู้ใช้ นับเฉพาะ symbol ที่ยังไม่อยู่ใน instruments เพื่อกันการยิง provider ด้วย symbol สุ่ม; adapter มี negative cache 10 นาทีสำหรับ symbol ที่ไม่พบ); cooldown 60 วินาทีกับโควตาต่อชั่วโมงเป็นสอง rules บน key เดียวกันของ scope `*_request_email`; เพิ่ม scope ใหม่ต้องทำ migration
+- rate_limit_keys.scope อยู่ในรายการ `login_email`, `login_ip`, `signup_ip`, `google_start_ip`, `email_verification_request_email`, `email_verification_request_ip`, `email_verification_confirm_ip`, `password_reset_request_email`, `password_reset_request_ip`, `password_reset_confirm_ip`, `instrument_lookup_user` (30 ครั้ง/ชั่วโมงต่อผู้ใช้ นับเฉพาะ symbol ที่ยังไม่อยู่ใน instruments เพื่อกันการยิง provider ด้วย symbol สุ่ม; adapter มี negative cache 10 นาทีสำหรับ symbol ที่ไม่พบ), `access_denied_user` (20 ครั้ง/ชั่วโมงต่อผู้ใช้ จำกัดจำนวน audit `security.access_denied` จากการแก้/ลบพอร์ตของคนอื่น ไม่ปฏิเสธคำขอ: เกินโควตาแล้วบันทึก `security.rate_limited` ครั้งแรกของแต่ละนาทีแทน); cooldown 60 วินาทีกับโควตาต่อชั่วโมงเป็นสอง rules บน key เดียวกันของ scope `*_request_email`; เพิ่ม scope ใหม่ต้องทำ migration
 - transactions.executed_at ต้อง `>= '1970-01-01T00:00:00Z'` และไม่อยู่ในอนาคต (ตรวจอนาคตใน Go ด้วย Clock เพราะ DB CHECK ห้ามใช้ now())
 - otp_challenges.failed_attempts มี DB CHECK 0–20 เป็นเพดานตายตัว ส่วนจำนวนที่อนุญาตจริงมาจาก config (ค่าเริ่มต้น 5) ซึ่ง config validation ต้องปฏิเสธค่าที่น้อยกว่า 1 หรือเกิน 20; partial UNIQUE(user_id, purpose) WHERE consumed_at IS NULL AND invalidated_at IS NULL จึงมี challenge เปิดได้หนึ่งอันต่อ flow ต่อผู้ใช้; ก่อนสร้างใหม่ invalidate แถวเดิมของ purpose เดียวกันรวมแถวหมดอายุ; ทุก query ระบุ purpose เพื่อไม่ให้ challenge ID ของ flow หนึ่งใช้กับอีก flow ได้
 - oauth_flows purpose link ต้องมี user_id และ purpose login ต้องเป็น NULL; จำกัด flow 10 นาทีและ consume ครั้งเดียว
@@ -316,6 +316,7 @@ type PortfolioRepository interface {
     ListOwned(context.Context, domain.ID, domain.Page) (domain.PortfolioPage, error)
     UpdateOwned(context.Context, domain.Portfolio, domain.ID) (domain.Portfolio, error) // version = version + 1
     DeleteOwnedEmpty(context.Context, domain.ID, domain.ID) error
+    Exists(context.Context, domain.ID) (bool, error) // ไม่กรองเจ้าของ: ใช้ตัดสินเฉพาะว่าจะเขียน audit security.access_denied ห้ามใช้ตัดสินสิทธิ์อ่าน/เขียน
 }
 type TransactionRepository interface {
     History(context.Context, domain.ID, domain.ID) ([]domain.Transaction, error)
@@ -459,7 +460,7 @@ Base path `/api/v1`; JSON UTF-8; UUID เป็น string; timestamp RFC3339 UTC
 | POST /portfolios | required+CSRF | PortfolioInput → 201 Portfolio; ชื่อซ้ำ → 409 `portfolio_name_conflict` |
 | GET /portfolios | required | cursor/limit → 200 PortfolioPage |
 | GET /portfolios/{portfolio_id} | required | 200 Portfolio |
-| PUT /portfolios/{portfolio_id} | required+CSRF+If-Match | PortfolioInput → 200 Portfolio + ETag ใหม่; ชื่อซ้ำ → 409 `portfolio_name_conflict` |
+| PUT /portfolios/{portfolio_id} | required+CSRF+If-Match | PortfolioInput ทั้งชุด (ต้องส่ง `description` ส่ง `""` เพื่อล้าง; ขาด → 400 `invalid_input` เพื่อไม่ให้ลบคำอธิบายโดยไม่ตั้งใจ) → 200 Portfolio + ETag ใหม่; ชื่อซ้ำ → 409 `portfolio_name_conflict` |
 | DELETE /portfolios/{portfolio_id} | required+CSRF+If-Match | 204 เฉพาะพอร์ตว่าง |
 | POST /portfolios/{portfolio_id}/transactions | required+CSRF | TransactionInput + Idempotency-Key → 201 Transaction; replay คืน 201/body เดิม |
 | GET /portfolios/{portfolio_id}/transactions | required | limit/cursor/symbol/side/from/to → 200 TransactionPage |

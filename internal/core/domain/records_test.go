@@ -142,8 +142,8 @@ func TestNewRateLimitRule(t *testing.T) {
 	if _, err := domain.NewRateLimitRule(valid()); err != nil {
 		t.Fatalf("NewRateLimitRule(valid) error = %v", err)
 	}
-	if n := len(domain.RateLimitScopes()); n != 11 {
-		t.Errorf("RateLimitScopes() has %d scopes, spec section 7 lists 11", n)
+	if n := len(domain.RateLimitScopes()); n != 12 {
+		t.Errorf("RateLimitScopes() has %d scopes, the spec lists 12", n)
 	}
 	for name, mutate := range map[string]func(*domain.RateLimitRule){
 		"unknown scope": func(r *domain.RateLimitRule) { r.Scope = "login" },

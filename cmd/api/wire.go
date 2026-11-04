@@ -81,19 +81,9 @@ func buildAuth(cfg config.Config, pool *pgxpool.Pool, log *slog.Logger) (authPar
 	if err != nil {
 		return fail("csrf codec", err)
 	}
-	keys, err := service.NewRateLimitKeys(cfg.Auth.RateLimitSecret.Bytes())
+	limits, err := buildRateLimits(cfg)
 	if err != nil {
-		return fail("rate-limit keys", err)
-	}
-	limits, err := service.NewRateLimitPolicy(keys, service.RateLimitConfig{
-		OTPResendCooldown:       cfg.Auth.OTPResendCooldown,
-		OTPRequestsPerHourEmail: cfg.Auth.OTPRequestsPerHourEmail,
-		OTPRequestsPerHourIP:    cfg.Auth.OTPRequestsPerHourIP,
-		LoginAttemptsPerEmail:   cfg.Auth.LoginAttemptsPerEmail,
-		LoginAttemptsPerIP:      cfg.Auth.LoginAttemptsPerIP,
-	})
-	if err != nil {
-		return fail("rate-limit policy", err)
+		return fail("rate limits", err)
 	}
 	pacer, err := service.NewPacer(clock, cfg.Auth.ResponseFloor, cfg.Auth.ResponseJitter)
 	if err != nil {
@@ -149,4 +139,39 @@ func buildAuth(cfg config.Config, pool *pgxpool.Pool, log *slog.Logger) (authPar
 		},
 		mail: dispatcher,
 	}, nil
+}
+
+// buildRateLimits builds the rate-limit policy that auth and portfolios share.
+func buildRateLimits(cfg config.Config) (*service.RateLimitPolicy, error) {
+	keys, err := service.NewRateLimitKeys(cfg.Auth.RateLimitSecret.Bytes())
+	if err != nil {
+		return nil, fmt.Errorf("keys: %w", err)
+	}
+	policy, err := service.NewRateLimitPolicy(keys, service.RateLimitConfig{
+		OTPResendCooldown:       cfg.Auth.OTPResendCooldown,
+		OTPRequestsPerHourEmail: cfg.Auth.OTPRequestsPerHourEmail,
+		OTPRequestsPerHourIP:    cfg.Auth.OTPRequestsPerHourIP,
+		LoginAttemptsPerEmail:   cfg.Auth.LoginAttemptsPerEmail,
+		LoginAttemptsPerIP:      cfg.Auth.LoginAttemptsPerIP,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("policy: %w", err)
+	}
+	return policy, nil
+}
+
+// buildPortfolios wires the portfolio use cases over the same store as auth. It opens no connection.
+func buildPortfolios(cfg config.Config, pool *pgxpool.Pool, log *slog.Logger) (httpadapter.PortfolioOptions, error) {
+	limits, err := buildRateLimits(cfg)
+	if err != nil {
+		return httpadapter.PortfolioOptions{}, fmt.Errorf("build portfolios: rate limits: %w", err)
+	}
+	store := postgres.NewStore(pool)
+	portfolios, err := service.NewPortfolios(service.PortfolioDeps{
+		Store: store, UnitOfWork: store, Clock: systemClock{}, Limits: limits, Logger: log,
+	})
+	if err != nil {
+		return httpadapter.PortfolioOptions{}, fmt.Errorf("build portfolios: %w", err)
+	}
+	return httpadapter.PortfolioOptions{Service: portfolios}, nil
 }

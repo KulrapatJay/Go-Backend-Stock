@@ -3,12 +3,14 @@
 // @title           Stock Portfolio Tracker API
 // @version         1.0
 // @description     Records US stock trades and tracks portfolio cost and P&L. It does not place real orders.
-// @description     Milestone 5 exposes Health and the Auth endpoints (email and password, email verification, password reset, Google sign-in and linking); portfolios and transactions are not implemented yet.
+// @description     Milestone 6 exposes Health, the Auth endpoints (email and password, email verification, password reset, Google sign-in and linking) and Portfolios; transactions and holdings are not implemented yet.
 // @BasePath        /
 // @tag.name        Health
 // @tag.description Liveness and readiness probes
 // @tag.name        Auth
 // @tag.description Registration, email verification, sessions and CSRF tokens. Every POST needs the X-CSRF-Token header from GET /api/v1/auth/csrf and must come from the API's own origin.
+// @tag.name        Portfolios
+// @tag.description A user can own many portfolios, all in USD. Every call needs the session cookie; another user's portfolio looks exactly like a missing one (404). Reading returns an ETag with the portfolio version; changing or deleting a portfolio needs it back in If-Match.
 package main
 
 import (
@@ -72,10 +74,16 @@ func run() error {
 		closeMail(earlyCtx, auth.mail, log)
 	}()
 
+	portfolios, err := buildPortfolios(cfg, pool, log)
+	if err != nil {
+		return err
+	}
+
 	app := httpadapter.NewServer(httpadapter.Options{
-		Logger:    log,
-		Readiness: pool,
-		Auth:      auth.options,
+		Logger:     log,
+		Readiness:  pool,
+		Auth:       auth.options,
+		Portfolios: portfolios,
 		Docs: httpadapter.DocsOptions{
 			Enabled:         cfg.DocsEnabled,
 			TryItOutEnabled: cfg.DocsTryItOutEnabled,

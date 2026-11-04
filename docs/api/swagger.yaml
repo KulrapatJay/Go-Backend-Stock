@@ -116,6 +116,70 @@ definitions:
     - expires_in
     - message
     type: object
+  http.PortfolioPageResponse:
+    properties:
+      data:
+        items:
+          $ref: '#/definitions/http.PortfolioResponse'
+        type: array
+      next_cursor:
+        example: eyJrIjoicG9ydGZvbGlvcyJ9
+        type: string
+        x-nullable: true
+    required:
+    - data
+    - next_cursor
+    type: object
+  http.PortfolioRequest:
+    properties:
+      description:
+        example: Buy and hold, reviewed once a year.
+        maxLength: 1000
+        type: string
+      name:
+        example: Long term
+        maxLength: 100
+        minLength: 1
+        type: string
+    required:
+    - name
+    type: object
+  http.PortfolioResponse:
+    properties:
+      created_at:
+        example: "2026-10-29T09:30:00Z"
+        format: date-time
+        type: string
+      currency:
+        enum:
+        - USD
+        example: USD
+        type: string
+      description:
+        example: Buy and hold, reviewed once a year.
+        type: string
+      id:
+        example: 0192f0c1-7a8e-7cc4-9d2b-3f6c1a2b4c5d
+        type: string
+      name:
+        example: Long term
+        type: string
+      updated_at:
+        example: "2026-10-29T09:30:00Z"
+        format: date-time
+        type: string
+      version:
+        example: 1
+        type: integer
+    required:
+    - created_at
+    - currency
+    - description
+    - id
+    - name
+    - updated_at
+    - version
+    type: object
   http.ReadyResponse:
     properties:
       status:
@@ -162,6 +226,21 @@ definitions:
     - expires_at
     - user
     type: object
+  http.UpdatePortfolioRequest:
+    properties:
+      description:
+        example: Buy and hold, reviewed once a year.
+        maxLength: 1000
+        type: string
+      name:
+        example: Long term
+        maxLength: 100
+        minLength: 1
+        type: string
+    required:
+    - description
+    - name
+    type: object
   http.UserResponse:
     properties:
       created_at:
@@ -187,7 +266,7 @@ info:
   contact: {}
   description: |-
     Records US stock trades and tracks portfolio cost and P&L. It does not place real orders.
-    Milestone 5 exposes Health and the Auth endpoints (email and password, email verification, password reset, Google sign-in and linking); portfolios and transactions are not implemented yet.
+    Milestone 6 exposes Health, the Auth endpoints (email and password, email verification, password reset, Google sign-in and linking) and Portfolios; transactions and holdings are not implemented yet.
   title: Stock Portfolio Tracker API
   version: "1.0"
 paths:
@@ -814,6 +893,315 @@ paths:
       summary: Register with an email and a password
       tags:
       - Auth
+  /api/v1/portfolios:
+    get:
+      description: Newest first. Pass the next_cursor of a page as cursor to get the
+        following page; next_cursor is null on the last page. A cursor is opaque and
+        only valid for the user it was issued to. Other users' portfolios never appear.
+      operationId: listPortfolios
+      parameters:
+      - default: 20
+        description: Page size, 1-100 (default 20)
+        in: query
+        maximum: 100
+        minimum: 1
+        name: limit
+        type: integer
+      - description: next_cursor of the previous page
+        in: query
+        name: cursor
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/http.PortfolioPageResponse'
+        "400":
+          description: 'invalid_input: bad limit or cursor'
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+        "401":
+          description: unauthenticated
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+        "500":
+          description: internal
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+        "503":
+          description: dependency_unavailable
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+      summary: List the portfolios of the signed-in user
+      tags:
+      - Portfolios
+    post:
+      consumes:
+      - application/json
+      description: Adds a portfolio for the signed-in user. A user can have many portfolios
+        (for example long term, short term and speculative); every portfolio uses
+        USD. The name is trimmed, must be 1-100 characters and must not repeat another
+        portfolio name of the same user, ignoring letter case (409 portfolio_name_conflict);
+        another user may use the same name. The ETag header carries the version to
+        send in If-Match when you change or delete the portfolio. Needs the session
+        cookie and X-CSRF-Token.
+      operationId: createPortfolio
+      parameters:
+      - description: Token from GET /api/v1/auth/csrf
+        in: header
+        name: X-CSRF-Token
+        required: true
+        type: string
+      - description: Name and optional description
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/http.PortfolioRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          headers:
+            ETag:
+              description: The portfolio version in quotes, for example \"1\
+              type: string
+          schema:
+            $ref: '#/definitions/http.PortfolioResponse'
+        "400":
+          description: invalid_input or malformed_json
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+        "401":
+          description: unauthenticated
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+        "403":
+          description: csrf_failed
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+        "409":
+          description: portfolio_name_conflict
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+        "500":
+          description: audit_write_failed or internal
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+        "503":
+          description: dependency_unavailable
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+      summary: Create a portfolio
+      tags:
+      - Portfolios
+  /api/v1/portfolios/{portfolio_id}:
+    delete:
+      description: Deletes a portfolio that has no transactions; a portfolio with
+        transactions is kept and the call gives 409 portfolio_not_empty (history is
+        never deleted silently). Needs If-Match with the ETag of your last read, like
+        PUT. A portfolio of another user gives the same 404 as one that does not exist.
+        Needs the session cookie and X-CSRF-Token.
+      operationId: deletePortfolio
+      parameters:
+      - description: Portfolio ID
+        format: uuid
+        in: path
+        name: portfolio_id
+        required: true
+        type: string
+      - description: ETag of the last read, with quotes, for example \
+        in: header
+        name: If-Match
+        required: true
+        type: string
+      - description: Token from GET /api/v1/auth/csrf
+        in: header
+        name: X-CSRF-Token
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: Deleted
+        "400":
+          description: invalid_input (portfolio_id or If-Match)
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+        "401":
+          description: unauthenticated
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+        "403":
+          description: csrf_failed
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+        "404":
+          description: not_found
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+        "409":
+          description: portfolio_not_empty
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+        "412":
+          description: 'version_conflict: read the portfolio again'
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+        "428":
+          description: 'precondition_required: send If-Match'
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+        "500":
+          description: audit_write_failed or internal
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+        "503":
+          description: dependency_unavailable
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+      summary: Delete an empty portfolio
+      tags:
+      - Portfolios
+    get:
+      description: A portfolio that belongs to someone else gets exactly the same
+        404 as one that does not exist. The ETag header carries the version to send
+        in If-Match.
+      operationId: getPortfolio
+      parameters:
+      - description: Portfolio ID
+        format: uuid
+        in: path
+        name: portfolio_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          headers:
+            ETag:
+              description: The portfolio version in quotes, for example \"1\
+              type: string
+          schema:
+            $ref: '#/definitions/http.PortfolioResponse'
+        "400":
+          description: 'invalid_input: portfolio_id is not a UUID'
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+        "401":
+          description: unauthenticated
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+        "404":
+          description: not_found
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+        "500":
+          description: internal
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+        "503":
+          description: dependency_unavailable
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+      summary: Get one portfolio
+      tags:
+      - Portfolios
+    put:
+      consumes:
+      - application/json
+      description: 'Replaces the name and description: send both, a body without description
+        is refused with 400 and nothing is written (send an empty string to clear
+        it). Send the ETag of your last read in If-Match, for example "3" with the
+        quotes: without it the call is refused with 428 precondition_required; if
+        the portfolio changed since (version_conflict) the call is refused with 412
+        and nothing is written. Only the exact form "<version>" is accepted: the wildcard
+        *, weak validators (W/"3") and lists give 400. A name that another portfolio
+        of yours already uses, ignoring letter case, gives 409 portfolio_name_conflict;
+        renaming a portfolio to the same name in a different case is allowed. A portfolio
+        of another user gives the same 404 as one that does not exist. Needs the session
+        cookie and X-CSRF-Token.'
+      operationId: updatePortfolio
+      parameters:
+      - description: Portfolio ID
+        format: uuid
+        in: path
+        name: portfolio_id
+        required: true
+        type: string
+      - description: ETag of the last read, with quotes, for example \
+        in: header
+        name: If-Match
+        required: true
+        type: string
+      - description: Token from GET /api/v1/auth/csrf
+        in: header
+        name: X-CSRF-Token
+        required: true
+        type: string
+      - description: New name and description; description is required, send an empty
+          string to clear it
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/http.UpdatePortfolioRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          headers:
+            ETag:
+              description: The new version in quotes, for example \"4\
+              type: string
+          schema:
+            $ref: '#/definitions/http.PortfolioResponse'
+        "400":
+          description: invalid_input (body, portfolio_id or If-Match) or malformed_json
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+        "401":
+          description: unauthenticated
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+        "403":
+          description: csrf_failed
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+        "404":
+          description: not_found
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+        "409":
+          description: portfolio_name_conflict
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+        "412":
+          description: 'version_conflict: read the portfolio again'
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+        "428":
+          description: 'precondition_required: send If-Match'
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+        "500":
+          description: audit_write_failed or internal
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+        "503":
+          description: dependency_unavailable
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+      summary: Rename a portfolio or change its description
+      tags:
+      - Portfolios
   /healthz:
     get:
       description: Returns 200 while the process is running. Does not check the database.
@@ -863,3 +1251,8 @@ tags:
     needs the X-CSRF-Token header from GET /api/v1/auth/csrf and must come from the
     API's own origin.
   name: Auth
+- description: A user can own many portfolios, all in USD. Every call needs the session
+    cookie; another user's portfolio looks exactly like a missing one (404). Reading
+    returns an ETag with the portfolio version; changing or deleting a portfolio needs
+    it back in If-Match.
+  name: Portfolios

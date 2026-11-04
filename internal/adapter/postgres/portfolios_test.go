@@ -294,3 +294,31 @@ func TestPortfolioListRejectsCursorFromAnotherOwner(t *testing.T) {
 
 	requireCode(t, err, domain.CodeInvalidInput)
 }
+
+// TestPortfolioExistsIgnoresTheOwner: Exists answers for any owner, so the service can tell a
+// portfolio that belongs to someone else from one that was never there.
+func TestPortfolioExistsIgnoresTheOwner(t *testing.T) {
+	store := newRuntimeStore(t)
+	owner := insertUser(t, store)
+	p := newPortfolio(t, owner.ID, "Long term", now())
+	if err := store.Portfolios().Insert(t.Context(), p); err != nil {
+		t.Fatal(err)
+	}
+
+	if ok, err := store.Portfolios().Exists(t.Context(), p.ID); err != nil || !ok {
+		t.Errorf("Exists(stored) = %v, %v; want true", ok, err)
+	}
+	if ok, err := store.Portfolios().Exists(t.Context(), newID(t)); err != nil || ok {
+		t.Errorf("Exists(unknown) = %v, %v; want false", ok, err)
+	}
+
+	err := store.withinTx(t.Context(), func(r *txRepositories) error {
+		return r.Portfolios().DeleteOwnedEmpty(t.Context(), owner.ID, p.ID)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ok, err := store.Portfolios().Exists(t.Context(), p.ID); err != nil || ok {
+		t.Errorf("Exists(deleted) = %v, %v; want false", ok, err)
+	}
+}

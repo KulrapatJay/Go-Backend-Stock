@@ -116,3 +116,18 @@ func TestNewTransactionFilterRejectsEmptyFilterValues(t *testing.T) {
 	_, err = domain.NewTransactionFilter(page, nil, &short, nil, nil)
 	requireCode(t, err, domain.CodeInternal)
 }
+
+func TestParsePortfolioInput(t *testing.T) {
+	in, err := domain.ParsePortfolioInput("  Long term ", "")
+	if err != nil {
+		t.Fatalf("ParsePortfolioInput(valid) error = %v", err)
+	}
+	if in.Name.String() != "Long term" || in.Description.String() != "" {
+		t.Errorf("ParsePortfolioInput(valid) = %q, %q", in.Name, in.Description)
+	}
+
+	_, err = domain.ParsePortfolioInput("", "x")
+	requireInvalidInput(t, err, "name")
+	_, err = domain.ParsePortfolioInput("A", strings.Repeat("x", 1001))
+	requireInvalidInput(t, err, "description")
+}

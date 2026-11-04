@@ -3,7 +3,7 @@
 Go API สำหรับบันทึกรายการซื้อขายหุ้นสหรัฐฯ และติดตามต้นทุน/กำไรขาดทุนของหลายพอร์ต
 ระบบนี้บันทึกการลงทุนที่ทำผ่านช่องทางอื่น ไม่ใช่ระบบส่งคำสั่งซื้อขายจริง
 
-> **สถานะ:** Milestone 5 — สมัครด้วยอีเมล+รหัสผ่าน, ยืนยันอีเมลด้วย OTP, login/logout, session ฝั่ง server, ลืมรหัสผ่านด้วย OTP และ Google sign-in/เชื่อมบัญชี (เปิดเมื่อตั้งค่า `GOOGLE_*`) ใช้งานผ่าน API ได้แล้ว; พอร์ตและรายการซื้อขายยังไม่เปิดใช้งาน
+> **สถานะ:** Milestone 6 — สมัครด้วยอีเมล+รหัสผ่าน, ยืนยันอีเมลด้วย OTP, login/logout, session ฝั่ง server, ลืมรหัสผ่านด้วย OTP, Google sign-in/เชื่อมบัญชี (เปิดเมื่อตั้งค่า `GOOGLE_*`) และสร้าง/ดู/แก้/ลบพอร์ตหลายพอร์ต (ETag/If-Match) ใช้งานผ่าน API ได้แล้ว; รายการซื้อขายและราคายังไม่เปิดใช้งาน
 
 ## เริ่มใช้งาน (dev พร้อม hot reload)
 
@@ -113,12 +113,34 @@ post /auth/password-reset/confirm "{\"challenge_id\":\"$RESET_CHALLENGE\",\"otp\
 post /auth/login "{\"email\":\"$EMAIL\",\"password\":\"$PASSWORD\"}"
 post /auth/login "{\"email\":\"$EMAIL\",\"password\":\"$NEW_PASSWORD\"}"
 
-rm -f "$JAR" "$JAR.reg" "$JAR.reset"
+# 12 พอร์ต: สร้างสองพอร์ต ได้ 201 พร้อม header ETag: "1" (ชื่อซ้ำกันไม่ได้ภายในผู้ใช้เดียว ไม่สนตัวพิมพ์เล็ก/ใหญ่)
+post /portfolios '{"name":"ระยะยาว","description":"ถือยาว ทบทวนปีละครั้ง"}' | tee /dev/stderr > "$JAR.p1"
+post /portfolios '{"name":"ระยะสั้น"}'
+PORTFOLIO=$(sed -nE 's/.*"id":"([^"]+)".*/\1/p' "$JAR.p1" | head -1)
+
+# 13 ดูรายการพอร์ต (ใหม่สุดก่อน; ใส่ ?limit=&cursor= เพื่อแบ่งหน้า) และดูพอร์ตเดียว ซึ่งตอบ header ETag
+curl -s -b "$JAR" -c "$JAR" -w '\nHTTP %{http_code}\n' "$API/portfolios"
+curl -s -i -b "$JAR" -c "$JAR" "$API/portfolios/$PORTFOLIO" | grep -iE '^(HTTP|etag)'
+
+# 14 เปลี่ยนชื่อ ต้องส่ง If-Match เป็น ETag ที่อ่านล่าสุด (มี quote) ได้ 200 และ ETag: "2"
+# PUT แทนที่ทั้งก้อน: ต้องส่งทั้ง name และ description (ไม่ส่ง description จะได้ 400 invalid_input; ส่ง "" เพื่อล้างคำอธิบาย)
+# ส่ง If-Match ซ้ำด้วย "1" ต่อไปจะได้ 412 version_conflict; ไม่ส่ง header จะได้ 428 precondition_required
+put() { curl -s -b "$JAR" -c "$JAR" -X PUT -H "Origin: http://localhost:8080" -H "X-CSRF-Token: $(csrf)" \
+  -H 'Content-Type: application/json' -H "If-Match: $1" -w '\nHTTP %{http_code}\n' -d "$2" "$API/portfolios/$PORTFOLIO"; }
+put '"1"' '{"name":"ระยะยาว (ปรับแล้ว)","description":"ถือยาว ทบทวนปีละครั้ง"}'
+put '"1"' '{"name":"ระยะยาว (ปรับซ้ำ)","description":"ถือยาว ทบทวนปีละครั้ง"}'
+
+# 15 ลบพอร์ตที่ยังไม่มีรายการซื้อขาย ได้ 204 (พอร์ตที่มีรายการจะได้ 409 portfolio_not_empty); ต้องมี If-Match เช่นกัน
+curl -s -b "$JAR" -c "$JAR" -X DELETE -H "Origin: http://localhost:8080" -H "X-CSRF-Token: $(csrf)" \
+  -H 'If-Match: "2"' -w 'HTTP %{http_code}\n' "$API/portfolios/$PORTFOLIO"
+
+rm -f "$JAR" "$JAR.reg" "$JAR.reset" "$JAR.p1"
 ```
 
 - ขอรหัสใหม่: `post /auth/email-verification/request "{\"email\":\"$EMAIL\"}"` (เว้น 60 วินาทีจากครั้งก่อน และไม่เกิน 5 ครั้งต่อชั่วโมงต่ออีเมล)
 - ถูกจำกัดความถี่จะได้ 429 `rate_limited` พร้อม header `Retry-After` (วินาที)
 - ลืมรหัสผ่าน (ขั้น 8–11): รหัสใช้ได้ 10 นาที กรอกผิดได้ 5 ครั้งต่อรหัส; เมื่อสำเร็จ session เดิมทุกเครื่องของบัญชีถูกออกจากระบบ, มีอีเมลแจ้งว่าเปลี่ยนรหัสผ่านใน Mailpit และ login ใหม่ด้วยรหัสผ่านใหม่
+- พอร์ต (ขั้น 12–15): พอร์ตของผู้ใช้อื่นกับพอร์ตที่ไม่มีอยู่ตอบ `404 not_found` เหมือนกันทุกประการ; `PUT`/`DELETE` ต้องมี `If-Match: "<version>"` ตรงตัว (ไม่รับ `*`, `W/"3"` หรือหลายค่า → 400) ถ้า version ไม่ตรงได้ `412 version_conflict` โดยไม่เขียนอะไร ให้อ่านพอร์ตใหม่แล้วลองอีกครั้ง
 - ใน Swagger UI (`http://localhost:8080/docs/`) ให้เรียก `GET /api/v1/auth/csrf` ก่อน แล้วคัดลอก `csrf_token` ไปใส่ช่อง `X-CSRF-Token` ของ POST; browser ส่ง cookie ให้เอง ขอ token ใหม่หลัง login และหลัง logout เพราะ binding เปลี่ยน
 - ข้อความ error ทุกอันมี `request_id` ตรงกับ header `X-Request-ID` ใช้ค้น log ได้
 
@@ -154,13 +176,15 @@ GOOGLE_REDIRECT_URI=http://localhost:8080/api/v1/auth/google/callback
 make tools            # ติดตั้ง swag, go-swagger, goose ตามเวอร์ชันที่ pin ลง ./bin
 make lint-install     # ติดตั้ง golangci-lint ลง ./bin
 make test             # unit/HTTP/contract tests (integration tests จะ skip)
-make test-integration # integration tests กับ PostgreSQL ใน compose (ต้องเปิด stack ก่อน)
+make test-integration # integration tests กับ PostgreSQL ใน compose (ต้องเปิด stack ก่อน); ล้างทุกตารางใน schema app ของ dev DB หลังรันทุกครั้ง
 make test-mail        # ส่งอีเมลจริงไป Mailpit ใน compose แล้วอ่านกลับ (docker compose up -d mailpit)
 make swagger          # generate docs/api จาก annotations แล้ว validate
 make check            # tidy + vet + lint + swagger + tests + ตรวจว่า docs/api commit แล้ว
 ```
 
 ห้ามแก้ไฟล์ใน `docs/api/` ที่ generate แล้วด้วยมือ ให้แก้ annotations แล้วรัน `make swagger`
+
+`make test-integration` ล้างข้อมูลใน dev DB ของคุณ (บัญชีและพอร์ตที่สร้างทดลองจะหาย) ให้สร้างข้อมูลทดลองหลังรัน test
 
 ## ข้อจำกัดของ phase 1
 

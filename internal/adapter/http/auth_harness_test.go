@@ -163,10 +163,11 @@ func (failingAudit) Append(context.Context, domain.AuditEvent) error {
 }
 
 type harnessConfig struct {
-	hasher    service.Argon2Params
-	floor     time.Duration
-	failAudit bool
-	identity  port.IdentityProvider // nil = Google sign-in off
+	hasher     service.Argon2Params
+	floor      time.Duration
+	failAudit  bool
+	portfolios bool                  // serve the portfolio routes
+	identity   port.IdentityProvider // nil = Google sign-in off
 }
 
 // testOTPSecret keys the OTP digests of every harness, so a test can build the digest of a code.
@@ -262,10 +263,16 @@ func newAuthHarness(t *testing.T, opts ...harnessOption) *authHarness {
 	})
 	must(err)
 
-	app := NewServer(Options{Logger: log, Readiness: pool, Auth: AuthOptions{
+	options := Options{Logger: log, Readiness: pool, Auth: AuthOptions{
 		Service: auth, Verification: auth, PasswordReset: auth.PasswordReset(), Passwords: policy, CSRF: csrf,
 		ClientIP: NewClientIPResolver(testTrustedProxies), PublicOrigin: testOrigin,
-	}})
+	}}
+	if cfg.portfolios {
+		portfolios, err := service.NewPortfolios(service.PortfolioDeps{Store: store, UnitOfWork: uow, Clock: clock, Limits: limits, Logger: log})
+		must(err)
+		options.Portfolios = PortfolioOptions{Service: portfolios}
+	}
+	app := NewServer(options)
 	return &authHarness{app: app, pool: pool, admin: admin, store: store, mailer: mailer, clock: clock, logs: logs, origin: testOrigin}
 }
 
