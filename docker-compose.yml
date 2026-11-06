@@ -47,7 +47,7 @@ services:
     build:
       context: .
       target: runtime
-    image: stock-portfolio-api:local
+    image: ${API_IMAGE:-stock-portfolio-api:local}
     environment:
       APP_ENV: ${APP_ENV}
       HTTP_ADDR: ":8080"
@@ -95,7 +95,7 @@ services:
     build:
       context: .
       target: maintenance
-    image: stock-portfolio-maintenance:local
+    image: ${MAINTENANCE_IMAGE:-stock-portfolio-maintenance:local}
     environment:
       APP_ENV: ${APP_ENV}
       LOG_LEVEL: ${LOG_LEVEL}

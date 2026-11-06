@@ -107,6 +107,24 @@ test-mail:
 smoke-alpaca:
 	REQUIRE_ALPACA_SMOKE=1 go test -count=1 -v -run 'TestAlpaca(Prices)?Smoke' ./internal/adapter/alpaca/
 
+.PHONY: e2e fresh-clone-check
+
+# Runs the whole API flow (sign up, verify, login, portfolios, trades, valuation, ownership, logout,
+# password reset) against the stack that is already running at PUBLIC_ORIGIN, reading the codes from
+# its Mailpit. It leaves e2e-*@example.com accounts in the dev database. Needs curl and jq.
+e2e:
+	API_ORIGIN="$${PUBLIC_ORIGIN:-http://localhost:8080}" MAILPIT_URL="http://localhost:$${MAILPIT_UI_HOST_PORT:-8025}" \
+		scripts/e2e/flow.sh full
+
+# Clones the committed HEAD into a temporary directory and starts it as a new reader would, in its own
+# Compose project (stock-check) on ports 18080, 18025, 11025 and 15432, then checks the flow, the
+# retention job, a provider outage, invalid production configuration and a failing migration. Removes
+# only its own containers, images and volumes; your running stack and data are not touched. Commit first:
+# uncommitted changes are not in a clone.
+fresh-clone-check:
+	dir=$$(mktemp -d) && git clone --quiet . "$$dir/repo" && "$$dir/repo/scripts/e2e/stack-check.sh" "$$dir/repo"; \
+		status=$$?; rm -rf "$$dir"; exit $$status
+
 .PHONY: maintenance
 
 # Deletes expired sessions, OTP challenges, OIDC flows, idempotency records and rate-limit state, and
