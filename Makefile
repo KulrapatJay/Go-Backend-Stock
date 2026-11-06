@@ -107,6 +107,14 @@ test-mail:
 smoke-alpaca:
 	REQUIRE_ALPACA_SMOKE=1 go test -count=1 -v -run 'TestAlpaca(Prices)?Smoke' ./internal/adapter/alpaca/
 
+.PHONY: maintenance
+
+# Deletes expired sessions, OTP challenges, OIDC flows, idempotency records and rate-limit state, and
+# audit events older than AUDIT_RETENTION_DAYS, in the dev database of docker compose (batches of
+# 1,000 rows, as the app_maintenance role). Needs a running stack: docker compose up -d.
+maintenance:
+	docker compose --profile maintenance run --rm --build maintenance
+
 .PHONY: lint-install lint check
 
 lint-install:
