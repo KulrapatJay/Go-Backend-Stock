@@ -32,6 +32,12 @@ const docTemplate = `{
                         "schema": {
                             "$ref": "#/definitions/http.AuthConfigResponse"
                         }
+                    },
+                    "500": {
+                        "description": "internal, such as a recovered panic",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
                     }
                 }
             }
@@ -610,7 +616,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Auth"
+                    "Password Reset"
                 ],
                 "summary": "Set a new password with the reset code",
                 "operationId": "confirmPasswordReset",
@@ -691,7 +697,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Auth"
+                    "Password Reset"
                 ],
                 "summary": "Ask for a password reset code",
                 "operationId": "requestPasswordReset",
@@ -2833,6 +2839,10 @@ const docTemplate = `{
             "name": "Auth"
         },
         {
+            "description": "Forgot-password flow with a 6-digit code sent by email: ask for a code, then set a new password with it. The answer to the request is the same for every email. Every POST needs the X-CSRF-Token header from GET /api/v1/auth/csrf and must come from the API's own origin.",
+            "name": "Password Reset"
+        },
+        {
             "description": "What a portfolio holds and what it is worth, with delayed prices. A price that is missing is null, never zero; realized profit and loss never depends on prices. Read-only, needs the session cookie.",
             "name": "Holdings/Prices"
         },
@@ -2854,7 +2864,7 @@ var SwaggerInfo = &swag.Spec{
 	BasePath:         "/",
 	Schemes:          []string{},
 	Title:            "Stock Portfolio Tracker API",
-	Description:      "Records US stock trades and tracks portfolio cost and P&L. It does not place real orders.\nMilestone 8b exposes Health, the Auth endpoints (email and password, email verification, password reset, Google sign-in and linking), Portfolios, Transactions (record, list, read, edit and delete trades) and Holdings/Prices (what a portfolio holds and is worth); prices are sample data in demo mode and real prices are not implemented yet.",
+	Description:      "Records US stock trades and tracks portfolio cost and P&L. It does not place real orders.\nPhase 1 covers sign-up with email verification (OTP), login and logout with a server-side session cookie, Google sign-in and linking, password reset (OTP), many portfolios per user, recording, editing and deleting buys and sells, and holdings and valuation with delayed prices: sample prices in demo mode (PRICE_PROVIDER=demo) and delayed SIP prices from Alpaca when PRICE_PROVIDER=alpaca. Dividends, splits, mergers and symbol changes are not handled, and results are not tax reports.",
 	InfoInstanceName: "swagger",
 	SwaggerTemplate:  docTemplate,
 	LeftDelim:        "{{",
