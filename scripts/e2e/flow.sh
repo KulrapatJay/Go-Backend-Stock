@@ -26,6 +26,8 @@ HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=lib.sh
 source "$HERE/lib.sh"
 
+NEW_PASSWORD='Hn4#pLw8'
+
 flow_full() {
   local jar_a="$WORK/a.jar" jar_a2="$WORK/a2.jar" jar_b="$WORK/b.jar"
   local email_a email_b challenge_b

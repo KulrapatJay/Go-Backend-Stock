@@ -9,7 +9,6 @@ API_ORIGIN=${API_ORIGIN:-http://localhost:8080}
 MAILPIT_URL=${MAILPIT_URL:-http://localhost:8025}
 API="$API_ORIGIN/api/v1"
 PASSWORD='Zq9!kVx1'
-NEW_PASSWORD='Hn4#pLw8'
 
 WORK=$(mktemp -d)
 trap 'rm -rf "$WORK"' EXIT
