@@ -313,37 +313,57 @@ type fixedClock struct{ at time.Time }
 
 func (c fixedClock) Now() time.Time { return c.at }
 
+// TestRetentionNeverTouchesBusinessTables seeds business rows dated 2004 (rows other tests create are
+// dated now, so they can neither be deleted by this cutoff nor change these counts while the HTTP
+// tests run in parallel against the same database) and checks that exactly those rows survive a run
+// that deletes the expired session and idempotency record around them.
 func TestRetentionNeverTouchesBusinessTables(t *testing.T) {
 	e := newRetentionEnv(t)
-	count := func(table string) int {
-		var n int
-		if err := e.admin.QueryRow(t.Context(), "SELECT count(*) FROM app."+table).Scan(&n); err != nil {
-			t.Fatal(err)
-		}
-		return n
-	}
-	tables := []string{"users", "auth_providers", "portfolios", "instruments", "transactions"}
-	before := map[string]int{}
-	for _, table := range tables {
-		before[table] = count(table)
-	}
-
-	// The seeded session belongs to a user made just now (one more users row) that must survive.
+	old := time.Date(2004, 1, 1, 0, 0, 0, 0, time.UTC)
 	now := time.Date(2004, 6, 1, 3, 0, 0, 0, time.UTC)
-	expired := retentionTables()[1].seed(t, e, now.Add(-48*time.Hour))
-	before["users"]++ // the session's owner, made by the seed above
+
+	var user, portfolio string
+	e.seed(t, `INSERT INTO app.users (id, email, created_at, updated_at)
+		VALUES (gen_random_uuid(), 'retention-' || gen_random_uuid() || '@example.com', $1, $1) RETURNING id::text`,
+		`DELETE FROM app.users WHERE id = $1::uuid`, []any{old}, &user)
+	e.seed(t, `INSERT INTO app.portfolios (id, user_id, name, currency, created_at, updated_at)
+		VALUES (gen_random_uuid(), $1::uuid, 'retention-' || gen_random_uuid(), 'USD', $2, $2) RETURNING id::text`,
+		`DELETE FROM app.portfolios WHERE id = $1::uuid`, []any{user, old}, &portfolio)
+	var session, key string
+	e.seed(t, `INSERT INTO app.sessions (id, user_id, token_hash, created_at, expires_at)
+		VALUES (gen_random_uuid(), $1::uuid, `+hashSQL+`, $2, $3) RETURNING id::text`,
+		`DELETE FROM app.sessions WHERE id = $1::uuid`, []any{user, old, now.Add(-48 * time.Hour)}, &session)
+	e.seed(t, `INSERT INTO app.idempotency_keys (portfolio_id, user_id, operation, key, request_hash, result, created_at, expires_at)
+		VALUES ($1::uuid, $2::uuid, 'transactions.create', gen_random_uuid()::text, `+hashSQL+`, '{}', $3, $4) RETURNING key`,
+		`DELETE FROM app.idempotency_keys WHERE key = $1`, []any{portfolio, user, old, now.Add(-time.Hour)}, &key)
 
 	retention := service.NewRetention(e.repo, fixedClock{now}, service.RetentionPolicy{AuditRetention: 90 * 24 * time.Hour, BatchSize: 1000})
 	report, err := retention.Run(t.Context())
 	if err != nil {
 		t.Fatalf("Run() error = %v", err)
 	}
-	if report.Sessions < 1 || expired() {
-		t.Errorf("report.Sessions = %d, session stored = %v, want the expired session deleted", report.Sessions, expired())
+	if report.Sessions < 1 || report.IdempotencyKeys < 1 {
+		t.Errorf("report = %+v, want the expired session and idempotency record deleted", report)
 	}
-	for _, table := range tables {
-		if got := count(table); got != before[table] {
-			t.Errorf("app.%s has %d rows, want %d: retention must not touch it", table, got, before[table])
+	if e.exists(t, `SELECT 1 FROM app.sessions WHERE id = $1::uuid`, session) ||
+		e.exists(t, `SELECT 1 FROM app.idempotency_keys WHERE key = $1`, key) {
+		t.Error("an expired row was kept")
+	}
+	if !e.exists(t, `SELECT 1 FROM app.users WHERE id = $1::uuid`, user) ||
+		!e.exists(t, `SELECT 1 FROM app.portfolios WHERE id = $1::uuid`, portfolio) {
+		t.Error("retention deleted a user or portfolio")
+	}
+	for _, table := range []string{"users", "portfolios", "auth_providers", "transactions"} {
+		var n int
+		if err := e.admin.QueryRow(t.Context(), "SELECT count(*) FROM app."+table+" WHERE created_at < $1", old.AddDate(1, 0, 0)).Scan(&n); err != nil {
+			t.Fatal(err)
+		}
+		want := 0
+		if table == "users" || table == "portfolios" {
+			want = 1 // the rows seeded above
+		}
+		if n != want {
+			t.Errorf("app.%s has %d rows dated before 2005, want %d", table, n, want)
 		}
 	}
 }
