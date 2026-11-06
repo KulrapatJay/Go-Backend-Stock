@@ -150,12 +150,12 @@ say "4/5 production configuration that is not valid"
   dc up -d --force-recreate --no-deps api
 )
 deadline=$((SECONDS + 30))
-until dc logs --no-color api 2>&1 | grep -q 'CSRF_SECRET'; do
+# Read the logs into a file first: `dc logs | grep -q` would fail under pipefail when grep quits early.
+until dc logs --no-color api >"$WORK/api-production.log" 2>&1 && grep -q 'CSRF_SECRET' "$WORK/api-production.log"; do
   ((SECONDS < deadline)) || die "the API did not report the invalid production configuration in 30 seconds"
   sleep 1
 done
 [[ $(curl -s -o /dev/null -w '%{http_code}' "$API_ORIGIN/readyz" || true) != 200 ]] || die "the API serves with a production configuration that must be refused"
-dc logs --no-color api >"$WORK/api-production.log" 2>&1
 if grep -q 'dev-only-\|dev_runtime_password\|dev_admin_password' "$WORK/api-production.log"; then
   die "the production configuration error leaks a configured value"
 fi
@@ -171,7 +171,8 @@ if dc up -d --force-recreate >"$WORK/broken.log" 2>&1; then
   cat "$WORK/broken.log"
   die "docker compose up succeeded although a migration failed"
 fi
-if dc ps --status running --services | grep -qx api; then
+running=$(dc ps --status running --services)
+if grep -qx api <<<"$running"; then
   die "the API is running although a migration failed"
 fi
 # The variables are the container's own, so they must expand inside it, not here.
