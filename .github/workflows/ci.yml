@@ -3,7 +3,7 @@ name: CI
 on:
   pull_request:
   push:
-    branches: [main]
+    branches: [main, developer]
 
 permissions:
   contents: read
@@ -88,6 +88,11 @@ jobs:
       - name: Migrations apply to an empty database
         run: make migrate-up
 
+      - name: Migrations roll back to nothing and apply again
+        run: |
+          ./bin/goose -dir migrations -table app.goose_db_version postgres "$MIGRATION_DATABASE_URL" down-to 0
+          make migrate-up
+
       - name: Unit, HTTP, contract and integration tests
         run: go test -race -count=1 ./...
 
@@ -96,3 +101,20 @@ jobs:
 
       - name: Build migrate image
         run: docker build --target migrate -t stock-portfolio-migrate:ci .
+
+      - name: Build maintenance image
+        run: docker build --target maintenance -t stock-portfolio-maintenance:ci .
+
+  # Starts the backend from a fresh checkout the way the README tells a new reader to, then drives the
+  # whole flow through HTTP, the retention job, a provider outage, invalid production configuration and
+  # a failing migration (scripts/e2e/stack-check.sh). It calls no external service: prices are demo data
+  # and mail goes to the Mailpit of the same Compose project.
+  stack:
+    needs: backend
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Backend stack, end to end
+        run: scripts/e2e/stack-check.sh -p stock-ci .

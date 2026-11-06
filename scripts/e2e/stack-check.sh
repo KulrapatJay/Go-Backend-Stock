@@ -88,7 +88,7 @@ cleanup() {
   fi
   rm -f "$BROKEN_MIGRATION"
   dc down -v --remove-orphans >/dev/null 2>&1 || true
-  docker image rm -f "$PROJECT-api:local" "$PROJECT-maintenance:local" >/dev/null 2>&1 || true
+  docker image rm -f "$PROJECT-api:local" "$PROJECT-maintenance:local" "$PROJECT-migrate:latest" >/dev/null 2>&1 || true
   rm -rf "$WORK" "$DIR/.env.next"
   exit "$status"
 }
