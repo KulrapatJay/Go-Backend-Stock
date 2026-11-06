@@ -24,3 +24,8 @@
 | [0014](0014-mail-dispatcher-and-timing-floor.md) | ส่งอีเมลหลังตอบผ่าน dispatcher เบื้องหลัง และ timing floor ใน core | Accepted |
 | [0015](0015-filtered-password-blocklist.md) | Blocklist รหัสผ่านที่กรองตามกติกาของเรา | Accepted |
 | [0016](0016-database-timeouts-and-retryable-busy.md) | Timeout ของ DB, deadline ต่อคำขอ และ 503 `server_busy` ที่ลองใหม่ได้ | Accepted |
+| [0017](0017-rate-limits-in-postgres.md) | เก็บ rate limit ใน PostgreSQL แบบ rolling window | Accepted |
+| [0018](0018-idempotency-keys.md) | Idempotency-Key บังคับตอนบันทึกรายการซื้อขาย | Accepted |
+| [0019](0019-google-oidc-explicit-linking.md) | Google OpenID Connect ด้วย PKCE และเชื่อมบัญชีแบบ explicit | Accepted |
+| [0020](0020-delayed-prices-and-valuation-coverage.md) | ราคาอ้างอิงแบบหน่วงเวลา และ coverage ของการประเมินมูลค่า | Accepted |
+| [0021](0021-retention-maintenance-job.md) | Retention cleanup เป็น one-shot job ด้วย maintenance role | Accepted |
