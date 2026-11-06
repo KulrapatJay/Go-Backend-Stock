@@ -8,3 +8,7 @@ FROM app.instruments WHERE symbol = $1;
 INSERT INTO app.instruments (id, symbol, provider_asset_id, name, exchange, asset_class, status, source, verified_at, created_at, updated_at)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $10)
 ON CONFLICT DO NOTHING;
+
+-- name: GetInstrumentsByIDs :many
+SELECT id, symbol, provider_asset_id, name, exchange, asset_class, status, source, verified_at, created_at, updated_at
+FROM app.instruments WHERE id = ANY(@ids::uuid[]);

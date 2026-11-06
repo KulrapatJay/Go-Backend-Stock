@@ -3,7 +3,7 @@
 Go API สำหรับบันทึกรายการซื้อขายหุ้นสหรัฐฯ และติดตามต้นทุน/กำไรขาดทุนของหลายพอร์ต
 ระบบนี้บันทึกการลงทุนที่ทำผ่านช่องทางอื่น ไม่ใช่ระบบส่งคำสั่งซื้อขายจริง
 
-> **สถานะ:** Milestone 7 (ลงมือครบแล้ว รอตรวจรับ) — สมัครด้วยอีเมล+รหัสผ่าน, ยืนยันอีเมลด้วย OTP, login/logout, session ฝั่ง server, ลืมรหัสผ่านด้วย OTP, Google sign-in/เชื่อมบัญชี (เปิดเมื่อตั้งค่า `GOOGLE_*`), สร้าง/ดู/แก้/ลบพอร์ตหลายพอร์ต (ETag/If-Match) และบันทึก/ดู/แก้/ลบรายการซื้อขาย (`Idempotency-Key`, ETag/If-Match, ตรวจประวัติไม่ให้จำนวนหุ้นติดลบ) ใช้งานผ่าน API ได้แล้ว; ราคาและการคำนวณต้นทุนเฉลี่ย/กำไรขาดทุนของพอร์ตยังไม่เปิดใช้งาน (milestone 8)
+> **สถานะ:** Milestone 7 (ลงมือครบแล้ว รอตรวจรับ) — สมัครด้วยอีเมล+รหัสผ่าน, ยืนยันอีเมลด้วย OTP, login/logout, session ฝั่ง server, ลืมรหัสผ่านด้วย OTP, Google sign-in/เชื่อมบัญชี (เปิดเมื่อตั้งค่า `GOOGLE_*`), สร้าง/ดู/แก้/ลบพอร์ตหลายพอร์ต (ETag/If-Match) และบันทึก/ดู/แก้/ลบรายการซื้อขาย (`Idempotency-Key`, ETag/If-Match, ตรวจประวัติไม่ให้จำนวนหุ้นติดลบ) ใช้งานผ่าน API ได้แล้ว; ตรวจ symbol ใหม่กับ Alpaca Assets API ได้เมื่อตั้ง `PRICE_PROVIDER=alpaca` (milestone 8a) ดู holdings กับมูลค่าพอร์ตด้วยราคาตัวอย่างได้ (milestone 8b) และประเมินมูลค่าด้วยราคาล่าช้าจริงจาก Alpaca SIP ได้ (milestone 8c; ทั้งสามลงมือครบ รอตรวจรับ)
 
 ## เริ่มใช้งาน (dev พร้อม hot reload)
 
@@ -170,6 +170,17 @@ tupdate '"1"' '{"symbol":"AAPL","side":"buy","quantity":"0.5","price":"202","fee
 curl -s -b "$JAR" -c "$JAR" -X DELETE -H "Origin: http://localhost:8080" -H "X-CSRF-Token: $(csrf)" \
   -H 'If-Match: "2"' -w 'HTTP %{http_code}\n' "$API/portfolios/$SHORT/transactions/$TRADE"
 
+# 22 ดูสิ่งที่พอร์ต "ระยะสั้น" ถืออยู่ (เริ่มด้วยซื้อ AAPL 2 หุ้นที่ 100 ค่าธรรมเนียม 2 แล้วขาย 0.5 หุ้นที่ 120 ค่าธรรมเนียม 1: ได้ 201 สองครั้ง)
+# GET holdings ได้ 200: AAPL ถือ 1.5, cost_basis 151.5, average_cost 101, realized_pnl 8.5 (ไม่เรียกผู้ให้บริการราคา)
+tpost "buy2-$RANDOM-$RANDOM" '{"symbol":"AAPL","side":"buy","quantity":"2","price":"100","fee":"2","executed_at":"2026-10-03T14:30:00Z"}'
+tpost "sell2-$RANDOM-$RANDOM" '{"symbol":"AAPL","side":"sell","quantity":"0.5","price":"120","fee":"1","executed_at":"2026-10-04T14:30:00Z"}'
+curl -s -b "$JAR" -c "$JAR" -w '\nHTTP %{http_code}\n' "$API/portfolios/$SHORT/holdings"
+
+# 23 ประเมินมูลค่าด้วยราคาล่าช้า ได้ 200: coverage "complete"; ในโหมดเดโมราคา AAPL คือ 200 (ข้อมูลตัวอย่าง is_demo: true)
+# จึงได้ market_value 300 (1.5 x 200) และ unrealized_pnl 148.5 (300 - 151.5); realized_pnl 8.5
+# ราคาที่ไม่มีเป็น null ไม่ใช่ 0 และ coverage จะเป็น "partial"/"unavailable"; quote.as_of คือเวลาของแท่งราคา ไม่ใช่เวลาที่ดึง
+curl -s -b "$JAR" -c "$JAR" -w '\nHTTP %{http_code}\n' "$API/portfolios/$SHORT/valuation"
+
 rm -f "$JAR" "$JAR.reg" "$JAR.reset" "$JAR.p1" "$JAR.p2" "$JAR.t1" "$JAR.t1again"
 ```
 
@@ -178,8 +189,9 @@ rm -f "$JAR" "$JAR.reg" "$JAR.reset" "$JAR.p1" "$JAR.p2" "$JAR.t1" "$JAR.t1again
 - ลืมรหัสผ่าน (ขั้น 8–11): รหัสใช้ได้ 10 นาที กรอกผิดได้ 5 ครั้งต่อรหัส; เมื่อสำเร็จ session เดิมทุกเครื่องของบัญชีถูกออกจากระบบ, มีอีเมลแจ้งว่าเปลี่ยนรหัสผ่านใน Mailpit และ login ใหม่ด้วยรหัสผ่านใหม่
 - พอร์ต (ขั้น 12–15): พอร์ตของผู้ใช้อื่นกับพอร์ตที่ไม่มีอยู่ตอบ `404 not_found` เหมือนกันทุกประการ; `PUT`/`DELETE` ต้องมี `If-Match: "<version>"` ตรงตัว (ไม่รับ `*`, `W/"3"` หรือหลายค่า → 400) ถ้า version ไม่ตรงได้ `412 version_conflict` โดยไม่เขียนอะไร ให้อ่านพอร์ตใหม่แล้วลองอีกครั้ง
 - รายการซื้อขาย (ขั้น 16–21): พอร์ตหรือรายการของผู้ใช้อื่นตอบ `404 not_found` เหมือนไม่มีอยู่; ทุกครั้งที่เพิ่ม แก้ หรือลบ ระบบ replay ประวัติทั้งพอร์ตตามลำดับเวลา (`executed_at` แล้วตาม `sequence`) และปฏิเสธทั้งการเปลี่ยนแปลงถ้าจำนวนหุ้นติดลบ ณ จุดใด (สร้าง → `422 insufficient_shares`, แก้/ลบ → `422 invalid_history`); ถ้าฐานข้อมูลชนกันหรือช้าเกิน (lock/statement timeout, deadlock) ได้ `503 server_busy` พร้อม `Retry-After: 1` ให้ลองใหม่ด้วย key เดิม
-- symbol ที่ระบบยังไม่เคยบันทึกต้องผ่านการตรวจกับ instrument provider ก่อน: ในโหมดเดโมใช้ได้เฉพาะ AAPL, MSFT, NVDA, GOOGL, AMZN, META, TSLA และ SPY (symbol อื่นได้ `422 unknown_symbol`); **symbol ที่ยังไม่อยู่ในตาราง instruments จะบันทึกไม่ได้ในช่วงที่ provider ล่ม** (ได้ `503 dependency_unavailable` ให้ลองใหม่) โดยไม่ถอยไปใช้ข้อมูลเดโม ส่วน symbol ที่เคยบันทึกแล้วยังบันทึกต่อได้ตามปกติ; ผู้ใช้หนึ่งคนเพิ่ม symbol ใหม่ได้ไม่เกิน 30 ตัวต่อชั่วโมง (`429 rate_limited`)
-- production (`APP_ENV=production`) ยังไม่มี provider จนถึง milestone 8 (Alpaca): ไม่ใช้ข้อมูลเดโมเด็ดขาด จึงบันทึกได้เฉพาะ symbol ที่อยู่ในตาราง instruments แล้ว
+- สิ่งที่ถือและมูลค่า (ขั้น 22–23): `GET .../holdings` คำนวณจากรายการด้วย moving weighted-average cost (รวมหุ้นที่ขายหมดแล้วเพราะมี realized P&L) และไม่เรียกผู้ให้บริการราคา; `GET .../valuation` ประเมินด้วยราคาล่าช้า = close ของแท่งราคาล่าสุดก่อน "ตอนนี้ − 15 นาที" ซึ่งไม่ใช่ราคาเสนอซื้อขายและไม่ใช่ราคาที่ซื้อขายได้จริง; **ราคาที่ไม่มีเป็น `null` ไม่ใช่ `0`** เสมอ: `coverage` = `complete` (ทุกตัวที่ยังถือมีราคา) | `partial` | `unavailable` (ไม่มีราคาเลย หรือเรียกผู้ให้บริการราคาไม่ได้ ซึ่งยังตอบ 200 และ holdings กับ realized P&L ยังดูได้) ถ้าไม่ `complete` แล้ว `market_value` กับ `unrealized_pnl` เป็น `null` และ `priced_market_value` เป็นผลรวมเฉพาะตัวที่มีราคา; ตัวเลขส่งเต็มความละเอียด การปัดสำหรับแสดงผลเป็นหน้าที่ของ UI; ผลคำนวณไม่หักค่าธรรมเนียมขายในอนาคตและไม่ใช่รายงานภาษี
+- symbol ที่ระบบยังไม่เคยบันทึกต้องผ่านการตรวจกับ instrument provider ก่อน (เลือกด้วย `PRICE_PROVIDER`; ดูหัวข้อ "ใช้ข้อมูลจริงจาก Alpaca"): ในโหมดเดโมใช้ได้เฉพาะ AAPL, MSFT, NVDA, GOOGL, AMZN, META, TSLA และ SPY (symbol อื่นได้ `422 unknown_symbol`); **symbol ที่ยังไม่อยู่ในตาราง instruments จะบันทึกไม่ได้ในช่วงที่ provider ล่ม** (ได้ `503 dependency_unavailable` ให้ลองใหม่) โดยไม่ถอยไปใช้ข้อมูลเดโม ส่วน symbol ที่เคยบันทึกแล้วยังบันทึกต่อได้ตามปกติ; ผู้ใช้หนึ่งคนเพิ่ม symbol ใหม่ได้ไม่เกิน 30 ตัวต่อชั่วโมง (`429 rate_limited`)
+- production (`APP_ENV=production`) ต้องตั้ง `PRICE_PROVIDER=alpaca` พร้อม `ALPACA_KEY` และ `ALPACA_SECRET` มิฉะนั้น API ไม่เริ่ม: ไม่ใช้ข้อมูลเดโมเด็ดขาด และถ้า Alpaca ใช้ไม่ได้ symbol ใหม่จะได้ `503 dependency_unavailable` (ไม่ถอยไปใช้ข้อมูลเดโม)
 - ใน Swagger UI (`http://localhost:8080/docs/`) ให้เรียก `GET /api/v1/auth/csrf` ก่อน แล้วคัดลอก `csrf_token` ไปใส่ช่อง `X-CSRF-Token` ของ POST; browser ส่ง cookie ให้เอง ขอ token ใหม่หลัง login และหลัง logout เพราะ binding เปลี่ยน
 - ข้อความ error ทุกอันมี `request_id` ตรงกับ header `X-Request-ID` ใช้ค้น log ได้
 
@@ -209,6 +221,33 @@ GOOGLE_REDIRECT_URI=http://localhost:8080/api/v1/auth/google/callback
 
 ระบบไม่เชื่อมบัญชีให้อัตโนมัติเพียงเพราะอีเมลตรงกัน และบัญชีที่สร้างจาก Google ไม่มีรหัสผ่าน: login ได้ด้วย Google เท่านั้น และ "ลืมรหัสผ่าน" ไม่ส่งรหัสให้บัญชีชนิดนี้
 
+## ใช้ข้อมูลจริงจาก Alpaca (ไม่บังคับใน dev)
+
+โหมดเริ่มต้น (`PRICE_PROVIDER=demo`) รู้จักแค่ 8 symbol ตัวอย่างและใช้ราคาตัวอย่าง ถ้าตั้ง `PRICE_PROVIDER=alpaca` ระบบจะตรวจ symbol กับ Alpaca Assets API และประเมินมูลค่าด้วยราคาล่าช้าจริง (ฟรี ไม่ต้องผูกบัตร):
+
+1. สมัครบัญชี paper ของ Alpaca แล้วสร้าง API key ของ paper trading ห้ามเปิดแผนเสียเงินหรือ auto-upgrade
+2. ใส่ค่าใน `.env` ของคุณเอง (ไฟล์นี้ไม่ถูก commit; ห้ามวาง key ในแชท issue หรือโค้ด) ตัวแปร `ALPACA_TRADING_BASE_URL` (ค่าเริ่มต้น `https://paper-api.alpaca.markets` ใช้ตรวจ symbol และอ่านปฏิทินตลาด) และ `ALPACA_DATA_BASE_URL` (ค่าเริ่มต้น `https://data.alpaca.markets` ใช้อ่านแท่งราคา) เว้นว่างได้
+
+```bash
+PRICE_PROVIDER=alpaca
+ALPACA_KEY=<key id ของ paper trading — ห้าม commit>
+ALPACA_SECRET=<secret ของ paper trading — ห้าม commit>
+```
+
+3. รัน `make smoke-alpaca` ซึ่งเรียก Alpaca จริงถามเรื่อง AAPL, BRK.B และ symbol ที่ไม่มีอยู่ แล้วขอราคาล่าช้าของ AAPL กับ SPY พร้อมปฏิทินตลาด และบอกผ่าน/ไม่ผ่านโดยไม่พิมพ์ค่า key (CI และ `make check` ไม่เรียก Alpaca) ถ้าได้ 403 แปลว่าบัญชีไม่มีสิทธิ์อ่านแท่งราคา SIP ย้อนหลัง
+4. `docker compose up -d --build api` แล้วบันทึกรายการด้วย symbol ที่ไม่อยู่ในรายการเดโมได้ เช่น `BRK.B`
+
+ถ้าตั้ง `PRICE_PROVIDER=alpaca` แต่ขาด key หรือ secret API จะไม่เริ่มและบอกว่าขาดตัวไหน
+
+ราคาที่ใช้ประเมินมูลค่า (`GET .../valuation`) เป็นราคาล่าช้า ไม่ใช่ราคาเสนอซื้อขายและไม่ใช่ราคาที่ซื้อขายได้จริง:
+
+- ราคาคือ close ของแท่ง 1 นาทีล่าสุดของ regular session ที่จบก่อน "ตอนนี้ − 15 นาที" จาก feed SIP ย้อนหลัง (บัญชีฟรีอ่าน SIP ได้เมื่อข้อมูลเก่าอย่างน้อย 15 นาที) แท่ง extended hours ไม่ถูกใช้
+- `quote.as_of` คือเวลาจบแท่ง ไม่ใช่เวลาที่ดึงข้อมูล; `quote.source` = `alpaca`, `quote.feed` = `sip`
+- `session_status`: `open` = ตลาดเปิดอยู่ ณ เวลาอ้างอิง; `market_closed` = ตลาดปิด/วันหยุด/สุดสัปดาห์ จึงใช้แท่งปิดของ session ล่าสุดและแสดงเวลาจริงของแท่งนั้น (ไม่ใช่การอัปเดตของวันนี้); `unknown` = อ่านปฏิทินตลาดไม่ได้ ระบบไม่เดาว่าวันนั้นเป็นวันทำการและติด `stale` — **กรณีนี้ราคาอาจมาจากแท่งนอก regular session (pre-market/after-hours) เพราะไม่มีปฏิทินให้กรอง** จึงไม่รับประกันว่าเป็น close ของ regular session
+- `quote.stale: true` เมื่อแท่งล่าสุดที่ได้เก่ากว่าแท่งที่ควรมีเกิน 5 นาที (เช่น หุ้นไม่มีการซื้อขาย)
+- `quote.cached: true` เมื่อใช้ราคาที่เก็บไว้ในหน่วยความจำของ API: ปกติเก็บ 60 วินาทีเพื่อไม่ให้เกินโควตาฟรี 200 ครั้ง/นาที; ถ้า Alpaca ล่ม ใช้ราคาที่เก็บไว้ได้ไม่เกิน 7 วันพร้อมติด `cached` และ `stale` และ `as_of` ตามจริง; ไม่มีราคาที่เก็บไว้ = `coverage` เป็น `unavailable` (ไม่ถอยไปใช้ราคาเดโม) ส่วน cache หายเมื่อ API restart
+- หุ้นที่ไม่มีการซื้อขายเลยใน session อ้างอิงถือว่าไม่มีราคา (`null` ไม่ใช่ `0`)
+
 ## พัฒนาและทดสอบ
 
 ```bash
@@ -217,6 +256,7 @@ make lint-install     # ติดตั้ง golangci-lint ลง ./bin
 make test             # unit/HTTP/contract tests (integration tests จะ skip)
 make test-integration # integration tests กับ PostgreSQL ใน compose (ต้องเปิด stack ก่อน); ล้างทุกตารางใน schema app ของ dev DB หลังรันทุกครั้ง
 make test-mail        # ส่งอีเมลจริงไป Mailpit ใน compose แล้วอ่านกลับ (docker compose up -d mailpit)
+make smoke-alpaca     # ถาม Alpaca จริง (Assets, แท่งราคา SIP, ปฏิทิน) ด้วย key ใน .env (ดูหัวข้อ "ใช้ข้อมูลจริงจาก Alpaca")
 make swagger          # generate docs/api จาก annotations แล้ว validate
 make check            # tidy + vet + lint + swagger + tests + ตรวจว่า docs/api commit แล้ว
 ```
@@ -227,7 +267,7 @@ make check            # tidy + vet + lint + swagger + tests + ตรวจว่
 
 ## ข้อจำกัดของ phase 1
 
-- ตอนนี้รายการซื้อขายถูกตรวจแค่ว่าจำนวนหุ้นไม่ติดลบ (replay) ส่วนจำนวนหุ้นที่ถือ ต้นทุนเฉลี่ย และกำไร-ขาดทุน realized/unrealized จะมีใน milestone 8 พร้อมราคา
+- ราคาที่ใช้ประเมินมูลค่าเป็นราคาล่าช้า (close ของแท่ง 1 นาทีก่อน "ตอนนี้ − 15 นาที") ไม่ใช่ราคา live และปกติไม่รวม pre-market/after-hours (ยกเว้นเมื่อ `session_status` เป็น `unknown` ตามที่อธิบายข้างบน): `PRICE_PROVIDER=demo` ใช้ราคาตัวอย่าง (`is_demo: true`) ส่วน `alpaca` ใช้ SIP จริง และถ้า Alpaca ใช้ไม่ได้จะได้ `coverage: "unavailable"` ไม่ใช่ราคาเดโม; holdings และ realized P&L ดูได้เสมอ
 - ไม่รองรับ dividends, stock splits, mergers และการเปลี่ยน symbol: พอร์ตที่ได้รับผลจาก corporate actions เหล่านี้จะคำนวณได้ไม่ครบถ้วน
 - ถ้า provider เปลี่ยน symbol ของหุ้นที่ระบบบันทึกไว้แล้ว (เช่น FB → META) การบันทึกรายการด้วย symbol ใหม่จะได้ `422 unknown_symbol` พร้อมข้อความว่า symbol ถูกเปลี่ยนชื่อ
 - ผลคำนวณเป็นการติดตามพอร์ตด้วย moving weighted-average cost ไม่ใช่รายงานภาษี

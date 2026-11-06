@@ -3,12 +3,14 @@
 // @title           Stock Portfolio Tracker API
 // @version         1.0
 // @description     Records US stock trades and tracks portfolio cost and P&L. It does not place real orders.
-// @description     Milestone 7 exposes Health, the Auth endpoints (email and password, email verification, password reset, Google sign-in and linking), Portfolios and Transactions (record, list, read, edit and delete trades); holdings and prices are not implemented yet.
+// @description     Milestone 8b exposes Health, the Auth endpoints (email and password, email verification, password reset, Google sign-in and linking), Portfolios, Transactions (record, list, read, edit and delete trades) and Holdings/Prices (what a portfolio holds and is worth); prices are sample data in demo mode and real prices are not implemented yet.
 // @BasePath        /
 // @tag.name        Health
 // @tag.description Liveness and readiness probes
 // @tag.name        Auth
 // @tag.description Registration, email verification, sessions and CSRF tokens. Every POST needs the X-CSRF-Token header from GET /api/v1/auth/csrf and must come from the API's own origin.
+// @tag.name        Holdings/Prices
+// @tag.description What a portfolio holds and what it is worth, with delayed prices. A price that is missing is null, never zero; realized profit and loss never depends on prices. Read-only, needs the session cookie.
 // @tag.name        Portfolios
 // @tag.description A user can own many portfolios, all in USD. Every call needs the session cookie; another user's portfolio looks exactly like a missing one (404). Reading returns an ETag with the portfolio version; changing or deleting a portfolio needs it back in If-Match.
 // @tag.name        Transactions
@@ -84,6 +86,10 @@ func run() error {
 	if err != nil {
 		return err
 	}
+	valuation, err := buildValuation(cfg, pool, log)
+	if err != nil {
+		return err
+	}
 
 	app := httpadapter.NewServer(httpadapter.Options{
 		Logger:       log,
@@ -91,6 +97,7 @@ func run() error {
 		Auth:         auth.options,
 		Portfolios:   portfolios,
 		Transactions: transactions,
+		Valuation:    valuation,
 		Docs: httpadapter.DocsOptions{
 			Enabled:         cfg.DocsEnabled,
 			TryItOutEnabled: cfg.DocsTryItOutEnabled,

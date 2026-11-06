@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -9,13 +10,13 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"go-backend-stock/internal/adapter/alpaca"
 	"go-backend-stock/internal/adapter/demo"
 	httpadapter "go-backend-stock/internal/adapter/http"
 	"go-backend-stock/internal/adapter/identity"
 	"go-backend-stock/internal/adapter/mail"
 	"go-backend-stock/internal/adapter/postgres"
 	"go-backend-stock/internal/config"
-	"go-backend-stock/internal/core/domain"
 	"go-backend-stock/internal/core/port"
 	"go-backend-stock/internal/core/service"
 )
@@ -178,22 +179,50 @@ func buildPortfolios(cfg config.Config, pool *pgxpool.Pool, log *slog.Logger) (h
 	return httpadapter.PortfolioOptions{Service: portfolios}, nil
 }
 
-// noInstrumentProvider is the production port.InstrumentProvider until milestone 8 adds Alpaca. It
-// can verify nothing, so a symbol the database does not know yet is refused with
-// dependency_unavailable (retryable) instead of being checked against sample data.
-type noInstrumentProvider struct{}
-
-func (noInstrumentProvider) Lookup(context.Context, domain.Symbol) (domain.Instrument, error) {
-	return domain.Instrument{}, domain.ErrDependencyUnavailable
+// instrumentProvider picks the source that checks new symbols from PRICE_PROVIDER. Production never
+// gets the demo list, and an unavailable real provider is never replaced by sample data. The Alpaca
+// secret is revealed only here, to build the adapter.
+func instrumentProvider(cfg config.Config) (port.InstrumentProvider, error) {
+	switch {
+	case cfg.PriceProvider == config.ProviderDemo && !cfg.IsProduction():
+		return demo.NewInstruments(), nil
+	case cfg.PriceProvider == config.ProviderAlpaca:
+		assets, err := alpaca.NewAssets(alpaca.AssetsConfig{
+			BaseURL: cfg.Alpaca.TradingBaseURL, KeyID: cfg.Alpaca.Key.Reveal(), Secret: cfg.Alpaca.Secret.Reveal(),
+			Timeout: alpaca.DefaultTimeout, NegativeTTL: alpaca.DefaultNegativeTTL, NegativeMax: alpaca.DefaultNegativeMax,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("alpaca instrument provider: %w", err)
+		}
+		return assets, nil
+	case cfg.PriceProvider == config.ProviderDemo:
+		return nil, errors.New("the demo instrument provider cannot be used in production")
+	default:
+		return nil, errors.New("unknown PRICE_PROVIDER")
+	}
 }
 
-// instrumentProvider picks the source that checks new symbols. Production never gets the demo list,
-// and an unavailable real provider is never replaced by sample data.
-func instrumentProvider(cfg config.Config) port.InstrumentProvider {
-	if cfg.IsProduction() {
-		return noInstrumentProvider{}
+// priceProvider picks the source of prices from PRICE_PROVIDER, like instrumentProvider. When Alpaca
+// cannot answer, a portfolio is valued without prices; it is never given the demo prices instead.
+func priceProvider(cfg config.Config, clock port.Clock) (port.PriceProvider, error) {
+	switch {
+	case cfg.PriceProvider == config.ProviderDemo && !cfg.IsProduction():
+		return demo.NewPrices(clock), nil
+	case cfg.PriceProvider == config.ProviderAlpaca:
+		prices, err := alpaca.NewPrices(alpaca.PricesConfig{
+			DataBaseURL: cfg.Alpaca.DataBaseURL, TradingBaseURL: cfg.Alpaca.TradingBaseURL,
+			KeyID: cfg.Alpaca.Key.Reveal(), Secret: cfg.Alpaca.Secret.Reveal(),
+			Timeout: alpaca.DefaultTimeout, Now: clock.Now,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("alpaca price provider: %w", err)
+		}
+		return prices, nil
+	case cfg.PriceProvider == config.ProviderDemo:
+		return nil, errors.New("the demo price provider cannot be used in production")
+	default:
+		return nil, errors.New("unknown PRICE_PROVIDER")
 	}
-	return demo.NewInstruments()
 }
 
 // buildTransactions wires the trade use cases over the same store as auth and portfolios. It opens
@@ -204,13 +233,33 @@ func buildTransactions(cfg config.Config, pool *pgxpool.Pool, log *slog.Logger) 
 	if err != nil {
 		return httpadapter.TransactionOptions{}, fmt.Errorf("build transactions: rate limits: %w", err)
 	}
+	instruments, err := instrumentProvider(cfg)
+	if err != nil {
+		return httpadapter.TransactionOptions{}, fmt.Errorf("build transactions: %w", err)
+	}
 	store := postgres.NewStore(pool)
 	clock := systemClock{}
 	transactions, err := service.NewTransactions(service.TransactionDeps{
-		Store: store, UnitOfWork: store, Clock: clock, Limits: limits, Instruments: instrumentProvider(cfg), Logger: log,
+		Store: store, UnitOfWork: store, Clock: clock, Limits: limits, Instruments: instruments, Logger: log,
 	})
 	if err != nil {
 		return httpadapter.TransactionOptions{}, fmt.Errorf("build transactions: %w", err)
 	}
 	return httpadapter.TransactionOptions{Service: transactions, Clock: clock}, nil
+}
+
+// buildValuation wires the holdings and valuation use cases over the same store as the others. It
+// opens no connection.
+func buildValuation(cfg config.Config, pool *pgxpool.Pool, log *slog.Logger) (httpadapter.ValuationOptions, error) {
+	prices, err := priceProvider(cfg, systemClock{})
+	if err != nil {
+		return httpadapter.ValuationOptions{}, fmt.Errorf("build valuation: %w", err)
+	}
+	valuation, err := service.NewValuation(service.ValuationDeps{
+		Store: postgres.NewStore(pool), Prices: prices, Clock: systemClock{}, Logger: log,
+	})
+	if err != nil {
+		return httpadapter.ValuationOptions{}, fmt.Errorf("build valuation: %w", err)
+	}
+	return httpadapter.ValuationOptions{Service: valuation}, nil
 }

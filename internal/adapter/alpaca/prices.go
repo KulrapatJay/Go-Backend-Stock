@@ -1,0 +1,181 @@
+package alpaca
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"net/http"
+	"time"
+
+	"go-backend-stock/internal/core/domain"
+	"go-backend-stock/internal/core/port"
+)
+
+// PricesConfig configures Prices. DataBaseURL is the Market Data API origin (bars) and TradingBaseURL
+// the Trading API origin (the market calendar).
+type PricesConfig struct {
+	DataBaseURL    string
+	TradingBaseURL string
+	KeyID          string
+	Secret         string
+	Timeout        time.Duration
+	Now            func() time.Time // nil means time.Now
+	Client         *http.Client     // nil means a client that follows no redirect
+}
+
+// Prices implements port.PriceProvider with delayed SIP minute bars from Alpaca. The reference price of
+// a symbol is the close of the last finished bar of the regular session before the cutoff (see
+// pickReference). It never substitutes another source when Alpaca fails.
+type Prices struct {
+	data   string
+	client *apiClient
+	cal    *calendar
+	now    func() time.Time
+	cache  *quoteCache
+}
+
+var _ port.PriceProvider = (*Prices)(nil)
+
+// NewPrices checks cfg. Its errors never contain the key or the secret.
+func NewPrices(cfg PricesConfig) (*Prices, error) {
+	switch {
+	case cfg.DataBaseURL == "" || cfg.TradingBaseURL == "":
+		return nil, errors.New("alpaca prices: data and trading base URLs are required")
+	case cfg.KeyID == "" || cfg.Secret == "":
+		return nil, errors.New("alpaca prices: key id and secret are required")
+	case cfg.Timeout <= 0:
+		return nil, errors.New("alpaca prices: timeout must be positive")
+	}
+	p := &Prices{data: cfg.DataBaseURL, now: cfg.Now, cache: newQuoteCache(cacheMax)}
+	if p.now == nil {
+		p.now = time.Now
+	}
+	// Market data is read-only and safe to ask twice: one retry. The calendar is optional (prices
+	// without it say session unknown), so it gets one short attempt and never takes the bars' time.
+	p.client = newAPIClient(cfg.KeyID, cfg.Secret, cfg.Timeout, cfg.Client, 1)
+	p.cal = newCalendar(newAPIClient(cfg.KeyID, cfg.Secret, min(cfg.Timeout, calendarTimeout), cfg.Client, 0), cfg.TradingBaseURL, p.now)
+	return p, nil
+}
+
+// Quotes prices symbols as of cutoff. A quote fetched less than a minute ago is answered from the
+// cache, marked cached, and only the other symbols are asked for. A calendar that cannot be read does
+// not stop it: the prices then say session unknown and stale. When the bars cannot be read, the
+// stored quote of a symbol up to seven days old is used, marked cached and stale with its own as_of;
+// a symbol with none is left out of both lists (the provider never answered about it; so is a symbol
+// the page limit stopped the read before), and with no
+// stored quote at all it is an error, never a substitute price. A symbol with no usable bar, or a
+// close domain.ParsePrice refuses (an exponent, more than ten decimals), is Unavailable: a number is
+// never rounded to fit.
+func (p *Prices) Quotes(ctx context.Context, symbols []domain.Symbol, cutoff time.Time) (domain.QuoteBatch, error) {
+	asked := uniqueSymbols(symbols)
+	batch := domain.QuoteBatch{Quotes: make(map[string]domain.PriceQuote, len(asked))}
+	now := p.now().UTC()
+	var missing []domain.Symbol
+	for _, symbol := range asked {
+		if q, ok := p.cache.get(symbol.String(), now, freshTTL); ok {
+			q.Cached = true
+			batch.Quotes[symbol.String()] = q
+			continue
+		}
+		missing = append(missing, symbol)
+	}
+	if len(missing) == 0 {
+		return batch, nil
+	}
+
+	live, err := p.fetch(ctx, missing, cutoff)
+	if err != nil {
+		if ctx.Err() != nil {
+			return domain.QuoteBatch{}, err
+		}
+		for _, symbol := range missing {
+			if q, ok := p.cache.get(symbol.String(), now, outageMaxAge); ok {
+				q.Cached, q.Stale = true, true
+				batch.Quotes[symbol.String()] = q
+			}
+		}
+		if len(batch.Quotes) == 0 {
+			return domain.QuoteBatch{}, err
+		}
+		return batch, nil
+	}
+	for symbol, q := range live.Quotes {
+		batch.Quotes[symbol] = q
+		p.cache.put(q)
+	}
+	batch.Unavailable = live.Unavailable
+	return batch, nil
+}
+
+// fetch asks Alpaca about symbols. It returns an error only when the bars cannot be read.
+func (p *Prices) fetch(ctx context.Context, symbols []domain.Symbol, cutoff time.Time) (domain.QuoteBatch, error) {
+	batch := domain.QuoteBatch{Quotes: make(map[string]domain.PriceQuote, len(symbols))}
+	sessions, err := p.cal.sessions(ctx, cutoff)
+	if err != nil {
+		if ctx.Err() != nil {
+			return domain.QuoteBatch{}, fmt.Errorf("alpaca prices: %w", ctx.Err())
+		}
+		sessions = nil // no calendar: do not guess which days were trading days
+	}
+	start, end, ok := requestWindow(sessions, cutoff)
+	if !ok {
+		batch.Unavailable = symbols
+		return batch, nil
+	}
+	names := make([]string, len(symbols))
+	for i, s := range symbols {
+		names[i] = s.String()
+	}
+	bars, unread, err := readBars(ctx, p.client, p.data, names, start, end)
+	if err != nil {
+		return domain.QuoteBatch{}, err
+	}
+	fetchedAt := p.now().UTC()
+	for _, symbol := range symbols {
+		if unread && len(bars[symbol.String()]) == 0 {
+			continue // the page limit ended the read before Alpaca said anything about it
+		}
+		quote, priced := p.quoteFor(symbol, bars[symbol.String()], sessions, cutoff, fetchedAt)
+		if !priced {
+			batch.Unavailable = append(batch.Unavailable, symbol)
+			continue
+		}
+		batch.Quotes[symbol.String()] = quote
+	}
+	return batch, nil
+}
+
+func (p *Prices) quoteFor(symbol domain.Symbol, bars []bar, sessions []session, cutoff, fetchedAt time.Time) (domain.PriceQuote, bool) {
+	ref, found := pickReference(bars, sessions, cutoff)
+	if !found {
+		return domain.PriceQuote{}, false
+	}
+	price, err := domain.ParsePrice(ref.Bar.Close)
+	if err != nil {
+		return domain.PriceQuote{}, false
+	}
+	if fetchedAt.Before(ref.AsOf) {
+		fetchedAt = ref.AsOf // a quote is never fetched before the data it holds
+	}
+	quote, err := domain.NewPriceQuote(domain.PriceQuote{
+		Symbol: symbol, Price: price, Currency: "USD", AsOf: ref.AsOf, FetchedAt: fetchedAt,
+		Source: "alpaca", Feed: "sip", Stale: ref.Stale, SessionStatus: ref.Status,
+	})
+	if err != nil {
+		return domain.PriceQuote{}, false
+	}
+	return quote, true
+}
+
+// uniqueSymbols drops repeats and keeps the order.
+func uniqueSymbols(symbols []domain.Symbol) []domain.Symbol {
+	seen := make(map[string]bool, len(symbols))
+	out := make([]domain.Symbol, 0, len(symbols))
+	for _, s := range symbols {
+		if !seen[s.String()] {
+			seen[s.String()] = true
+			out = append(out, s)
+		}
+	}
+	return out
+}

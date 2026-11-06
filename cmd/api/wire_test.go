@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"errors"
 	"io"
 	"log/slog"
 	nethttp "net/http"
@@ -13,6 +12,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"go-backend-stock/internal/adapter/demo"
 	httpadapter "go-backend-stock/internal/adapter/http"
 	"go-backend-stock/internal/config"
 	"go-backend-stock/internal/core/domain"
@@ -215,23 +215,218 @@ func TestBuildServesTheTransactionRoutes(t *testing.T) {
 	}
 }
 
-// Demo instruments are sample data, so a production API must never answer from them: a symbol the
-// database does not know yet is refused until milestone 8 brings the real provider.
-func TestProductionNeverUsesTheDemoInstruments(t *testing.T) {
-	symbol, err := domain.ParseSymbol("AAPL")
+// PRICE_PROVIDER decides where a symbol the database does not know yet is checked.
+func TestInstrumentProviderFollowsPriceProvider(t *testing.T) {
+	aapl, err := domain.ParseSymbol("AAPL")
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	prod := config.Config{Env: config.EnvProduction}
-	if _, err := instrumentProvider(prod).Lookup(t.Context(), symbol); !errors.Is(err, domain.ErrDependencyUnavailable) {
-		t.Errorf("production Lookup(AAPL) error = %v, want dependency_unavailable", err)
+	t.Run("demo", func(t *testing.T) {
+		provider, err := instrumentProvider(config.Config{Env: config.EnvDevelopment, PriceProvider: config.ProviderDemo})
+		if err != nil {
+			t.Fatalf("instrumentProvider() error = %v", err)
+		}
+		got, err := provider.Lookup(t.Context(), aapl)
+		if err != nil || got.Symbol.String() != "AAPL" || got.Source != domain.InstrumentSourceDemo {
+			t.Errorf("Lookup(AAPL) = %+v, %v, want the demo instrument", got, err)
+		}
+	})
+
+	t.Run("alpaca", func(t *testing.T) {
+		var gotKey, gotPath string
+		fake := httptest.NewServer(nethttp.HandlerFunc(func(w nethttp.ResponseWriter, r *nethttp.Request) {
+			gotKey, gotPath = r.Header.Get("APCA-API-KEY-ID"), r.URL.Path
+			_, _ = w.Write([]byte(`{"id":"b0b6dd9d-8b9b-48a9-ba46-b9d54906e415","class":"us_equity","exchange":"NASDAQ","symbol":"AAPL","name":"Apple Inc.","status":"active"}`))
+		}))
+		defer fake.Close()
+		cfg := config.Config{Env: config.EnvDevelopment, PriceProvider: config.ProviderAlpaca, Alpaca: config.AlpacaConfig{
+			Key: "key-id", Secret: "key-secret", TradingBaseURL: fake.URL}}
+		provider, err := instrumentProvider(cfg)
+		if err != nil {
+			t.Fatalf("instrumentProvider() error = %v", err)
+		}
+		got, err := provider.Lookup(t.Context(), aapl)
+		if err != nil || got.Source != domain.InstrumentSourceAlpaca || got.ProviderAssetID == "" {
+			t.Fatalf("Lookup(AAPL) = %+v, %v, want an Alpaca instrument", got, err)
+		}
+		if gotKey != "key-id" || gotPath != "/v2/assets/AAPL" {
+			t.Errorf("Alpaca saw key %q and path %q", gotKey, gotPath)
+		}
+	})
+
+	t.Run("alpaca without credentials", func(t *testing.T) {
+		_, err := instrumentProvider(config.Config{Env: config.EnvDevelopment, PriceProvider: config.ProviderAlpaca})
+		if err == nil {
+			t.Fatal("instrumentProvider() error = nil, want an error for missing credentials")
+		}
+	})
+
+	t.Run("unknown provider", func(t *testing.T) {
+		if _, err := instrumentProvider(config.Config{Env: config.EnvDevelopment, PriceProvider: "iex"}); err == nil {
+			t.Fatal("instrumentProvider() error = nil, want an error")
+		}
+	})
+}
+
+// Demo instruments are sample data, so a production API must never answer from them: a production
+// configuration that passes config.Load has to select Alpaca.
+func TestProductionConfigCannotReachTheDemoInstruments(t *testing.T) {
+	env := map[string]string{
+		"APP_ENV": "production", "PUBLIC_ORIGIN": "https://stock.example.com",
+		"DATABASE_URL":      "postgres://app_runtime:prodpass@db.example.com:5432/postgres?sslmode=verify-full",
+		"CSRF_SECRET":       strings.Repeat("c", 32),
+		"OTP_SECRET":        strings.Repeat("o", 32),
+		"RATE_LIMIT_SECRET": strings.Repeat("r", 32),
+		"OIDC_SECRET":       strings.Repeat("i", 32),
+		"SMTP_HOST":         "smtp.example.com", "SMTP_PORT": "587", "SMTP_FROM": "no-reply@example.com", "SMTP_TLS": "starttls",
+		"PRICE_PROVIDER": "alpaca", "ALPACA_KEY": "key-id", "ALPACA_SECRET": "key-secret",
+	}
+	cfg, err := config.Load(func(k string) string { return env[k] })
+	if err != nil {
+		t.Fatalf("config.Load() error = %v", err)
+	}
+	provider, err := instrumentProvider(cfg)
+	if err != nil {
+		t.Fatalf("instrumentProvider() error = %v", err)
+	}
+	if _, isDemo := provider.(*demo.Instruments); isDemo {
+		t.Fatal("a production configuration selected the demo instruments")
 	}
 
-	for _, env := range []config.Environment{config.EnvDevelopment, config.EnvTest} {
-		got, err := instrumentProvider(config.Config{Env: env}).Lookup(t.Context(), symbol)
-		if err != nil || got.Symbol.String() != "AAPL" {
-			t.Errorf("%s Lookup(AAPL) = %+v, %v, want the demo instrument", env, got, err)
+	// Even a hand-built production config that asks for demo must not get it.
+	if _, err := instrumentProvider(config.Config{Env: config.EnvProduction, PriceProvider: config.ProviderDemo}); err == nil {
+		t.Error("instrumentProvider(production, demo) error = nil, want a refusal")
+	}
+}
+
+// PRICE_PROVIDER also decides where prices come from. alpaca means delayed Alpaca bars, and an Alpaca
+// failure means "no prices", never the demo prices.
+
+// fixedClock is a port.Clock that stands still.
+type fixedClock struct{ at time.Time }
+
+func (c fixedClock) Now() time.Time { return c.at }
+
+func TestPriceProviderFollowsPriceProvider(t *testing.T) {
+	aapl, err := domain.ParseSymbol("AAPL")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cutoff := time.Date(2026, 11, 4, 14, 30, 0, 0, time.UTC)
+
+	t.Run("demo", func(t *testing.T) {
+		provider, err := priceProvider(config.Config{Env: config.EnvDevelopment, PriceProvider: config.ProviderDemo}, systemClock{})
+		if err != nil {
+			t.Fatalf("priceProvider() error = %v", err)
 		}
+		batch, err := provider.Quotes(t.Context(), []domain.Symbol{aapl}, cutoff)
+		if q := batch.Quotes["AAPL"]; err != nil || !q.IsDemo || q.Price.String() != "200" {
+			t.Errorf("Quotes(AAPL) = %+v, %v, want the demo price", batch, err)
+		}
+	})
+
+	t.Run("alpaca prices from delayed bars", func(t *testing.T) {
+		calendar := httptest.NewServer(nethttp.HandlerFunc(func(w nethttp.ResponseWriter, r *nethttp.Request) {
+			_, _ = io.WriteString(w, `{"calendar":[{"date":"2026-11-03","core_start":"2026-11-03T14:30:00Z","core_end":"2026-11-03T21:00:00Z"}]}`)
+		}))
+		defer calendar.Close()
+		bars := httptest.NewServer(nethttp.HandlerFunc(func(w nethttp.ResponseWriter, r *nethttp.Request) {
+			_, _ = io.WriteString(w, `{"bars":{"AAPL":[{"t":"2026-11-03T14:44:00Z","c":123.45}]},"next_page_token":null}`)
+		}))
+		defer bars.Close()
+		cfg := config.Config{Env: config.EnvDevelopment, PriceProvider: config.ProviderAlpaca, Alpaca: config.AlpacaConfig{
+			Key: "key-id", Secret: "key-secret",
+			TradingBaseURL: calendar.URL, DataBaseURL: bars.URL,
+		}}
+		provider, err := priceProvider(cfg, fixedClock{time.Date(2026, 11, 3, 15, 0, 10, 0, time.UTC)})
+		if err != nil {
+			t.Fatalf("priceProvider() error = %v", err)
+		}
+		batch, err := provider.Quotes(t.Context(), []domain.Symbol{aapl}, time.Date(2026, 11, 3, 14, 45, 10, 0, time.UTC))
+		if q := batch.Quotes["AAPL"]; err != nil || q.IsDemo || q.Price.String() != "123.45" {
+			t.Errorf("Quotes(AAPL) = %+v, %v, want the fixture price 123.45 and never a demo price", batch, err)
+		}
+	})
+
+	t.Run("alpaca down is unavailable, never demo prices", func(t *testing.T) {
+		down := httptest.NewServer(nethttp.HandlerFunc(func(w nethttp.ResponseWriter, r *nethttp.Request) {
+			w.WriteHeader(nethttp.StatusServiceUnavailable)
+		}))
+		defer down.Close()
+		cfg := config.Config{Env: config.EnvDevelopment, PriceProvider: config.ProviderAlpaca, Alpaca: config.AlpacaConfig{
+			Key: "key-id", Secret: "key-secret",
+			TradingBaseURL: down.URL, DataBaseURL: down.URL,
+		}}
+		provider, err := priceProvider(cfg, fixedClock{time.Date(2026, 11, 3, 15, 0, 10, 0, time.UTC)})
+		if err != nil {
+			t.Fatalf("priceProvider() error = %v", err)
+		}
+		batch, err := provider.Quotes(t.Context(), []domain.Symbol{aapl}, cutoff)
+		if err == nil || len(batch.Quotes) != 0 {
+			t.Errorf("Quotes(AAPL) = %+v, %v; want an error and no quote, never a demo price", batch, err)
+		}
+	})
+
+	t.Run("alpaca without credentials", func(t *testing.T) {
+		if _, err := priceProvider(config.Config{Env: config.EnvDevelopment, PriceProvider: config.ProviderAlpaca}, systemClock{}); err == nil {
+			t.Error("priceProvider(alpaca, no credentials) error = nil, want an error")
+		}
+	})
+
+	t.Run("production never gets demo prices", func(t *testing.T) {
+		if _, err := priceProvider(config.Config{Env: config.EnvProduction, PriceProvider: config.ProviderDemo}, systemClock{}); err == nil {
+			t.Error("priceProvider(production, demo) error = nil, want a refusal")
+		}
+	})
+
+	t.Run("unknown provider", func(t *testing.T) {
+		if _, err := priceProvider(config.Config{Env: config.EnvDevelopment, PriceProvider: "iex"}, systemClock{}); err == nil {
+			t.Error("priceProvider(iex) error = nil, want an error")
+		}
+	})
+}
+
+func TestBuildServesTheValuationRoutes(t *testing.T) {
+	cfg := wireConfig(t, "http://localhost:8080")
+	pool, err := pgxpool.New(t.Context(), cfg.DatabaseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pool.Close()
+	log := slog.New(slog.NewJSONHandler(io.Discard, nil))
+
+	auth, err := buildAuth(cfg, pool, log)
+	if err != nil {
+		t.Fatalf("buildAuth() error = %v", err)
+	}
+	defer func() { _ = auth.mail.Close(context.Background()) }()
+	valuation, err := buildValuation(cfg, pool, log)
+	if err != nil {
+		t.Fatalf("buildValuation() error = %v", err)
+	}
+	if valuation.Service == nil {
+		t.Fatal("buildValuation() left the service unset")
+	}
+
+	app := httpadapter.NewServer(httpadapter.Options{Logger: log, Readiness: pool, Auth: auth.options, Valuation: valuation})
+	for _, path := range []string{"holdings", "valuation"} {
+		resp, err := app.Test(httptest.NewRequestWithContext(t.Context(), nethttp.MethodGet,
+			"/api/v1/portfolios/00000000-0000-4000-8000-000000000000/"+path, nil))
+		if err != nil {
+			t.Fatal(err)
+		}
+		_ = resp.Body.Close()
+		if resp.StatusCode != nethttp.StatusUnauthorized {
+			t.Errorf("GET /api/v1/portfolios/{id}/%s without a session = %d, want 401 (404 means the route is not wired)", path, resp.StatusCode)
+		}
+	}
+}
+
+// A production API must not start with the demo provider's prices.
+func TestBuildValuationRejectsAProductionDemoProvider(t *testing.T) {
+	cfg := config.Config{Env: config.EnvProduction, PriceProvider: config.ProviderDemo}
+	if _, err := buildValuation(cfg, nil, slog.New(slog.NewJSONHandler(io.Discard, nil))); err == nil {
+		t.Fatal("buildValuation(production, demo) error = nil, want a refusal")
 	}
 }

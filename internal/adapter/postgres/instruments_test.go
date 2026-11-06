@@ -132,3 +132,29 @@ func newInstrument(t *testing.T, symbol domain.Symbol, assetID string) domain.In
 	}
 	return i
 }
+
+func TestInstrumentsByIDs(t *testing.T) {
+	store := newRuntimeStore(t)
+	a := newInstrument(t, randomSymbol(t), "asset-"+newID(t).String())
+	b := newInstrument(t, randomSymbol(t), "asset-"+newID(t).String())
+	for _, i := range []domain.Instrument{a, b} {
+		if _, err := store.Instruments().Upsert(t.Context(), i); err != nil {
+			t.Fatalf("Upsert() error = %v", err)
+		}
+	}
+
+	got, err := store.Instruments().ByIDs(t.Context(), []domain.ID{a.ID, b.ID, newID(t)})
+	if err != nil {
+		t.Fatalf("ByIDs() error = %v", err)
+	}
+	if len(got) != 2 || got[a.ID].Symbol != a.Symbol || got[a.ID].Name != a.Name || got[b.ID].Symbol != b.Symbol {
+		t.Errorf("ByIDs() = %+v, want the two stored instruments and nothing for the unknown ID", got)
+	}
+
+	for name, ids := range map[string][]domain.ID{"nil": nil, "empty": {}} {
+		empty, err := store.Instruments().ByIDs(t.Context(), ids)
+		if err != nil || empty == nil || len(empty) != 0 {
+			t.Errorf("ByIDs(%s) = %#v, %v; want an empty, non-nil map", name, empty, err)
+		}
+	}
+}

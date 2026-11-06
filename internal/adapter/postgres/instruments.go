@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 
+	"github.com/jackc/pgx/v5/pgtype"
+
 	"go-backend-stock/internal/adapter/postgres/sqlc"
 	"go-backend-stock/internal/core/domain"
 	"go-backend-stock/internal/core/port"
@@ -56,6 +58,31 @@ func (r *InstrumentRepository) Upsert(ctx context.Context, i domain.Instrument) 
 		return domain.Instrument{}, errSymbolChanged
 	}
 	return stored, err
+}
+
+// ByIDs returns the stored instruments among ids. It asks the database once, and not at all for an
+// empty list.
+func (r *InstrumentRepository) ByIDs(ctx context.Context, ids []domain.ID) (map[domain.ID]domain.Instrument, error) {
+	out := make(map[domain.ID]domain.Instrument, len(ids))
+	if len(ids) == 0 {
+		return out, nil
+	}
+	pgIDs := make([]pgtype.UUID, len(ids))
+	for i, id := range ids {
+		pgIDs[i] = pgUUID(id)
+	}
+	rows, err := r.q.GetInstrumentsByIDs(ctx, pgIDs)
+	if err != nil {
+		return nil, mapError(err)
+	}
+	for _, row := range rows {
+		i, err := instrumentFromRow(row)
+		if err != nil {
+			return nil, err
+		}
+		out[i.ID] = i
+	}
+	return out, nil
 }
 
 func instrumentFromRow(row sqlc.AppInstrument) (domain.Instrument, error) {

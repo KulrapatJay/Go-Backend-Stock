@@ -35,6 +35,43 @@ func (q *Queries) GetInstrumentBySymbol(ctx context.Context, symbol string) (App
 	return i, err
 }
 
+const getInstrumentsByIDs = `-- name: GetInstrumentsByIDs :many
+SELECT id, symbol, provider_asset_id, name, exchange, asset_class, status, source, verified_at, created_at, updated_at
+FROM app.instruments WHERE id = ANY($1::uuid[])
+`
+
+func (q *Queries) GetInstrumentsByIDs(ctx context.Context, ids []pgtype.UUID) ([]AppInstrument, error) {
+	rows, err := q.db.Query(ctx, getInstrumentsByIDs, ids)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []AppInstrument
+	for rows.Next() {
+		var i AppInstrument
+		if err := rows.Scan(
+			&i.ID,
+			&i.Symbol,
+			&i.ProviderAssetID,
+			&i.Name,
+			&i.Exchange,
+			&i.AssetClass,
+			&i.Status,
+			&i.Source,
+			&i.VerifiedAt,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const insertInstrument = `-- name: InsertInstrument :execrows
 INSERT INTO app.instruments (id, symbol, provider_asset_id, name, exchange, asset_class, status, source, verified_at, created_at, updated_at)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $10)

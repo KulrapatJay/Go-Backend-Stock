@@ -87,6 +87,43 @@ definitions:
         example: ok
         type: string
     type: object
+  http.HoldingResponse:
+    properties:
+      average_cost:
+        example: "101"
+        type: string
+      cost_basis:
+        example: "151.5"
+        type: string
+      instrument_name:
+        example: Apple Inc.
+        type: string
+      quantity:
+        example: "1.5"
+        type: string
+      realized_pnl:
+        example: "8.5"
+        type: string
+      symbol:
+        example: AAPL
+        type: string
+    required:
+    - average_cost
+    - cost_basis
+    - instrument_name
+    - quantity
+    - realized_pnl
+    - symbol
+    type: object
+  http.HoldingsResponse:
+    properties:
+      data:
+        items:
+          $ref: '#/definitions/http.HoldingResponse'
+        type: array
+    required:
+    - data
+    type: object
   http.LoginRequest:
     properties:
       email:
@@ -179,6 +216,109 @@ definitions:
     - name
     - updated_at
     - version
+    type: object
+  http.PositionResponse:
+    properties:
+      average_cost:
+        example: "101"
+        type: string
+      cost_basis:
+        example: "151.5"
+        type: string
+      instrument_name:
+        example: Apple Inc.
+        type: string
+      market_value:
+        example: "165"
+        type: string
+        x-nullable: true
+      quantity:
+        example: "1.5"
+        type: string
+      quote:
+        allOf:
+        - $ref: '#/definitions/http.QuoteResponse'
+        x-nullable: true
+      realized_pnl:
+        example: "8.5"
+        type: string
+      symbol:
+        example: AAPL
+        type: string
+      unavailable_reason:
+        enum:
+        - no_price
+        - provider_unavailable
+        example: no_price
+        type: string
+        x-nullable: true
+      unrealized_pnl:
+        example: "13.5"
+        type: string
+        x-nullable: true
+    required:
+    - average_cost
+    - cost_basis
+    - instrument_name
+    - market_value
+    - quantity
+    - quote
+    - realized_pnl
+    - symbol
+    - unavailable_reason
+    - unrealized_pnl
+    type: object
+  http.QuoteResponse:
+    properties:
+      as_of:
+        example: "2026-11-04T14:30:00Z"
+        format: date-time
+        type: string
+      cached:
+        example: false
+        type: boolean
+      currency:
+        enum:
+        - USD
+        example: USD
+        type: string
+      feed:
+        example: demo
+        type: string
+      fetched_at:
+        example: "2026-11-04T14:46:00Z"
+        format: date-time
+        type: string
+      is_demo:
+        example: true
+        type: boolean
+      price:
+        example: "110"
+        type: string
+      session_status:
+        enum:
+        - open
+        - market_closed
+        - unknown
+        example: unknown
+        type: string
+      source:
+        example: demo
+        type: string
+      stale:
+        example: false
+        type: boolean
+    required:
+    - as_of
+    - cached
+    - currency
+    - feed
+    - fetched_at
+    - is_demo
+    - price
+    - session_status
+    - source
+    - stale
     type: object
   http.ReadyResponse:
     properties:
@@ -368,11 +508,69 @@ definitions:
     - email_verified
     - id
     type: object
+  http.ValuationResponse:
+    properties:
+      calculated_at:
+        example: "2026-11-04T15:00:00Z"
+        format: date-time
+        type: string
+      coverage:
+        enum:
+        - complete
+        - partial
+        - unavailable
+        example: complete
+        type: string
+      currency:
+        enum:
+        - USD
+        example: USD
+        type: string
+      market_value:
+        example: "165"
+        type: string
+        x-nullable: true
+      missing_symbols:
+        example:
+        - MSFT
+        - NVDA
+        items:
+          type: string
+        type: array
+      portfolio_id:
+        example: 0192f0c1-7a8e-7cc4-9d2b-3f6c1a2b4c5d
+        type: string
+      positions:
+        items:
+          $ref: '#/definitions/http.PositionResponse'
+        type: array
+      priced_market_value:
+        example: "165"
+        type: string
+      realized_pnl:
+        example: "8.5"
+        type: string
+      unrealized_pnl:
+        example: "13.5"
+        type: string
+        x-nullable: true
+    required:
+    - calculated_at
+    - coverage
+    - currency
+    - market_value
+    - missing_symbols
+    - portfolio_id
+    - positions
+    - priced_market_value
+    - realized_pnl
+    - unrealized_pnl
+    type: object
 info:
   contact: {}
   description: |-
     Records US stock trades and tracks portfolio cost and P&L. It does not place real orders.
-    Milestone 7 exposes Health, the Auth endpoints (email and password, email verification, password reset, Google sign-in and linking), Portfolios and Transactions (record, list, read, edit and delete trades); holdings and prices are not implemented yet.
+    Milestone 8b exposes Health, the Auth endpoints (email and password, email verification, password reset, Google sign-in and linking), Portfolios, Transactions (record, list, read, edit and delete trades) and Holdings/Prices (what a portfolio holds and is worth); prices are sample data in demo mode and real prices are not implemented yet.
   title: Stock Portfolio Tracker API
   version: "1.0"
 paths:
@@ -1330,6 +1528,57 @@ paths:
       summary: Rename a portfolio or change its description
       tags:
       - Portfolios
+  /api/v1/portfolios/{portfolio_id}/holdings:
+    get:
+      description: One entry per stock ever traded in the portfolio, sorted by symbol,
+        calculated from its transactions with a moving weighted-average cost. A stock
+        that was sold out stays with quantity "0" because of its realized profit and
+        loss. No prices are used, so this works even when the price provider does
+        not. Numbers are exact decimal strings; round them for display only. A portfolio
+        that belongs to someone else gets exactly the same 404 as one that does not
+        exist. Needs the session cookie.
+      operationId: listHoldings
+      parameters:
+      - description: Portfolio ID
+        format: uuid
+        in: path
+        name: portfolio_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/http.HoldingsResponse'
+        "400":
+          description: 'invalid_input: portfolio_id is not a UUID'
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+        "401":
+          description: unauthenticated
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+        "404":
+          description: not_found
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+        "500":
+          description: internal
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+        "503":
+          description: dependency_unavailable or server_busy
+          headers:
+            Retry-After:
+              description: Seconds to wait; only sent with server_busy, not with dependency_unavailable
+              type: integer
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+      summary: List what a portfolio holds
+      tags:
+      - Holdings/Prices
   /api/v1/portfolios/{portfolio_id}/transactions:
     get:
       description: 'Newest first by executed_at, trades executed at the same time
@@ -1773,6 +2022,62 @@ paths:
       summary: Replace a trade
       tags:
       - Transactions
+  /api/v1/portfolios/{portfolio_id}/valuation:
+    get:
+      description: 'Prices every stock still held with a delayed reference price:
+        the close of the last bar before 15 minutes ago. It is not a bid or ask price
+        and not a price one could trade at. A price that is missing is null and never
+        "0": coverage says whether every stock still held has a price (complete),
+        some do (partial) or none does (unavailable, which is also the answer when
+        the price provider cannot be reached). Unless coverage is complete, market_value
+        and unrealized_pnl are null and priced_market_value is only the subtotal of
+        the priced stocks; realized_pnl and the holdings never depend on prices. unrealized_pnl
+        = quantity x price - remaining cost, without any selling fee. With PRICE_PROVIDER=demo
+        the prices are sample data and is_demo is true. calculated_at is when the
+        transactions were read. A portfolio that belongs to someone else gets exactly
+        the same 404 as one that does not exist. Needs the session cookie.'
+      operationId: getValuation
+      parameters:
+      - description: Portfolio ID
+        format: uuid
+        in: path
+        name: portfolio_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/http.ValuationResponse'
+        "400":
+          description: 'invalid_input: portfolio_id is not a UUID'
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+        "401":
+          description: unauthenticated
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+        "404":
+          description: not_found
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+        "500":
+          description: internal
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+        "503":
+          description: dependency_unavailable or server_busy
+          headers:
+            Retry-After:
+              description: Seconds to wait; only sent with server_busy, not with dependency_unavailable
+              type: integer
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+      summary: Value a portfolio with delayed prices
+      tags:
+      - Holdings/Prices
   /healthz:
     get:
       description: Returns 200 while the process is running. Does not check the database.
@@ -1822,6 +2127,10 @@ tags:
     needs the X-CSRF-Token header from GET /api/v1/auth/csrf and must come from the
     API's own origin.
   name: Auth
+- description: What a portfolio holds and what it is worth, with delayed prices. A
+    price that is missing is null, never zero; realized profit and loss never depends
+    on prices. Read-only, needs the session cookie.
+  name: Holdings/Prices
 - description: A user can own many portfolios, all in USD. Every call needs the session
     cookie; another user's portfolio looks exactly like a missing one (404). Reading
     returns an ETag with the portfolio version; changing or deleting a portfolio needs
