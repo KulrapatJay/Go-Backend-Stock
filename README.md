@@ -1,9 +1,11 @@
 # Stock Portfolio Tracker — Backend
 
+![CI](https://github.com/KulrapatJay/Go-Backend-Stock/actions/workflows/ci.yml/badge.svg?branch=developer)
+
 Go API สำหรับบันทึกรายการซื้อขายหุ้นสหรัฐฯ และติดตามต้นทุน/กำไรขาดทุนของหลายพอร์ต
 ระบบนี้บันทึกการลงทุนที่ทำผ่านช่องทางอื่น ไม่ใช่ระบบส่งคำสั่งซื้อขายจริง
 
-> **สถานะ:** Milestone 7 (ลงมือครบแล้ว รอตรวจรับ) — สมัครด้วยอีเมล+รหัสผ่าน, ยืนยันอีเมลด้วย OTP, login/logout, session ฝั่ง server, ลืมรหัสผ่านด้วย OTP, Google sign-in/เชื่อมบัญชี (เปิดเมื่อตั้งค่า `GOOGLE_*`), สร้าง/ดู/แก้/ลบพอร์ตหลายพอร์ต (ETag/If-Match) และบันทึก/ดู/แก้/ลบรายการซื้อขาย (`Idempotency-Key`, ETag/If-Match, ตรวจประวัติไม่ให้จำนวนหุ้นติดลบ) ใช้งานผ่าน API ได้แล้ว; ตรวจ symbol ใหม่กับ Alpaca Assets API ได้เมื่อตั้ง `PRICE_PROVIDER=alpaca` (milestone 8a) ดู holdings กับมูลค่าพอร์ตด้วยราคาตัวอย่างได้ (milestone 8b) และประเมินมูลค่าด้วยราคาล่าช้าจริงจาก Alpaca SIP ได้ (milestone 8c; ทั้งสามลงมือครบ รอตรวจรับ)
+> **สถานะ:** backend เฟส 1 ครบทุก endpoint (milestone 1–8 ผ่านการตรวจรับ, milestone 9 กำลังตรวจรับ) — สมัครด้วยอีเมล+รหัสผ่านพร้อมยืนยันอีเมลด้วย OTP, login/logout ด้วย session ฝั่ง server, ลืมรหัสผ่านด้วย OTP, Google sign-in/เชื่อมบัญชี (เปิดเมื่อตั้งค่า `GOOGLE_*`), หลายพอร์ตต่อผู้ใช้ (ETag/If-Match), บันทึก/แก้/ลบรายการซื้อขาย (`Idempotency-Key`, ตรวจประวัติไม่ให้จำนวนหุ้นติดลบ), holdings และมูลค่าพอร์ตด้วยราคาล่าช้า (ตัวอย่างหรือ Alpaca SIP จริง) และ retention cleanup — ใช้งานผ่าน API/Swagger UI ได้เลย frontend (Next.js) เริ่มหลังตรวจรับ backend (milestone 10)
 
 ## เริ่มใช้งาน (dev พร้อม hot reload)
 
@@ -12,7 +14,16 @@ cp .env.example .env
 docker compose up --build
 ```
 
+`.env.example` มีค่า dev ครบทุกตัวแล้ว (รหัสผ่านและ secret ขึ้นต้น `dev-only-` ใช้ได้เฉพาะเครื่องของคุณ production ปฏิเสธ) จึงเปิดโหมดเดโมได้ทันทีโดยไม่ต้องมี Google, Alpaca หรือ SMTP จริง: ราคาเป็นข้อมูลตัวอย่าง (`is_demo: true`) และอีเมลไปที่ Mailpit
 `docker compose up` โหลด `docker-compose.override.yml` อัตโนมัติ: mount source และ rebuild ด้วย air
+
+เมื่อ API พร้อม (`http://localhost:8080/readyz` ตอบ 200) สร้างบัญชีเดโมที่มีสองพอร์ตและรายการตัวอย่างได้ด้วย
+
+```bash
+make demo-data   # demo-investor@example.com / Zq9!kVx1 (รหัสผ่านสำหรับเดโมในเครื่องเท่านั้น); รันซ้ำไม่ทำอะไรเพิ่ม
+```
+
+แล้วเปิด Swagger UI ที่ `http://localhost:8080/docs/` เพื่อ login และลองเรียก API
 
 ## เปิดแบบ production-like ในเครื่อง (ไม่โหลด dev override)
 
@@ -31,6 +42,8 @@ docker compose -f docker-compose.yml up --build
 | http://localhost:8080/docs/ | Swagger UI (bundle ใน image ไม่โหลด CDN) |
 | http://localhost:8080/swagger.json, /swagger.yaml | Swagger 2.0 spec |
 | http://localhost:8025 | Mailpit กล่องจดหมายปลอมสำหรับ dev |
+
+URL ข้างบนใช้ได้ในเครื่อง (dev และ production-like); พอร์ตเปลี่ยนได้ด้วย `API_HOST_PORT`, `MAILPIT_UI_HOST_PORT`, `MAILPIT_SMTP_HOST_PORT` และ `POSTGRES_HOST_PORT` ใน `.env` ส่วน production ยังไม่มี URL จนกว่าจะ deploy (milestone 11) ซึ่งเอกสาร `/docs/` และ Try it out เปิด/ปิดแยกกันด้วย `DOCS_ENABLED` และ `DOCS_TRY_IT_OUT_ENABLED`
 
 ทุก response มี `X-Request-ID` ใช้ค้น log ของคำขอนั้นได้
 
@@ -52,7 +65,7 @@ Access log เก็บ method, route template, status และ duration โด
 
 ## ตัวแปรสภาพแวดล้อมของ auth
 
-`CSRF_SECRET`, `OTP_SECRET`, `RATE_LIMIT_SECRET` และ `OIDC_SECRET` ต้องตั้งใน `.env` เป็นค่ายาวอย่างน้อย 32 bytes (สำหรับ dev ใช้ค่า placeholder `dev-only-…` เช่น `dev-only-csrf-secret-0123456789abcdef` ได้); production ปฏิเสธค่าที่ขึ้นต้นด้วย `dev-only-` และสี่ค่าต้องไม่ซ้ำกัน
+`CSRF_SECRET`, `OTP_SECRET`, `RATE_LIMIT_SECRET` และ `OIDC_SECRET` ต้องเป็นค่ายาวอย่างน้อย 32 bytes (`.env.example` ใส่ placeholder `dev-only-…` ให้แล้วสำหรับ dev); production ปฏิเสธค่าที่ขึ้นต้นด้วย `dev-only-` และสี่ค่าต้องไม่ซ้ำกัน
 
 ตัวแปรอื่นมีค่าเริ่มต้นสำหรับ dev จึงไม่ต้องตั้ง: `SESSION_TTL` (168h), `PASSWORD_HASH_CONCURRENCY` (4), `AUTH_RESPONSE_FLOOR`/`AUTH_RESPONSE_JITTER` (500ms/100ms), `OTP_MAX_ATTEMPTS` (5), `OTP_RESEND_COOLDOWN` (60s), `OTP_REQUESTS_PER_HOUR_EMAIL`/`_IP` (5/20), `LOGIN_ATTEMPTS_PER_EMAIL`/`_IP` (10/30 ต่อ 15 นาที), `TRUSTED_PROXY_CIDRS` (ว่าง = ไม่เชื่อ `X-Forwarded-For`), `SMTP_HOST`/`SMTP_PORT`/`SMTP_FROM`/`SMTP_TLS`/`MAIL_SEND_TIMEOUT` (10s; compose ชี้ไป Mailpit ที่ `mailpit:1025` แบบไม่เข้ารหัส) production ต้องตั้ง `SMTP_HOST`, `SMTP_PORT`, `SMTP_FROM` และ `SMTP_TLS` เป็น `starttls` หรือ `tls` เอง
 
@@ -63,7 +76,7 @@ Access log เก็บ method, route template, status และ duration โด
 ต้องตั้งค่าใน `.env` ให้ครบก่อน (`APP_ENV=development`, `PUBLIC_ORIGIN=http://localhost:8080` และ secret สี่ตัวตามหัวข้อก่อนหน้า) แล้ว `docker compose up --build`
 ทุก POST ต้องมี header `Origin` ที่ตรงกับ `PUBLIC_ORIGIN` และ `X-CSRF-Token` จาก `GET /api/v1/auth/csrf`; cookie jar เก็บ `csrf_nonce` และ `session` ให้เอง
 ตัวอย่างนี้ใช้ bash/zsh และอ่านรหัสจาก Mailpit ผ่าน REST API (`http://localhost:8025/api/v1/message/latest` ซึ่งตอบ JSON ที่มีฟิลด์ `Text`)
-ผู้ใช้ zsh ให้รัน `setopt interactive_comments` ก่อนวางบล็อกนี้ (zsh แบบ interactive ไม่ถือ `#` เป็น comment ตามค่าเริ่มต้น) หรือจะบันทึกบล็อกเป็นไฟล์แล้วรันด้วย `bash` ก็ได้
+flow เดียวกันนี้ (และการตรวจเพิ่ม เช่น ผู้ใช้อื่นเข้าไม่ได้ และ 412/428) รันอัตโนมัติด้วย `make e2e` (ดูหัวข้อ "พัฒนาและทดสอบ") ผู้ใช้ zsh ให้รัน `setopt interactive_comments` ก่อนวางบล็อกนี้ (zsh แบบ interactive ไม่ถือ `#` เป็น comment ตามค่าเริ่มต้น) หรือจะบันทึกบล็อกเป็นไฟล์แล้วรันด้วย `bash` ก็ได้
 
 ```bash
 API=http://localhost:8080/api/v1
@@ -248,6 +261,112 @@ ALPACA_SECRET=<secret ของ paper trading — ห้าม commit>
 - `quote.cached: true` เมื่อใช้ราคาที่เก็บไว้ในหน่วยความจำของ API: ปกติเก็บ 60 วินาทีเพื่อไม่ให้เกินโควตาฟรี 200 ครั้ง/นาที; ถ้า Alpaca ล่ม ใช้ราคาที่เก็บไว้ได้ไม่เกิน 7 วันพร้อมติด `cached` และ `stale` และ `as_of` ตามจริง; ไม่มีราคาที่เก็บไว้ = `coverage` เป็น `unavailable` (ไม่ถอยไปใช้ราคาเดโม) ส่วน cache หายเมื่อ API restart
 - หุ้นที่ไม่มีการซื้อขายเลยใน session อ้างอิงถือว่าไม่มีราคา (`null` ไม่ใช่ `0`)
 
+## สถาปัตยกรรม
+
+Hexagonal (Ports & Adapters): dependency ชี้เข้าหา core เสมอ — core ไม่รู้จัก Fiber, pgx, sqlc, Alpaca หรือ Supabase (`internal/core/boundary_test.go` ตรวจ import) และประกอบทุกอย่างที่ composition root เท่านั้น ([ADR-0001](docs/adr/0001-hexagonal-architecture.md))
+
+```mermaid
+flowchart LR
+  subgraph roots["Composition roots"]
+    API["cmd/api"]
+    MAINT["cmd/maintenance"]
+  end
+  subgraph primary["Primary adapter"]
+    HTTP["Fiber handlers, middleware, DTO<br/>internal/adapter/http"]
+  end
+  subgraph core["Core (ไม่ import adapter)"]
+    SVC["services (use cases)<br/>internal/core/service"]
+    PORT["ports + domain<br/>internal/core/port, domain"]
+  end
+  subgraph secondary["Secondary adapters"]
+    PG["PostgreSQL: sqlc + pgx"]
+    ALP["Alpaca: prices, instruments"]
+    DEMO["Demo: sample prices, instruments"]
+    OIDC["Google OpenID Connect"]
+    MAIL["SMTP mailer"]
+  end
+  API --> HTTP
+  API -.ประกอบ.-> secondary
+  MAINT -.ประกอบ.-> PG
+  HTTP --> SVC
+  SVC --> PORT
+  PG --> PORT
+  ALP --> PORT
+  DEMO --> PORT
+  OIDC --> PORT
+  MAIL --> PORT
+```
+
+ER diagram (schema `app`; รายละเอียดคอลัมน์ใน [docs/database/schema.dbml](docs/database/schema.dbml) สำหรับ dbdiagram.io และ goose migrations เป็นแหล่งความจริง):
+
+```mermaid
+erDiagram
+  users ||--o{ auth_providers : "login ด้วย Google"
+  users ||--o{ sessions : "session ฝั่ง server"
+  users ||--o{ otp_challenges : "ยืนยันอีเมล / reset"
+  users |o--o{ oauth_flows : "เฉพาะ flow link"
+  users ||--o{ portfolios : "เป็นเจ้าของ"
+  portfolios ||--o{ transactions : "ซื้อ/ขาย"
+  instruments ||--o{ transactions : "symbol"
+  portfolios ||--o{ idempotency_keys : "ลองซ้ำได้"
+  users ||--o{ idempotency_keys : "เจ้าของ key"
+  rate_limit_keys ||--o{ rate_limit_events : "rolling window"
+```
+
+`audit_events` ไม่มี foreign key โดยตั้งใจ: ต้องอ้างผู้ใช้ session และเป้าหมายได้หลังข้อมูลต้นทางถูกลบ
+
+## API ภาพรวม
+
+เอกสารเต็มและตัวอย่างอยู่ใน Swagger UI (`/docs/`); ทุก endpoint อยู่ใต้ `/api/v1` ยกเว้น health
+
+| กลุ่ม | Endpoints |
+| --- | --- |
+| Health | `GET /healthz`, `GET /readyz` |
+| Auth | `GET /auth/config`, `GET /auth/csrf`, `POST /auth/register`, `POST /auth/email-verification/request`, `POST /auth/email-verification/confirm`, `POST /auth/login`, `GET /auth/me`, `POST /auth/logout`, `POST /auth/google/start`, `GET /auth/google/callback`, `POST /auth/google/link` |
+| Password Reset | `POST /auth/password-reset/request`, `POST /auth/password-reset/confirm` |
+| Portfolios | `GET/POST /portfolios`, `GET/PUT/DELETE /portfolios/{portfolio_id}` |
+| Transactions | `GET/POST /portfolios/{portfolio_id}/transactions`, `GET/PUT/DELETE /portfolios/{portfolio_id}/transactions/{transaction_id}` |
+| Holdings/Prices | `GET /portfolios/{portfolio_id}/holdings`, `GET /portfolios/{portfolio_id}/valuation` |
+
+ทุกเส้นทางที่เปลี่ยนข้อมูลต้องมี cookie session, header `X-CSRF-Token` (จาก `GET /auth/csrf`) และ `Origin` ที่ตรงกับ `PUBLIC_ORIGIN`; เงิน ราคา และจำนวนหุ้นเป็น decimal string เสมอ; error ทุกอันเป็น `{"error":{"code","message","request_id"}}` (`details` เมื่อเป็น `invalid_input`) การเปลี่ยน API ใน `/api/v1` เป็นแบบเพิ่มเท่านั้น ([ADR-0011](docs/adr/0011-api-and-migration-evolution.md))
+
+## อะไรตรวจกับบริการจริง อะไรเป็นของจำลอง
+
+| ส่วน | ที่ใช้ในเครื่อง/CI | ตรวจกับของจริงแล้ว |
+| --- | --- | --- |
+| Google OpenID Connect | OIDC server ปลอมใน tests (replay, issuer/audience/expiry/signature ผิด, nonce ไม่ตรง, link) | ตรวจกับ Google จริงบน browser 2026-10-29: `link_required`, link, login และสร้างบัญชีใหม่ — ต้องตรวจซ้ำกับ redirect URI ของ production |
+| Alpaca Assets API (ตรวจ symbol) | HTTP fixtures | `make smoke-alpaca` ผ่าน 2026-11-04 ด้วย key paper ของผู้พัฒนา |
+| Alpaca แท่งราคา SIP และปฏิทินตลาด | HTTP fixtures | `make smoke-alpaca` ผ่าน 2026-11-05 (AAPL และ SPY มีราคา feed `sip`, `as_of` ไม่เกิน cutoff) |
+| ราคาเดโม | `PRICE_PROVIDER=demo` (ค่าเริ่มต้นใน dev) ติดป้าย `is_demo` | ไม่ใช่ข้อมูลจริง ใช้เฉพาะ dev/demo; production ปฏิเสธ |
+| อีเมล OTP | Mailpit ใน Docker Compose | **ยังไม่ได้ตรวจกับ SMTP จริง** (ทำใน milestone 11) |
+| PostgreSQL | PostgreSQL 17.11 ใน Docker, schema และ roles เดียวกับที่จะใช้บน Supabase | **ยังไม่ได้ตรวจกับ Supabase จริง** (milestone 11) |
+| Swagger UI (Try it out) กับ cookie/CSRF | contract tests + `make e2e` | ผู้ใช้ลองบน browser จริง 2026-10-29 |
+
+CI และ `make check` ไม่เรียก Google, Alpaca หรือบริการส่งอีเมลจริงเลย; ต้องตรวจบริการจริงให้ครบอีกครั้งก่อนเปิดใช้งานออนไลน์
+
+## Trade-offs หลักที่เลือกไว้
+
+- **Session ฝั่ง server แทน JWT** ([ADR-0002](docs/adr/0002-server-side-sessions.md)): ยกเลิก session ได้ทันที (logout, เปลี่ยนรหัสผ่าน) และไม่ต้องจัดการ refresh token แลกกับการอ่าน DB ทุกคำขอ cookie เป็น HttpOnly/SameSite=Lax และกันการเปลี่ยนข้อมูลข้ามเว็บด้วย CSRF token กับการตรวจ Origin เพิ่ม
+- **Decimal ทุกจุด** ([ADR-0003](docs/adr/0003-decimal-and-event-replay.md), [ADR-0013](docs/adr/0013-domain-value-types.md)): `shopspring/decimal` กับ `numeric(28,10)` และ JSON เป็น string ไม่มี float ตั้งแต่ parse ถึง serialize จึงไม่มีเศษปัดเงียบๆ แลกกับที่ client ต้องใช้ไลบรารี decimal; transactions เป็นแหล่งความจริงเดียว holdings เป็นผล replay ไม่เก็บยอดซ้ำ
+- **Supabase เฉพาะ Database** ([ADR-0004](docs/adr/0004-database-supabase-private-schema.md)): Auth/OTP/session อยู่ใน Go, ตารางอยู่ใน schema `app` ที่ไม่เปิดผ่าน Data API และแยก role migrator/runtime/maintenance (runtime ไม่เป็นเจ้าของตาราง ไม่ลบ audit) แลกกับการดูแล auth เอง
+- **Row lock ต่อพอร์ต + optimistic locking** ([ADR-0009](docs/adr/0009-concurrency-row-lock-and-optimistic-locking.md), [ADR-0016](docs/adr/0016-database-timeouts-and-retryable-busy.md)): แก้รายการในพอร์ตเดียวกันทีละคำขอเพื่อให้ตรวจประวัติได้ถูกต้องและเรียบง่าย ส่วน `ETag`/`If-Match` กันการเขียนทับข้อมูลเก่า รอ lock นานเกินได้ 503 `server_busy` ที่ลองใหม่ได้ แลกกับ concurrency ภายในพอร์ตเดียว
+- **Idempotency-Key และ rate limit ใน PostgreSQL** ([ADR-0018](docs/adr/0018-idempotency-keys.md), [ADR-0017](docs/adr/0017-rate-limits-in-postgres.md)): ไม่เพิ่ม Redis ในเฟสแรก
+- **ราคาล่าช้าและไม่เดา** ([ADR-0020](docs/adr/0020-delayed-prices-and-valuation-coverage.md)): ไม่มีราคาคือ `null` ไม่ใช่ 0 และไม่ถอยไปใช้ข้อมูลเดโม
+
+รายการ ADR ทั้งหมดอยู่ใน [docs/adr](docs/adr/README.md)
+
+## Retention cleanup
+
+audit และข้อมูลหมดอายุถูกลบด้วย job แยก `cmd/maintenance` ที่รันครั้งเดียวแล้วจบ ด้วย DB role `app_maintenance` ซึ่งอ่านได้เฉพาะคอลัมน์เวลาหมดอายุและลบได้ (แอปเองลบ audit ไม่ได้) ([ADR-0021](docs/adr/0021-retention-maintenance-job.md))
+
+```bash
+docker compose up -d   # ต้องมี stack ทำงานอยู่
+make maintenance       # ลบทีละ batch 1,000 แถว แล้วพิมพ์ log JSON event=maintenance.retention_finished
+```
+
+ลบเฉพาะแถวที่เก่ากว่า cutoff: audit เก่ากว่า `AUDIT_RETENTION_DAYS` (ค่าเริ่มต้น 90 ตั้งได้ 30–365), idempotency records ที่หมดอายุ, sessions/OTP/OIDC flows ที่หมดอายุเกิน 1 วัน, rate-limit events เก่ากว่า 1 ชั่วโมงและ keys ที่ว่าง ตารางธุรกิจ (users, portfolios, transactions, instruments) ไม่ถูกแตะ ล้มเหลวจะได้ `event=maintenance.retention_failed` และ exit code ≠ 0 การตั้งเวลารันจริงบน production (GitHub Actions วันละครั้ง) ทำใน milestone 11 หลังมี Supabase
+Docker เก็บ log ของแต่ละ container ไม่เกิน 10 MB × 3 ไฟล์
+
 ## พัฒนาและทดสอบ
 
 ```bash
@@ -257,6 +376,10 @@ make test             # unit/HTTP/contract tests (integration tests จะ skip)
 make test-integration # integration tests กับ PostgreSQL ใน compose (ต้องเปิด stack ก่อน); ล้างทุกตารางใน schema app ของ dev DB หลังรันทุกครั้ง
 make test-mail        # ส่งอีเมลจริงไป Mailpit ใน compose แล้วอ่านกลับ (docker compose up -d mailpit)
 make smoke-alpaca     # ถาม Alpaca จริง (Assets, แท่งราคา SIP, ปฏิทิน) ด้วย key ใน .env (ดูหัวข้อ "ใช้ข้อมูลจริงจาก Alpaca")
+make e2e              # ยิง flow ทั้งหมด (สมัคร → ยืนยัน → login → พอร์ต → ซื้อขาย → มูลค่า → ผู้ใช้อื่นเข้าไม่ได้ → logout → reset) กับ stack ที่เปิดอยู่; เขียนบัญชี e2e-*@example.com ลง dev DB ของคุณ ใช้โควตา IP (ดู scripts/e2e/flow.sh)
+make demo-data        # สร้างบัญชีเดโมพร้อมข้อมูลตัวอย่างใน dev DB ผ่าน API; รันซ้ำไม่ทำอะไรเพิ่ม (make test-integration ล้าง dev DB จึงรันหลังจากนั้น)
+make maintenance      # retention cleanup ใน dev DB (ดูหัวข้อ "Retention cleanup")
+make fresh-clone-check # clone HEAD ที่ commit แล้วเปิดใหม่ใน Compose project แยก (stock-check, พอร์ต 18080/18025/11025/15432) แล้วตรวจ flow, retention, ราคาล่ม, config production ผิด และ migration ที่ล้มเหลว; ไม่แตะ stack และ volume ของคุณ ใช้เวลาหลายนาที
 make swagger          # generate docs/api จาก annotations แล้ว validate
 make check            # tidy + vet + lint + swagger + tests + ตรวจว่า docs/api commit แล้ว
 ```
@@ -278,3 +401,4 @@ make check            # tidy + vet + lint + swagger + tests + ตรวจว่
 - [Design spec](docs/superpowers/specs/2026-10-05-phase-1-design.md) และ [roadmap](docs/superpowers/plans/2026-10-05-phase-1-roadmap.md)
 - [ADRs](docs/adr/README.md) — เหตุผลของการตัดสินใจสำคัญ
 - [ER diagram (DBML)](docs/database/schema.dbml)
+- [ตั้ง branch protection และ required checks บน GitHub](docs/runbooks/github-branch-protection.md)

@@ -384,9 +384,13 @@ Hash payload จาก normalized symbol/side/decimal canonical strings/UTC time
 
 เก็บ success events ทุกครั้งที่ mutation สำเร็จ ไม่มี sampling. Security denial ที่โดน admission limit ซ้ำให้รวมเหตุการณ์ตาม scope/key ในช่วง 1 นาทีอย่างชัดเจน เพื่อลด flood; rate decision ต้องบอกว่าเป็นการปฏิเสธครั้งแรกของช่วงเพื่อสร้าง `security.rate_limited` เท่านั้น ไม่อ้างว่ามี event ราย request ที่ถูก block ทุกครั้ง
 
-`cmd/maintenance` ลบเป็น batch 1,000 แถว/transaction: audit เก่ากว่า 90 วัน, idempotency หมดอายุ, sessions หมดอายุเกิน 1 วัน, otp_challenges/oauth_flows หมดอายุเกิน 1 วัน, rate events เก่ากว่า window สูงสุด 1 ชั่วโมง แล้วลบ keys ที่ว่างและหมดอายุ ใช้ maintenance role เท่านั้น
+`cmd/maintenance` ลบเป็น batch 1,000 แถวต่อคำสั่ง `DELETE` (เก่าที่สุดก่อน; ทำจริงเป็นคำสั่งละ statement ไม่ใช่ transaction ยาว): audit เก่ากว่า 90 วัน (`AUDIT_RETENTION_DAYS` ตั้งได้ 30–365), idempotency หมดอายุ, sessions หมดอายุเกิน 1 วัน, otp_challenges/oauth_flows หมดอายุเกิน 1 วัน, rate events เก่ากว่า 1 ชั่วโมง แล้วลบ keys ที่ว่างและหมดอายุ ใช้ maintenance role เท่านั้น (ทำจริงใน milestone 9, [ADR-0021](../../adr/0021-retention-maintenance-job.md))
+- ลบเฉพาะแถวที่เวลา**น้อยกว่า** cutoff (เท่ากับ cutoff ไม่ลบ); cutoff คำนวณจาก clock ครั้งเดียวต่อการรัน; ลบ rate events ก่อน rate keys
+- job ไม่เขียน audit (role ไม่มี INSERT): สรุปจำนวนต่อตารางเป็น application log `maintenance.retention_finished` หรือ `maintenance.retention_failed` (exit code ≠ 0)
+- rate key ที่ API เพิ่งบันทึก event ชนกับการลบ (SQLSTATE 23503) ถือเป็น "ข้ามรอบนี้" ไม่ใช่ความล้มเหลว เพราะ role ไม่มี UPDATE จึงล็อกแถวล่วงหน้าไม่ได้
+- ค่า config: `MAINTENANCE_DATABASE_URL` (บังคับ; production ต้อง `sslmode=verify-full`), `AUDIT_RETENTION_DAYS`, `MAINTENANCE_TIMEOUT` (ค่าเริ่มต้น 10 นาที ช่วง 1 นาที–1 ชั่วโมง)
 
-Local เรียก one-shot เมื่อทดสอบ; production เสนอ GitHub Actions schedule วันละครั้งด้วย environment secret และ workflow_dispatch สำรอง ไม่รับรองเวลา schedule ตรงวินาที ไม่เชื่อม DB จริงจาก PR CI; เปิด schedule หลังตรวจ network/free quota ใน milestone 11
+Local เรียก one-shot ด้วย `make maintenance` (compose profile `maintenance`); production เสนอ GitHub Actions schedule วันละครั้งด้วย environment secret และ workflow_dispatch สำรอง ไม่รับรองเวลา schedule ตรงวินาที ไม่เชื่อม DB จริงจาก PR CI; เปิด schedule หลังตรวจ network/free quota ใน milestone 11 (ผู้ใช้ยืนยัน 2026-11-06 ว่า milestone 9 ทำคำสั่งและ compose ก่อน ไม่มี workflow แบบ schedule)
 
 ## 10. Auth, CSRF และ rate limits
 
@@ -523,14 +527,15 @@ quote = `{price,currency,as_of,fetched_at,source,feed,is_demo,stale,cached,sessi
 | migrate | goose up one-shot หลัง postgres healthy; migration role |
 | api | runtime image non-root, port 8080; รอ migrate exit 0; runtime DB role |
 | mailpit | dev SMTP 1025/UI 8025, bind UI loopback; credentials จริงไม่เกี่ยวข้อง |
+| maintenance | profile `maintenance` เท่านั้น (ไม่เริ่มกับ `docker compose up`); one-shot หลัง migrate; role `app_maintenance`; `make maintenance` |
 
 Dev override mount source/hot reload ด้วย Air; production ใช้ config ที่ไม่โหลด override/Mailpit และต่อ Supabase โดยไม่มี local postgres dependency. เพิ่ม web ใน milestone 10 และ proxy `/api/v1`, `/docs/`, `/swagger.json`, `/swagger.yaml` ไป Go บน origin เดียวกัน คง path เดิม
 
 API config: APP_ENV, HTTP_ADDR, PUBLIC_ORIGIN, DATABASE_URL, MIGRATION_DATABASE_URL (เฉพาะ migrate), MAINTENANCE_DATABASE_URL (เฉพาะ job), TRUSTED_PROXY_CIDRS, LOG_LEVEL, CSRF_SECRET, OTP_SECRET, RATE_LIMIT_SECRET, OIDC_SECRET (PKCE verifier derivation), PASSWORD_HASH_CONCURRENCY, PRICE_PROVIDER, GOOGLE_CLIENT_ID/SECRET/REDIRECT_URI, ALPACA_KEY/SECRET, ALPACA_TRADING_BASE_URL (Assets API และปฏิทิน; ค่าเริ่มต้น paper endpoint), ALPACA_DATA_BASE_URL (แท่งราคา; ค่าเริ่มต้น `https://data.alpaca.markets`), SMTP_*, DOCS_ENABLED, DOCS_TRY_IT_OUT_ENABLED
 
-Production ปฏิเสธ secrets ตัวอย่าง/ว่าง, demo provider และ insecure cookies; local bootstrap สร้าง secrets สุ่มครั้งแรกไว้ใน ignored dev volume/file. `cp .env.example .env && docker compose up --build` ต้องเปิด API/docs/Mailpit โดยไม่ต้อง Google/Alpaca credentials
+Production ปฏิเสธ secrets ตัวอย่าง/ว่าง, demo provider และ insecure cookies; dev ใช้ placeholder ตายตัวที่ขึ้นต้น `dev-only-` ใน `.env.example` (ผู้ใช้ตัดสินใจ 2026-11-06 ให้ใส่ค่า dev กลับแทนการสุ่ม secret ตอนเริ่ม จึงไม่มีขั้น bootstrap สุ่มค่า; production ปฏิเสธ `dev-only-` อยู่แล้ว). `cp .env.example .env && docker compose up --build` ต้องเปิด API/docs/Mailpit โดยไม่ต้อง Google/Alpaca credentials
 
-CI ตั้งแต่ขั้น 1: vet/lint/unit/HTTP tests, Swagger generate/validate/diff, API image build, baseline migration บน empty DB; ขั้น 3 เพิ่ม sqlc diff, repo tests/permissions/rollback; ขั้น 9 ครบ backend E2E. ไม่เพิ่ม Next/Node CI ก่อนขั้น 10
+CI ตั้งแต่ขั้น 1 (ขั้น 9 เพิ่ม: goose down-to 0 แล้ว up ซ้ำ, image `maintenance`, job `stack` ที่รัน `scripts/e2e/stack-check.sh` บน checkout ใหม่ ไม่เรียกบริการภายนอก; push trigger ครอบ `main` และ `developer`; พอร์ตของ compose ปรับได้ด้วย `API_HOST_PORT`, `MAILPIT_UI_HOST_PORT`, `MAILPIT_SMTP_HOST_PORT`; log ของทุก service จำกัด 10 MB × 3 ไฟล์): vet/lint/unit/HTTP tests, Swagger generate/validate/diff, API image build, baseline migration บน empty DB; ขั้น 3 เพิ่ม sqlc diff, repo tests/permissions/rollback; ขั้น 9 ครบ backend E2E. ไม่เพิ่ม Next/Node CI ก่อนขั้น 10
 
 ## 14. เกณฑ์ตรวจรับและลำดับถัดไป
 

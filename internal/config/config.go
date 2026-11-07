@@ -65,7 +65,7 @@ func Load(getenv func(string) string) (Config, error) {
 	var err error
 	cfg.PublicOrigin, err = parseOrigin(getenv("PUBLIC_ORIGIN"), prod)
 	add(err)
-	cfg.DatabaseURL, err = parseDatabaseURL(getenv("DATABASE_URL"), prod)
+	cfg.DatabaseURL, err = parseDatabaseURL("DATABASE_URL", getenv("DATABASE_URL"), prod)
 	add(err)
 	cfg.DatabaseMaxConns, err = parseIntInRange("DB_MAX_CONNS", getenv("DB_MAX_CONNS"), 5, 1, 50)
 	add(err)
@@ -120,18 +120,18 @@ func parseOrigin(raw string, prod bool) (string, error) {
 	return u.Scheme + "://" + u.Host, nil
 }
 
-func parseDatabaseURL(raw string, prod bool) (string, error) {
+func parseDatabaseURL(name, raw string, prod bool) (string, error) {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
-		return "", errors.New("DATABASE_URL is required")
+		return "", fmt.Errorf("%s is required", name)
 	}
 	u, err := url.Parse(raw)
 	if err != nil || (u.Scheme != "postgres" && u.Scheme != "postgresql") || u.Host == "" {
 		// Never wrap err or echo raw: both can contain the password.
-		return "", errors.New("DATABASE_URL must be a postgres:// URL")
+		return "", fmt.Errorf("%s must be a postgres:// URL", name)
 	}
 	if prod && u.Query().Get("sslmode") != "verify-full" {
-		return "", errors.New("DATABASE_URL must set sslmode=verify-full in production")
+		return "", fmt.Errorf("%s must set sslmode=verify-full in production", name)
 	}
 	return raw, nil
 }

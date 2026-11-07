@@ -1,5 +1,12 @@
 name: stock-portfolio
 
+# Docker keeps at most 3 files of 10 MB per container, so logs cannot fill the disk.
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 services:
   postgres:
     image: postgres:17.11-bookworm@sha256:3645570cccdfa447589da9f57dd740faa29b30938e861289a5574b6ca6b03826
@@ -21,6 +28,7 @@ services:
       interval: 5s
       timeout: 5s
       retries: 20
+    logging: *logging
 
   migrate:
     build:
@@ -33,12 +41,13 @@ services:
       postgres:
         condition: service_healthy
     restart: "no"
+    logging: *logging
 
   api:
     build:
       context: .
       target: runtime
-    image: stock-portfolio-api:local
+    image: ${API_IMAGE:-stock-portfolio-api:local}
     environment:
       APP_ENV: ${APP_ENV}
       HTTP_ADDR: ":8080"
@@ -65,7 +74,7 @@ services:
       SMTP_FROM: no-reply@localhost
       SMTP_TLS: none
     ports:
-      - "127.0.0.1:8080:8080"
+      - "127.0.0.1:${API_HOST_PORT:-8080}:8080"
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -77,12 +86,33 @@ services:
       start_period: 5s
     stop_grace_period: 15s
     restart: unless-stopped
+    logging: *logging
+
+  # Retention cleanup, run on demand: make maintenance (or docker compose --profile maintenance run
+  # --rm maintenance). Not started by `docker compose up`.
+  maintenance:
+    profiles: [maintenance]
+    build:
+      context: .
+      target: maintenance
+    image: ${MAINTENANCE_IMAGE:-stock-portfolio-maintenance:local}
+    environment:
+      APP_ENV: ${APP_ENV}
+      LOG_LEVEL: ${LOG_LEVEL}
+      MAINTENANCE_DATABASE_URL: postgres://app_maintenance:${APP_MAINTENANCE_PASSWORD}@postgres:5432/${POSTGRES_DB}?sslmode=disable
+      AUDIT_RETENTION_DAYS: ${AUDIT_RETENTION_DAYS:-}
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    restart: "no"
+    logging: *logging
 
   mailpit:
     image: axllent/mailpit:v1.31.6@sha256:23fe39e81bde596a918000b3135c0f85dc8bb4c9ea6be274b051143f3e300387
     ports:
-      - "127.0.0.1:8025:8025"
-      - "127.0.0.1:1025:1025"
+      - "127.0.0.1:${MAILPIT_UI_HOST_PORT:-8025}:8025"
+      - "127.0.0.1:${MAILPIT_SMTP_HOST_PORT:-1025}:1025"
+    logging: *logging
 
 volumes:
   pgdata:

@@ -16,6 +16,7 @@ import (
 // @ID           getAuthConfig
 // @Produce      json
 // @Success      200  {object}  AuthConfigResponse
+// @Failure      500  {object}  ErrorResponse  "internal, such as a recovered panic"
 // @Router       /api/v1/auth/config [get]
 func (h *authHandlers) authConfig(c fiber.Ctx) error {
 	return c.JSON(AuthConfigResponse{GoogleEnabled: h.auth.GoogleEnabled()})

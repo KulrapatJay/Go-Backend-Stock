@@ -107,6 +107,39 @@ test-mail:
 smoke-alpaca:
 	REQUIRE_ALPACA_SMOKE=1 go test -count=1 -v -run 'TestAlpaca(Prices)?Smoke' ./internal/adapter/alpaca/
 
+.PHONY: e2e demo-data fresh-clone-check
+
+# Runs the whole API flow (sign up, verify, login, portfolios, trades, valuation, ownership, logout,
+# password reset) against the stack that is already running at PUBLIC_ORIGIN, reading the codes from
+# its Mailpit. It leaves e2e-*@example.com accounts in the dev database. Needs curl and jq.
+e2e:
+	API_ORIGIN="$${PUBLIC_ORIGIN:-http://localhost:8080}" MAILPIT_URL="http://localhost:$${MAILPIT_UI_HOST_PORT:-8025}" \
+		scripts/e2e/flow.sh full
+
+# Creates the demo account (demo-investor@example.com) with two portfolios and sample trades in the
+# running stack's database, through the API; running it again changes nothing. make test-integration
+# empties the dev database, so run this after it.
+demo-data:
+	API_ORIGIN="$${PUBLIC_ORIGIN:-http://localhost:8080}" MAILPIT_URL="http://localhost:$${MAILPIT_UI_HOST_PORT:-8025}" \
+		scripts/e2e/demo-data.sh
+
+# Clones the committed HEAD into a temporary directory and starts it as a new reader would, in its own
+# Compose project (stock-check) on ports 18080, 18025, 11025 and 15432, then checks the flow, the
+# retention job, a provider outage, invalid production configuration and a failing migration. Removes
+# only its own containers, images and volumes; your running stack and data are not touched. Commit first:
+# uncommitted changes are not in a clone.
+fresh-clone-check:
+	dir=$$(mktemp -d) && git clone --quiet . "$$dir/repo" && "$$dir/repo/scripts/e2e/stack-check.sh" "$$dir/repo"; \
+		status=$$?; rm -rf "$$dir"; exit $$status
+
+.PHONY: maintenance
+
+# Deletes expired sessions, OTP challenges, OIDC flows, idempotency records and rate-limit state, and
+# audit events older than AUDIT_RETENTION_DAYS, in the dev database of docker compose (batches of
+# 1,000 rows, as the app_maintenance role). Needs a running stack: docker compose up -d.
+maintenance:
+	docker compose --profile maintenance run --rm --build maintenance
+
 .PHONY: lint-install lint check
 
 lint-install:

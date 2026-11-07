@@ -14,7 +14,8 @@ CMD ["air", "-c", ".air.toml"]
 FROM base AS build
 COPY . .
 RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache/go-build \
-    CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/api ./cmd/api
+    CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/api ./cmd/api && \
+    CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/maintenance ./cmd/maintenance
 
 FROM base AS goose-build
 ARG GOOSE_VERSION=v3.28.0
@@ -35,3 +36,9 @@ COPY --from=build /out/api /usr/local/bin/api
 USER nonroot:nonroot
 EXPOSE 8080
 ENTRYPOINT ["/usr/local/bin/api"]
+
+# One-shot retention cleanup (cmd/maintenance). It only needs the maintenance database role.
+FROM gcr.io/distroless/static-debian12:nonroot@sha256:afa5c872c891853ca7fcf1f12c3edb23f7eeef36189728842dd51042ff57f7ab AS maintenance
+COPY --from=build /out/maintenance /usr/local/bin/maintenance
+USER nonroot:nonroot
+ENTRYPOINT ["/usr/local/bin/maintenance"]

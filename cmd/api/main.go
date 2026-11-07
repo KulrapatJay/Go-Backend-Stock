@@ -3,12 +3,14 @@
 // @title           Stock Portfolio Tracker API
 // @version         1.0
 // @description     Records US stock trades and tracks portfolio cost and P&L. It does not place real orders.
-// @description     Milestone 8b exposes Health, the Auth endpoints (email and password, email verification, password reset, Google sign-in and linking), Portfolios, Transactions (record, list, read, edit and delete trades) and Holdings/Prices (what a portfolio holds and is worth); prices are sample data in demo mode and real prices are not implemented yet.
+// @description     Phase 1 covers sign-up with email verification (OTP), login and logout with a server-side session cookie, Google sign-in and linking, password reset (OTP), many portfolios per user, recording, editing and deleting buys and sells, and holdings and valuation with delayed prices: sample prices in demo mode (PRICE_PROVIDER=demo) and delayed SIP prices from Alpaca when PRICE_PROVIDER=alpaca. Dividends, splits, mergers and symbol changes are not handled, and results are not tax reports.
 // @BasePath        /
 // @tag.name        Health
 // @tag.description Liveness and readiness probes
 // @tag.name        Auth
 // @tag.description Registration, email verification, sessions and CSRF tokens. Every POST needs the X-CSRF-Token header from GET /api/v1/auth/csrf and must come from the API's own origin.
+// @tag.name        Password Reset
+// @tag.description Forgot-password flow with a 6-digit code sent by email: ask for a code, then set a new password with it. The answer to the request is the same for every email. Every POST needs the X-CSRF-Token header from GET /api/v1/auth/csrf and must come from the API's own origin.
 // @tag.name        Holdings/Prices
 // @tag.description What a portfolio holds and what it is worth, with delayed prices. A price that is missing is null, never zero; realized profit and loss never depends on prices. Read-only, needs the session cookie.
 // @tag.name        Portfolios
