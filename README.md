@@ -401,4 +401,5 @@ make check            # tidy + vet + lint + swagger + tests + ตรวจว่
 - [Design spec](docs/superpowers/specs/2026-10-05-phase-1-design.md) และ [roadmap](docs/superpowers/plans/2026-10-05-phase-1-roadmap.md)
 - [ADRs](docs/adr/README.md) — เหตุผลของการตัดสินใจสำคัญ
 - [ER diagram (DBML)](docs/database/schema.dbml)
+- [ส่งต่อให้ฝั่ง frontend](docs/frontend-handoff.md) — contract, cookie/CSRF, same-origin routing และกติกาแสดงผลสำหรับ milestone 10
 - [ตั้ง branch protection และ required checks บน GitHub](docs/runbooks/github-branch-protection.md)
