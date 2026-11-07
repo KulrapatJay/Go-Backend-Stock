@@ -18,7 +18,8 @@
    ต้องตัด dividend ออกจาก UI เฟส 1 หรือวางแผนเป็น event ชนิดใหม่ในเฟสถัดไป
 3. **ภาษา UI:** อีเมลจาก backend เป็นภาษาไทย ส่วน `message` ใน error เป็นภาษาอังกฤษสำหรับนักพัฒนา
    UI ควรแปลจาก `code` เอง (ดูหัวข้อ 6) แต่ภาษาหลักของ UI ยังไม่ได้ยืนยัน
-4. **ก่อนเริ่ม:** milestone 9 ยังรอเจ้าของโปรเจกต์ตรวจ Swagger UI Try it out + CSRF และ Google callback บน browser อีกครั้ง
+4. **ก่อนเริ่ม:** milestone 9 ยังไม่ปิด: ตรวจ Swagger UI และ Google callback บน browser ผ่านแล้ว (2026-11-07)
+   แต่ยังรอผล CI บน GitHub (job `backend` และ `stack`) และการตั้ง branch protection ดูสถานะล่าสุดใน roadmap
 
 ## 1. นอกขอบเขตเฟส 1 (ห้ามทำหรือห้ามสมมติว่ามี)
 
