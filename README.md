@@ -5,7 +5,7 @@
 Go API สำหรับบันทึกรายการซื้อขายหุ้นสหรัฐฯ และติดตามต้นทุน/กำไรขาดทุนของหลายพอร์ต
 ระบบนี้บันทึกการลงทุนที่ทำผ่านช่องทางอื่น ไม่ใช่ระบบส่งคำสั่งซื้อขายจริง
 
-> **สถานะ:** backend เฟส 1 ครบทุก endpoint (milestone 1–8 ผ่านการตรวจรับ, milestone 9 กำลังตรวจรับ) — สมัครด้วยอีเมล+รหัสผ่านพร้อมยืนยันอีเมลด้วย OTP, login/logout ด้วย session ฝั่ง server, ลืมรหัสผ่านด้วย OTP, Google sign-in/เชื่อมบัญชี (เปิดเมื่อตั้งค่า `GOOGLE_*`), หลายพอร์ตต่อผู้ใช้ (ETag/If-Match), บันทึก/แก้/ลบรายการซื้อขาย (`Idempotency-Key`, ตรวจประวัติไม่ให้จำนวนหุ้นติดลบ), holdings และมูลค่าพอร์ตด้วยราคาล่าช้า (ตัวอย่างหรือ Alpaca SIP จริง) และ retention cleanup — ใช้งานผ่าน API/Swagger UI ได้เลย frontend (Next.js) เริ่มหลังตรวจรับ backend (milestone 10)
+> **สถานะ:** backend เฟส 1 ครบทุก endpoint (milestone 1–9 ผ่านการตรวจรับ) — สมัครด้วยอีเมล+รหัสผ่านพร้อมยืนยันอีเมลด้วย OTP, login/logout ด้วย session ฝั่ง server, ลืมรหัสผ่านด้วย OTP, Google sign-in/เชื่อมบัญชี (เปิดเมื่อตั้งค่า `GOOGLE_*`), หลายพอร์ตต่อผู้ใช้ (ETag/If-Match), บันทึก/แก้/ลบรายการซื้อขาย (`Idempotency-Key`, ตรวจประวัติไม่ให้จำนวนหุ้นติดลบ), holdings และมูลค่าพอร์ตด้วยราคาล่าช้า (ตัวอย่างหรือ Alpaca SIP จริง) และ retention cleanup — ใช้งานผ่าน API/Swagger UI ได้เลย ขั้นต่อไปคือ frontend (Next.js) ใน milestone 10
 
 ## เริ่มใช้งาน (dev พร้อม hot reload)
 
