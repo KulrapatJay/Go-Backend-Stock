@@ -31,8 +31,8 @@ func (b *browser) signInWithGoogle(f *fakeIdentityProvider) (response, []byte) {
 
 func requireGoogleRedirect(t *testing.T, resp response, body []byte, outcome domain.OIDCOutcome) {
 	t.Helper()
-	if resp.StatusCode != nethttp.StatusSeeOther || resp.Header.Get("Location") != "/docs/?google="+string(outcome) {
-		t.Fatalf("callback = %d Location %q (%s), want 303 to /docs/?google=%s", resp.StatusCode, resp.Header.Get("Location"), body, outcome)
+	if resp.StatusCode != nethttp.StatusSeeOther || resp.Header.Get("Location") != "/login?google="+string(outcome) {
+		t.Fatalf("callback = %d Location %q (%s), want 303 to /login?google=%s", resp.StatusCode, resp.Header.Get("Location"), body, outcome)
 	}
 	if resp.Header.Get("Cache-Control") != "no-store" {
 		t.Errorf("Cache-Control = %q, want no-store", resp.Header.Get("Cache-Control"))
@@ -363,7 +363,7 @@ func TestGoogleSignInFromTwoTabsMakesOneAccount(t *testing.T) {
 		if errs[i] != nil {
 			t.Fatalf("tab %d: %v", i, errs[i])
 		}
-		if results[i].StatusCode != nethttp.StatusSeeOther || results[i].Header.Get("Location") != "/docs/?google=success" {
+		if results[i].StatusCode != nethttp.StatusSeeOther || results[i].Header.Get("Location") != "/login?google=success" {
 			t.Errorf("tab %d = %d %q, want both tabs signed in", i, results[i].StatusCode, results[i].Header.Get("Location"))
 		}
 	}

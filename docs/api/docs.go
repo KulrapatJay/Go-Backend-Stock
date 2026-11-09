@@ -230,7 +230,7 @@ const docTemplate = `{
         },
         "/api/v1/auth/google/callback": {
             "get": {
-                "description": "Google sends the browser here after GET authorization_url. It is not called directly: it needs the state from that URL and the oidc_binding cookie of the browser that started the flow, and it takes no X-CSRF-Token (the state, the binding and the ID token's nonce protect it). It always clears oidc_binding and answers 303 to /docs/?google=success (signed in: the session cookie is set), linked (Google added to the signed-in account), link_required (the email belongs to an account: sign in to it and use POST /api/v1/auth/google/link) or failed (cancelled, expired, replayed, another browser, or refused). Infrastructure failures answer JSON instead.",
+                "description": "Google sends the browser here after GET authorization_url. It is not called directly: it needs the state from that URL and the oidc_binding cookie of the browser that started the flow, and it takes no X-CSRF-Token (the state, the binding and the ID token's nonce protect it). It always clears oidc_binding and answers 303 to /login?google=success (signed in: the session cookie is set), linked (Google added to the signed-in account), link_required (the email belongs to an account: sign in to it and use POST /api/v1/auth/google/link) or failed (cancelled, expired, replayed, another browser, or refused). Infrastructure failures answer JSON instead.",
                 "produces": [
                     "application/json"
                 ],
@@ -261,11 +261,11 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "303": {
-                        "description": "Redirect to /docs/?google=success|linked|link_required|failed",
+                        "description": "Redirect to /login?google=success|linked|link_required|failed",
                         "headers": {
                             "Location": {
                                 "type": "string",
-                                "description": "/docs/?google=success"
+                                "description": "/login?google=success"
                             },
                             "Set-Cookie": {
                                 "type": "string",
@@ -290,7 +290,7 @@ const docTemplate = `{
         },
         "/api/v1/auth/google/link": {
             "post": {
-                "description": "Like POST /api/v1/auth/google/start, but the flow belongs to the signed-in user: after Google, the callback adds the Google account to this account (/docs/?google=linked) without opening a new session. The callback must come with the same session. Needs the session cookie and an X-CSRF-Token bound to it.",
+                "description": "Like POST /api/v1/auth/google/start, but the flow belongs to the signed-in user: after Google, the callback adds the Google account to this account (/login?google=linked) without opening a new session. The callback must come with the same session. Needs the session cookie and an X-CSRF-Token bound to it.",
                 "produces": [
                     "application/json"
                 ],
@@ -362,7 +362,7 @@ const docTemplate = `{
         },
         "/api/v1/auth/google/start": {
             "post": {
-                "description": "Returns the Google URL to open in the same browser, and sets the HttpOnly cookie oidc_binding (__Host-oidc_binding over HTTPS) that must come back with the callback; the flow lasts 10 minutes. Google sends the browser to GET /api/v1/auth/google/callback, which ends at /docs/?google=success|link_required|failed. A Google account whose email already belongs to an account is not linked automatically: sign in to that account and use POST /api/v1/auth/google/link. Needs X-CSRF-Token and the csrf_nonce cookie. Swagger UI and curl cannot complete the Google page; open authorization_url in the browser.",
+                "description": "Returns the Google URL to open in the same browser, and sets the HttpOnly cookie oidc_binding (__Host-oidc_binding over HTTPS) that must come back with the callback; the flow lasts 10 minutes. Google sends the browser to GET /api/v1/auth/google/callback, which ends at /login?google=success|link_required|failed. A Google account whose email already belongs to an account is not linked automatically: sign in to that account and use POST /api/v1/auth/google/link. Needs X-CSRF-Token and the csrf_nonce cookie. Swagger UI and curl cannot complete the Google page; open authorization_url in the browser.",
                 "produces": [
                     "application/json"
                 ],

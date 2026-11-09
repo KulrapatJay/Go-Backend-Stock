@@ -2,7 +2,7 @@ package domain
 
 import "time"
 
-// OIDCOutcome is where the Google callback sends the browser: /docs/?google=<outcome>.
+// OIDCOutcome is where the Google callback sends the browser: /login?google=<outcome>.
 type OIDCOutcome string
 
 const (

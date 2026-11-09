@@ -55,7 +55,7 @@ func TestDocsServesSpecAndUI(t *testing.T) {
 	for _, tt := range []struct{ path, assetPrefix string }{
 		{"/docs/", ""},
 		{"/docs", "docs/"},
-		{"/docs/?google=success", ""},
+		{"/docs/?tag=auth", ""},
 	} {
 		resp, body = doRequest(t, app, httptest.NewRequestWithContext(t.Context(), nethttp.MethodGet, tt.path, nil))
 		if resp.StatusCode != nethttp.StatusOK || resp.Header.Get("Location") != "" {
