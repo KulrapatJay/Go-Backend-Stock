@@ -171,10 +171,15 @@
     failed_attempts smallint [not null, default: 0, note: 'Configured limit defaults to 5; config must be 1..20 (DB ceiling).']
     consumed_at timestamptz [null]
     invalidated_at timestamptz [null]
+    verified_at timestamptz [null, note: 'Two-step password reset (ADR-0022): the code was verified and spent.']
+    reset_token_hash bytea [null, note: 'SHA-256 of the 32 random bytes of the one-time reset token.']
+    reset_binding_hash bytea [null, note: 'SHA-256 of the CSRF binding of the browser that verified the code.']
+    reset_token_expires_at timestamptz [null, note: '10 minutes after verified_at.']
 
     indexes {
       (user_id, purpose, created_at)
       expires_at
+      reset_token_hash [unique, name: 'otp_challenges_reset_token_hash_key', note: 'Partial: WHERE reset_token_hash IS NOT NULL (migration 00007, CONCURRENTLY).']
     }
 
     checks {
@@ -182,6 +187,11 @@
       `expires_at > created_at` [name: 'otp_challenges_expiry_valid']
       `failed_attempts BETWEEN 0 AND 20` [name: 'otp_challenges_attempts_valid']
       `octet_length(otp_hash) = 32` [name: 'otp_challenges_hash_length']
+      `the four reset grant columns are all NULL or all NOT NULL` [name: 'otp_challenges_reset_grant_complete']
+      `verified_at IS NULL OR purpose = 'password_reset'` [name: 'otp_challenges_reset_grant_purpose']
+      `reset_token_expires_at > verified_at` [name: 'otp_challenges_reset_grant_expiry']
+      `octet_length(reset_token_hash) = 32` [name: 'otp_challenges_reset_token_hash_length']
+      `octet_length(reset_binding_hash) = 32` [name: 'otp_challenges_reset_binding_hash_length']
     }
 
     Note: '''
@@ -191,6 +201,8 @@
       Every query filters by purpose. Invalidate the previous open
       challenge of the same purpose before inserting a new one.
       email_verification rows exist only for unverified local accounts.
+      A password_reset row with a grant stays open until confirm spends the
+      token, so a new code request invalidates the token with the row.
     '''
   }
 

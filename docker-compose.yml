@@ -69,10 +69,12 @@ services:
       ALPACA_SECRET: ${ALPACA_SECRET:-}
       ALPACA_TRADING_BASE_URL: ${ALPACA_TRADING_BASE_URL:-}
       ALPACA_DATA_BASE_URL: ${ALPACA_DATA_BASE_URL:-}
-      SMTP_HOST: mailpit
-      SMTP_PORT: "1025"
-      SMTP_FROM: no-reply@localhost
-      SMTP_TLS: none
+      SMTP_HOST: ${SMTP_HOST:-mailpit}
+      SMTP_PORT: ${SMTP_PORT:-1025}
+      SMTP_FROM: ${SMTP_FROM:-no-reply@localhost}
+      SMTP_TLS: ${SMTP_TLS:-none}
+      SMTP_USERNAME: ${SMTP_USERNAME:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
     ports:
       - "127.0.0.1:${API_HOST_PORT:-8080}:8080"
     depends_on:

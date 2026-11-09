@@ -14,6 +14,7 @@ import (
 const consumeOTPChallenge = `-- name: ConsumeOTPChallenge :execrows
 UPDATE app.otp_challenges SET consumed_at = $1
 WHERE id = $2 AND purpose = $3 AND consumed_at IS NULL AND invalidated_at IS NULL AND expires_at > $1
+  AND verified_at IS NULL
 `
 
 type ConsumeOTPChallengeParams struct {
@@ -22,7 +23,8 @@ type ConsumeOTPChallengeParams struct {
 	Purpose string
 }
 
-// A challenge can be consumed once, and only while it is open and unexpired.
+// A challenge can be consumed once, and only while it is open and unexpired. A password reset
+// challenge whose code was already verified can only be consumed with its reset token.
 func (q *Queries) ConsumeOTPChallenge(ctx context.Context, arg ConsumeOTPChallengeParams) (int64, error) {
 	result, err := q.db.Exec(ctx, consumeOTPChallenge, arg.At, arg.ID, arg.Purpose)
 	if err != nil {
@@ -31,9 +33,31 @@ func (q *Queries) ConsumeOTPChallenge(ctx context.Context, arg ConsumeOTPChallen
 	return result.RowsAffected(), nil
 }
 
+const consumePasswordResetGrant = `-- name: ConsumePasswordResetGrant :execrows
+UPDATE app.otp_challenges SET consumed_at = $1
+WHERE id = $2 AND purpose = 'password_reset' AND consumed_at IS NULL AND invalidated_at IS NULL
+  AND verified_at IS NOT NULL AND reset_token_expires_at > $1
+`
+
+type ConsumePasswordResetGrantParams struct {
+	At pgtype.Timestamptz
+	ID pgtype.UUID
+}
+
+// Spends the reset token: once, only while the challenge is open and the token unexpired. The
+// code's own expiry no longer matters, the token has its own.
+func (q *Queries) ConsumePasswordResetGrant(ctx context.Context, arg ConsumePasswordResetGrantParams) (int64, error) {
+	result, err := q.db.Exec(ctx, consumePasswordResetGrant, arg.At, arg.ID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const getOTPChallenge = `-- name: GetOTPChallenge :one
 
-SELECT id, user_id, purpose, otp_hash, created_at, expires_at, failed_attempts, consumed_at, invalidated_at
+SELECT id, user_id, purpose, otp_hash, created_at, expires_at, failed_attempts, consumed_at, invalidated_at,
+       verified_at, reset_token_hash, reset_binding_hash, reset_token_expires_at
 FROM app.otp_challenges WHERE id = $1 AND purpose = $2
 `
 
@@ -56,8 +80,71 @@ func (q *Queries) GetOTPChallenge(ctx context.Context, arg GetOTPChallengeParams
 		&i.FailedAttempts,
 		&i.ConsumedAt,
 		&i.InvalidatedAt,
+		&i.VerifiedAt,
+		&i.ResetTokenHash,
+		&i.ResetBindingHash,
+		&i.ResetTokenExpiresAt,
 	)
 	return i, err
+}
+
+const getOTPChallengeByResetToken = `-- name: GetOTPChallengeByResetToken :one
+SELECT id, user_id, purpose, otp_hash, created_at, expires_at, failed_attempts, consumed_at, invalidated_at,
+       verified_at, reset_token_hash, reset_binding_hash, reset_token_expires_at
+FROM app.otp_challenges WHERE reset_token_hash = $1 AND purpose = 'password_reset'
+`
+
+func (q *Queries) GetOTPChallengeByResetToken(ctx context.Context, resetTokenHash []byte) (AppOtpChallenge, error) {
+	row := q.db.QueryRow(ctx, getOTPChallengeByResetToken, resetTokenHash)
+	var i AppOtpChallenge
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.Purpose,
+		&i.OtpHash,
+		&i.CreatedAt,
+		&i.ExpiresAt,
+		&i.FailedAttempts,
+		&i.ConsumedAt,
+		&i.InvalidatedAt,
+		&i.VerifiedAt,
+		&i.ResetTokenHash,
+		&i.ResetBindingHash,
+		&i.ResetTokenExpiresAt,
+	)
+	return i, err
+}
+
+const grantPasswordReset = `-- name: GrantPasswordReset :execrows
+UPDATE app.otp_challenges
+SET verified_at = $1, reset_token_hash = $2,
+    reset_binding_hash = $3, reset_token_expires_at = $4
+WHERE id = $5 AND purpose = 'password_reset' AND consumed_at IS NULL AND invalidated_at IS NULL
+  AND verified_at IS NULL AND expires_at > $1
+`
+
+type GrantPasswordResetParams struct {
+	VerifiedAt          pgtype.Timestamptz
+	ResetTokenHash      []byte
+	ResetBindingHash    []byte
+	ResetTokenExpiresAt pgtype.Timestamptz
+	ID                  pgtype.UUID
+}
+
+// Stores the reset token of a password reset challenge whose code was just verified. Once only,
+// and only while the challenge is open and its code unexpired.
+func (q *Queries) GrantPasswordReset(ctx context.Context, arg GrantPasswordResetParams) (int64, error) {
+	result, err := q.db.Exec(ctx, grantPasswordReset,
+		arg.VerifiedAt,
+		arg.ResetTokenHash,
+		arg.ResetBindingHash,
+		arg.ResetTokenExpiresAt,
+		arg.ID,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const insertOTPChallenge = `-- name: InsertOTPChallenge :exec
@@ -104,7 +191,8 @@ func (q *Queries) InvalidateOpenOTPChallenges(ctx context.Context, arg Invalidat
 }
 
 const lockOTPChallenge = `-- name: LockOTPChallenge :one
-SELECT id, user_id, purpose, otp_hash, created_at, expires_at, failed_attempts, consumed_at, invalidated_at
+SELECT id, user_id, purpose, otp_hash, created_at, expires_at, failed_attempts, consumed_at, invalidated_at,
+       verified_at, reset_token_hash, reset_binding_hash, reset_token_expires_at
 FROM app.otp_challenges WHERE id = $1 AND purpose = $2
 FOR UPDATE
 `
@@ -127,6 +215,10 @@ func (q *Queries) LockOTPChallenge(ctx context.Context, arg LockOTPChallengePara
 		&i.FailedAttempts,
 		&i.ConsumedAt,
 		&i.InvalidatedAt,
+		&i.VerifiedAt,
+		&i.ResetTokenHash,
+		&i.ResetBindingHash,
+		&i.ResetTokenExpiresAt,
 	)
 	return i, err
 }

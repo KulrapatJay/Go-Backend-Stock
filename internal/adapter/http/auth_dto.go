@@ -43,11 +43,25 @@ type ConfirmEmailRequest struct {
 	OTP         string `json:"otp" example:"042731" validate:"required"`
 }
 
-// ResetPasswordRequest is the body of POST /api/v1/auth/password-reset/confirm.
+// ResetPasswordRequest is the body of POST /api/v1/auth/password-reset/confirm. Send either
+// reset_token (from POST /api/v1/auth/password-reset/verify) or challenge_id with otp, never both.
 type ResetPasswordRequest struct {
+	ResetToken  string `json:"reset_token,omitempty" example:"Jt1bV8m0yQ2cX9rKp4sL7wE3nA6dF5gH0iJ2kM8oP1q"`
+	ChallengeID string `json:"challenge_id,omitempty" example:"0192f0c1-7a8e-7cc4-9d2b-3f6c1a2b4c5d"`
+	OTP         string `json:"otp,omitempty" example:"042731"`
+	NewPassword string `json:"new_password" example:"Zq9!kVx1" validate:"required"`
+}
+
+// VerifyResetRequest is the body of POST /api/v1/auth/password-reset/verify.
+type VerifyResetRequest struct {
 	ChallengeID string `json:"challenge_id" example:"0192f0c1-7a8e-7cc4-9d2b-3f6c1a2b4c5d" validate:"required"`
 	OTP         string `json:"otp" example:"042731" validate:"required"`
-	NewPassword string `json:"new_password" example:"Zq9!kVx1" validate:"required"`
+}
+
+// ResetTokenResponse answers a right reset code: the one-time token for the confirm step.
+type ResetTokenResponse struct {
+	ResetToken string `json:"reset_token" example:"Jt1bV8m0yQ2cX9rKp4sL7wE3nA6dF5gH0iJ2kM8oP1q" validate:"required"`
+	ExpiresIn  int    `json:"expires_in" example:"600" validate:"required"`
 }
 
 // LoginRequest is the body of POST /api/v1/auth/login.

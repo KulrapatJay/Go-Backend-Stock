@@ -315,3 +315,265 @@ func newTestOTPCodec(t *testing.T) *OTPCodec {
 	}
 	return codec
 }
+
+// The two-step reset (ADR-0022).
+
+// grantChallenges adds the token lookups and writes of the two-step reset to resetChallenges.
+type grantChallenges struct {
+	resetChallenges
+	byToken      func() (domain.OTPChallenge, error)
+	granted      []domain.ResetGrant
+	grantsSpent  int
+	tokenLookups int
+}
+
+func (c *grantChallenges) GrantReset(_ context.Context, _ domain.ID, g domain.ResetGrant) error {
+	c.granted = append(c.granted, g)
+	return nil
+}
+
+func (c *grantChallenges) ByResetTokenHash(context.Context, []byte) (domain.OTPChallenge, error) {
+	c.tokenLookups++
+	return c.byToken()
+}
+
+func (c *grantChallenges) ConsumeResetGrant(context.Context, domain.ID, time.Time) error {
+	c.grantsSpent++
+	return nil
+}
+
+// grantTx and grantRepos are resetTx and resetRepos with the wider challenge fake.
+type grantTx struct {
+	resetTx
+	challenges *grantChallenges
+}
+
+func (t grantTx) OTPChallenges() port.OTPChallengeRepository { return t.challenges }
+
+type grantUoW struct {
+	tx      grantTx
+	commits int
+	enter   func()
+	leave   func()
+}
+
+func (u *grantUoW) WithinTransaction(_ context.Context, fn func(port.TxRepositories) error) error {
+	if u.enter != nil {
+		u.enter()
+	}
+	if u.leave != nil {
+		defer u.leave()
+	}
+	if err := fn(u.tx); err != nil {
+		return err
+	}
+	u.commits++
+	return nil
+}
+
+type grantRepos struct {
+	*fakeRepositories
+	challenges *grantChallenges
+	users      *resetUsers
+}
+
+func (r grantRepos) OTPChallenges() port.OTPChallengeRepository { return r.challenges }
+func (r grantRepos) Users() port.UserRepository                 { return r.users }
+
+type grantFixture struct {
+	auth       *Auth
+	uow        *grantUoW
+	challenges *grantChallenges
+	users      *resetUsers
+	mailer     *recordingMailer
+	clock      *fakeClock
+}
+
+func newTwoStepFixture(t *testing.T, challenges *grantChallenges, mutate func(*AuthDeps)) *grantFixture {
+	t.Helper()
+	users := &resetUsers{user: domain.User{ID: mustID(t), Email: mustEmail(t, "owner@example.com")}}
+	f := &grantFixture{challenges: challenges, users: users, mailer: &recordingMailer{}}
+	f.uow = &grantUoW{tx: grantTx{resetTx: resetTx{audit: &fakeAudit{}, users: users}, challenges: challenges}}
+	ta := newTestAuth(t, func(d *AuthDeps) {
+		d.Store = grantRepos{fakeRepositories: d.Store.(*fakeRepositories), challenges: challenges, users: users}
+		d.UnitOfWork = f.uow
+		d.Mailer = f.mailer
+		f.clock = d.Clock.(*fakeClock)
+		if mutate != nil {
+			mutate(d)
+		}
+	})
+	f.auth = ta.auth
+	return f
+}
+
+func recordingPacer(slept *[]time.Duration) func(*AuthDeps) {
+	return func(d *AuthDeps) {
+		d.Pacer = &Pacer{
+			clock: d.Clock, floor: 300 * time.Millisecond,
+			sleep:        func(_ context.Context, d time.Duration) { *slept = append(*slept, d) },
+			randomJitter: func(time.Duration) time.Duration { return 0 },
+		}
+	}
+}
+
+func verifyInput(t *testing.T, challengeID domain.ID, otp string) domain.VerifyResetInput {
+	t.Helper()
+	return domain.VerifyResetInput{ChallengeID: challengeID, OTP: mustOTP(t, otp), BrowserBinding: domain.NewSecretText("pre:browser")}
+}
+
+func tokenInput(t *testing.T, token string) domain.ResetWithTokenInput {
+	t.Helper()
+	return domain.ResetWithTokenInput{
+		Token: domain.NewSecretText(token), BrowserBinding: domain.NewSecretText("pre:browser"), NewPassword: mustPassword(t, "Nw7#pLq2"),
+	}
+}
+
+func TestResetVerifyWaitsForTheResponseFloorOnEveryPath(t *testing.T) {
+	missing := func() (domain.OTPChallenge, error) { return domain.OTPChallenge{}, domain.ErrNotFound }
+	open := func() (domain.OTPChallenge, error) {
+		return domain.OTPChallenge{ID: mustID(t), UserID: mustID(t), ExpiresAt: time.Now().Add(time.Hour)}, nil
+	}
+	cases := map[string]*grantChallenges{
+		"unknown challenge (decoy)": {resetChallenges: resetChallenges{confirmChallenges: confirmChallenges{byID: missing}}},
+		"real challenge":            {resetChallenges: resetChallenges{confirmChallenges: confirmChallenges{byID: open, lock: open}}},
+	}
+	for name, challenges := range cases {
+		t.Run(name, func(t *testing.T) {
+			var slept []time.Duration
+			f := newTwoStepFixture(t, challenges, recordingPacer(&slept))
+			if _, err := f.auth.PasswordReset().Verify(t.Context(), verifyInput(t, mustID(t), "123456"), testMeta(t)); !errors.Is(err, domain.ErrInvalidReset) {
+				t.Fatalf("Verify() error = %v, want ErrInvalidReset", err)
+			}
+			if len(slept) != 1 || slept[0] != 300*time.Millisecond {
+				t.Errorf("pacer slept %v, want one wait of the 300ms floor", slept)
+			}
+			if len(challenges.granted) != 0 {
+				t.Error("a refused code must not be granted")
+			}
+		})
+	}
+}
+
+func TestResetVerifyGrantsATokenTiedToTheBinding(t *testing.T) {
+	userID, challengeID := mustID(t), mustID(t)
+	var f *grantFixture
+	challenge := func() (domain.OTPChallenge, error) {
+		return domain.OTPChallenge{
+			ID: challengeID, UserID: userID, Purpose: domain.OTPPurposePasswordReset,
+			OTPHash:   newTestOTPCodec(t).Digest(domain.OTPPurposePasswordReset, challengeID, userID, mustOTP(t, "123456")),
+			ExpiresAt: f.clock.Now().Add(10 * time.Minute),
+		}, nil
+	}
+	challenges := &grantChallenges{resetChallenges: resetChallenges{confirmChallenges: confirmChallenges{byID: challenge, lock: challenge}}}
+	f = newTwoStepFixture(t, challenges, nil)
+
+	receipt, err := f.auth.PasswordReset().Verify(t.Context(), verifyInput(t, challengeID, "123456"), testMeta(t))
+	if err != nil {
+		t.Fatalf("Verify() error = %v", err)
+	}
+	if receipt.ExpiresIn != 10*time.Minute {
+		t.Errorf("ExpiresIn = %v, want 10m", receipt.ExpiresIn)
+	}
+	hash, ok := HashResetToken(receipt.Token.Reveal())
+	if !ok || len(challenges.granted) != 1 {
+		t.Fatalf("granted %d, token valid %v", len(challenges.granted), ok)
+	}
+	g := challenges.granted[0]
+	if !bytes.Equal(g.TokenHash, hash) || !bytes.Equal(g.BindingHash, HashResetBinding("pre:browser")) {
+		t.Error("the grant must store the hashes of the returned token and of the binding")
+	}
+	if !g.ExpiresAt.Equal(g.VerifiedAt.Add(10 * time.Minute)) {
+		t.Errorf("grant lasts %v, want 10m from verify", g.ExpiresAt.Sub(g.VerifiedAt))
+	}
+	if challenges.consumed != 0 || f.users.newHash != "" {
+		t.Error("verify must neither consume the challenge nor change the password")
+	}
+	events := f.uow.tx.audit.events
+	if len(events) != 1 || events[0].EventType != domain.EventAuthPasswordResetVerified || events[0].ActorUserID != userID {
+		t.Errorf("audit = %+v, want one auth.password_reset_verified by the owner", events)
+	}
+}
+
+func TestResetWithTokenWaitsForTheResponseFloorOnEveryPath(t *testing.T) {
+	token, tokenHash, err := NewResetToken()
+	if err != nil {
+		t.Fatal(err)
+	}
+	missing := func() (domain.OTPChallenge, error) { return domain.OTPChallenge{}, domain.ErrNotFound }
+	var clock *fakeClock
+	expired := func() (domain.OTPChallenge, error) {
+		at := clock.Now().Add(-time.Hour)
+		return domain.OTPChallenge{ID: mustID(t), UserID: mustID(t), Grant: &domain.ResetGrant{
+			TokenHash: tokenHash, BindingHash: HashResetBinding("pre:browser"), VerifiedAt: at, ExpiresAt: at.Add(10 * time.Minute),
+		}}, nil
+	}
+	cases := map[string]struct {
+		token      string
+		challenges *grantChallenges
+	}{
+		"malformed token": {"not-a-token", &grantChallenges{byToken: missing}},
+		"unknown token":   {token, &grantChallenges{byToken: missing}},
+		"expired token":   {token, &grantChallenges{byToken: expired, resetChallenges: resetChallenges{confirmChallenges: confirmChallenges{lock: expired}}}},
+	}
+	for name, c := range cases {
+		t.Run(name, func(t *testing.T) {
+			var slept []time.Duration
+			f := newTwoStepFixture(t, c.challenges, recordingPacer(&slept))
+			clock = f.clock
+			if err := f.auth.PasswordReset().ResetWithToken(t.Context(), tokenInput(t, c.token), testMeta(t)); !errors.Is(err, domain.ErrInvalidReset) {
+				t.Fatalf("ResetWithToken() error = %v, want ErrInvalidReset", err)
+			}
+			if len(slept) != 1 || slept[0] != 300*time.Millisecond {
+				t.Errorf("pacer slept %v, want one wait of the 300ms floor", slept)
+			}
+			if events := f.uow.tx.audit.events; len(events) != 1 || events[0].EventType != domain.EventAuthPasswordResetFailed {
+				t.Errorf("audit = %+v, want one auth.password_reset_failed", events)
+			}
+			if c.challenges.grantsSpent != 0 || f.users.newHash != "" {
+				t.Error("a refused token must change nothing")
+			}
+		})
+	}
+}
+
+// As with the code: hash before the locks, and hash even for an unknown token, so a busy hasher
+// answers the same whether or not the token exists.
+func TestResetWithTokenHashesBeforeTheTransactionAndForUnknownTokens(t *testing.T) {
+	token, tokenHash, err := NewResetToken()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var f *grantFixture
+	granted := func() (domain.OTPChallenge, error) {
+		at := f.clock.Now()
+		return domain.OTPChallenge{ID: mustID(t), UserID: f.users.user.ID, Grant: &domain.ResetGrant{
+			TokenHash: tokenHash, BindingHash: HashResetBinding("pre:browser"), VerifiedAt: at, ExpiresAt: at.Add(10 * time.Minute),
+		}}, nil
+	}
+	hasher, _ := newHasher(t, testArgon2Params, 1, 20*time.Millisecond)
+	challenges := &grantChallenges{byToken: granted, resetChallenges: resetChallenges{confirmChallenges: confirmChallenges{lock: granted}}}
+	f = newTwoStepFixture(t, challenges, func(d *AuthDeps) { d.Hasher = hasher })
+	f.uow.enter = func() { hasher.slots <- struct{}{} }
+	f.uow.leave = func() { <-hasher.slots }
+
+	if err := f.auth.PasswordReset().ResetWithToken(t.Context(), tokenInput(t, token), testMeta(t)); err != nil {
+		t.Fatalf("ResetWithToken() error = %v, want success: the hash must be made before the transaction", err)
+	}
+	if challenges.grantsSpent != 1 || challenges.consumed != 0 || f.users.newHash == "" || f.users.verifieds != 1 {
+		t.Errorf("grantsSpent=%d consumed=%d hash=%q verifieds=%d", challenges.grantsSpent, challenges.consumed, f.users.newHash, f.users.verifieds)
+	}
+	if len(f.mailer.changed) != 1 {
+		t.Errorf("%d password-changed notices, want 1", len(f.mailer.changed))
+	}
+
+	f.uow.enter, f.uow.leave = nil, nil
+	challenges.byToken = func() (domain.OTPChallenge, error) { return domain.OTPChallenge{}, domain.ErrNotFound }
+	hasher.slots <- struct{}{} // another request is hashing
+	lookups := challenges.tokenLookups
+	err = f.auth.PasswordReset().ResetWithToken(t.Context(), tokenInput(t, token), testMeta(t))
+	if !errors.Is(err, domain.NewError(domain.CodeServerBusy, "")) || challenges.tokenLookups != lookups {
+		t.Fatalf("ResetWithToken() error = %v, lookups %d → %d; want server_busy before any lookup", err, lookups, challenges.tokenLookups)
+	}
+	<-hasher.slots
+}

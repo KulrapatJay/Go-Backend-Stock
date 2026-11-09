@@ -118,9 +118,14 @@ RESET_CHALLENGE=$(sed -nE 's/.*"challenge_id":"([^"]+)".*/\1/p' "$JAR.reset")
 sleep 2
 RESET_OTP=$(curl -s http://localhost:8025/api/v1/message/latest | grep -oE 'ใหม่ของคุณคือ [0-9]{6}' | grep -oE '[0-9]{6}')
 
-# 10 ตั้งรหัสผ่านใหม่ ได้ 204; ยืนยันอีเมลให้ด้วยและ session เดิมทุกเครื่องถูกออกจากระบบ
+# 10a ตรวจรหัสก่อน ได้ 200 พร้อม reset_token ที่ใช้ได้ครั้งเดียวใน 10 นาทีจาก cookie jar เดิมเท่านั้น (ADR-0022)
+post /auth/password-reset/verify "{\"challenge_id\":\"$RESET_CHALLENGE\",\"otp\":\"$RESET_OTP\"}" | tee /dev/stderr > "$JAR.grant"
+RESET_TOKEN=$(sed -nE 's/.*"reset_token":"([^"]+)".*/\1/p' "$JAR.grant")
+
+# 10b ตั้งรหัสผ่านใหม่ด้วย token ได้ 204; ยืนยันอีเมลให้ด้วยและ session เดิมทุกเครื่องถูกออกจากระบบ
+#     (แบบขั้นเดียว {"challenge_id","otp","new_password"} ยังใช้ได้ แทนข้อ 10a–10b)
 NEW_PASSWORD='Hn4#pLw8'
-post /auth/password-reset/confirm "{\"challenge_id\":\"$RESET_CHALLENGE\",\"otp\":\"$RESET_OTP\",\"new_password\":\"$NEW_PASSWORD\"}"
+post /auth/password-reset/confirm "{\"reset_token\":\"$RESET_TOKEN\",\"new_password\":\"$NEW_PASSWORD\"}"
 
 # 11 login ด้วยรหัสเก่าได้ 401 แล้ว login ด้วยรหัสใหม่ได้ 200
 post /auth/login "{\"email\":\"$EMAIL\",\"password\":\"$PASSWORD\"}"
@@ -323,7 +328,7 @@ erDiagram
 | --- | --- |
 | Health | `GET /healthz`, `GET /readyz` |
 | Auth | `GET /auth/config`, `GET /auth/csrf`, `POST /auth/register`, `POST /auth/email-verification/request`, `POST /auth/email-verification/confirm`, `POST /auth/login`, `GET /auth/me`, `POST /auth/logout`, `POST /auth/google/start`, `GET /auth/google/callback`, `POST /auth/google/link` |
-| Password Reset | `POST /auth/password-reset/request`, `POST /auth/password-reset/confirm` |
+| Password Reset | `POST /auth/password-reset/request`, `POST /auth/password-reset/verify`, `POST /auth/password-reset/confirm` |
 | Portfolios | `GET/POST /portfolios`, `GET/PUT/DELETE /portfolios/{portfolio_id}` |
 | Transactions | `GET/POST /portfolios/{portfolio_id}/transactions`, `GET/PUT/DELETE /portfolios/{portfolio_id}/transactions/{transaction_id}` |
 | Holdings/Prices | `GET /portfolios/{portfolio_id}/holdings`, `GET /portfolios/{portfolio_id}/valuation` |

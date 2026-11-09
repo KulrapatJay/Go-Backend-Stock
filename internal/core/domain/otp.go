@@ -37,6 +37,34 @@ type OTPChallenge struct {
 	FailedAttempts int
 	ConsumedAt     *time.Time
 	InvalidatedAt  *time.Time
+	// Grant is set once the code of a password reset challenge was verified by the two-step flow
+	// (ADR-0022). The code is then spent: only the grant's token can finish the reset.
+	Grant *ResetGrant
+}
+
+// ResetGrant is the one-time reset token a verified password reset code turns into. Only hashes
+// are stored: of the token, and of the CSRF binding of the browser that verified the code, so a
+// token that leaks cannot be used from another browser.
+type ResetGrant struct {
+	TokenHash   []byte
+	BindingHash []byte
+	VerifiedAt  time.Time
+	ExpiresAt   time.Time
+}
+
+// NewResetGrant checks a grant the service is about to store.
+func NewResetGrant(g ResetGrant) (ResetGrant, error) {
+	err := firstError(
+		requireHash("reset_grant.token_hash", g.TokenHash),
+		requireHash("reset_grant.binding_hash", g.BindingHash),
+	)
+	if err == nil && (g.VerifiedAt.IsZero() || !g.ExpiresAt.After(g.VerifiedAt)) {
+		err = invariant("reset_grant.expires_at", "must be after verified_at")
+	}
+	if err != nil {
+		return ResetGrant{}, err
+	}
+	return g, nil
 }
 
 // NewOTPChallenge checks a challenge the service is about to store: fresh and open.
@@ -51,7 +79,7 @@ func NewOTPChallenge(c OTPChallenge) (OTPChallenge, error) {
 	case err != nil:
 	case !isOneOf(c.Purpose, OTPPurposeEmailVerification, OTPPurposePasswordReset):
 		err = invariant("otp_challenge.purpose", "must be email_verification or password_reset")
-	case c.FailedAttempts != 0 || c.ConsumedAt != nil || c.InvalidatedAt != nil:
+	case c.FailedAttempts != 0 || c.ConsumedAt != nil || c.InvalidatedAt != nil || c.Grant != nil:
 		err = invariant("otp_challenge", "must be open with no failed attempts when created")
 	}
 	if err != nil {

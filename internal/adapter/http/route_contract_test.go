@@ -166,6 +166,7 @@ func TestEveryOperationIsDescribed(t *testing.T) {
 var moneyFreeIntegers = []string{
 	"http.OTPAcceptedResponse.expires_in",
 	"http.PortfolioResponse.version",
+	"http.ResetTokenResponse.expires_in",
 	"http.TransactionResponse.version",
 }
 

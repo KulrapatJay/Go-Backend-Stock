@@ -68,15 +68,19 @@ type AppOauthFlow struct {
 }
 
 type AppOtpChallenge struct {
-	ID             pgtype.UUID
-	UserID         pgtype.UUID
-	Purpose        string
-	OtpHash        []byte
-	CreatedAt      pgtype.Timestamptz
-	ExpiresAt      pgtype.Timestamptz
-	FailedAttempts int16
-	ConsumedAt     pgtype.Timestamptz
-	InvalidatedAt  pgtype.Timestamptz
+	ID                  pgtype.UUID
+	UserID              pgtype.UUID
+	Purpose             string
+	OtpHash             []byte
+	CreatedAt           pgtype.Timestamptz
+	ExpiresAt           pgtype.Timestamptz
+	FailedAttempts      int16
+	ConsumedAt          pgtype.Timestamptz
+	InvalidatedAt       pgtype.Timestamptz
+	VerifiedAt          pgtype.Timestamptz
+	ResetTokenHash      []byte
+	ResetBindingHash    []byte
+	ResetTokenExpiresAt pgtype.Timestamptz
 }
 
 type AppPortfolio struct {

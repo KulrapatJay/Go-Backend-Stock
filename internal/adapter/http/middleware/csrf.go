@@ -32,7 +32,7 @@ func CSRF(verifier CSRFVerifier, publicOrigin, nonceCookie string) fiber.Handler
 		if !fromOrigin(c, publicOrigin) {
 			return domain.ErrCSRFFailed
 		}
-		binding, ok := csrfBinding(c, nonceCookie)
+		binding, ok := CSRFBinding(c, nonceCookie)
 		if !ok {
 			return domain.ErrCSRFFailed
 		}
@@ -61,7 +61,10 @@ func fromOrigin(c fiber.Ctx, want string) bool {
 	return origin == want
 }
 
-func csrfBinding(c fiber.Ctx, nonceCookie string) (string, bool) {
+// CSRFBinding returns what the CSRF token of this request is bound to: the session when signed in,
+// else the nonce in the nonceCookie cookie. ok is false when there is neither. Handlers that tie a
+// value to the browser (the password reset token, ADR-0022) use the same binding CSRF checked.
+func CSRFBinding(c fiber.Ctx, nonceCookie string) (string, bool) {
 	if p, ok := GetPrincipal(c); ok {
 		return service.SessionCSRFBinding(p.SessionID), true
 	}

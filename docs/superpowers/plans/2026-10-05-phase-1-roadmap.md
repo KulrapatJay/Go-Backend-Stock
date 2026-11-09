@@ -180,6 +180,8 @@
 
 **ผ่านเมื่อ:** reset จากอีเมลใน Mailpit ได้ครั้งเดียว, session เก่าถูก revoke, กรอกผิดแล้ว counters/audit ยังคงอยู่ และ Google-only/unknown email ไม่เปิดเผยสถานะผ่าน response
 
+- [x] เพิ่มหลังตรวจรับ milestone 9 ตามข้อเสนอของ frontend (2026-11-09): reset แบบสองขั้น `POST /auth/password-reset/verify` → confirm ด้วย `reset_token` โดย body เดิมยังใช้ได้ ([plan](2026-11-09-password-reset-verify.md), [ADR-0022](../../adr/0022-two-step-password-reset.md)) ลงมือครบ รอตรวจรับ
+
 ### 6. จัดการหลายพอร์ต + ownership + HTTP handlers
 
 **ไฟล์หลัก:** `internal/core/service/portfolio*.go`, `internal/adapter/http/portfolio*.go`
