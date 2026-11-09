@@ -49,18 +49,32 @@ func TestDocsServesSpecAndUI(t *testing.T) {
 		t.Errorf("swagger.yaml: status=%d type=%q body=%s", resp.StatusCode, resp.Header.Get("Content-Type"), body)
 	}
 
-	resp, _ = doRequest(t, app, httptest.NewRequestWithContext(t.Context(), nethttp.MethodGet, "/docs", nil))
-	if resp.StatusCode != nethttp.StatusMovedPermanently || resp.Header.Get("Location") != "docs/" {
-		t.Errorf("/docs: status=%d location=%q, want 301 to relative docs/", resp.StatusCode, resp.Header.Get("Location"))
-	}
-
-	resp, body = doRequest(t, app, httptest.NewRequestWithContext(t.Context(), nethttp.MethodGet, "/docs/", nil))
-	if resp.StatusCode != nethttp.StatusOK || !strings.Contains(string(body), "swagger-initializer.js") {
-		t.Errorf("/docs/: status=%d body=%s", resp.StatusCode, body)
-	}
-	csp := resp.Header.Get("Content-Security-Policy")
-	if !strings.Contains(csp, "script-src 'self'") || strings.Contains(csp, "http") {
-		t.Errorf("CSP = %q, want self-only scripts without remote origins", csp)
+	// Both forms serve the UI directly (no redirect): a proxy that strips or adds the trailing
+	// slash (Next.js trailingSlash) must not be able to bounce the browser between them.
+	// Asset URLs stay relative so a reverse-proxy path prefix keeps working.
+	for _, tt := range []struct{ path, assetPrefix string }{
+		{"/docs/", ""},
+		{"/docs", "docs/"},
+		{"/docs/?google=success", ""},
+	} {
+		resp, body = doRequest(t, app, httptest.NewRequestWithContext(t.Context(), nethttp.MethodGet, tt.path, nil))
+		if resp.StatusCode != nethttp.StatusOK || resp.Header.Get("Location") != "" {
+			t.Errorf("%s: status=%d location=%q, want 200 without redirect", tt.path, resp.StatusCode, resp.Header.Get("Location"))
+			continue
+		}
+		for _, asset := range []string{
+			`href="` + tt.assetPrefix + `swagger-ui.css"`,
+			`src="` + tt.assetPrefix + `swagger-ui-bundle.js"`,
+			`src="` + tt.assetPrefix + `swagger-initializer.js"`,
+		} {
+			if !strings.Contains(string(body), asset) {
+				t.Errorf("%s: body missing %s:\n%s", tt.path, asset, body)
+			}
+		}
+		csp := resp.Header.Get("Content-Security-Policy")
+		if !strings.Contains(csp, "script-src 'self'") || strings.Contains(csp, "http") {
+			t.Errorf("%s: CSP = %q, want self-only scripts without remote origins", tt.path, csp)
+		}
 	}
 
 	resp, _ = doRequest(t, app, httptest.NewRequestWithContext(t.Context(), nethttp.MethodGet, "/docs/swagger-ui-bundle.js", nil))
@@ -90,7 +104,7 @@ func TestDocsInitializerRespectsTryItOut(t *testing.T) {
 		if resp.StatusCode != nethttp.StatusOK {
 			t.Fatalf("status = %d", resp.StatusCode)
 		}
-		for _, want := range []string{tt.want, "validatorUrl: null", `url: "../swagger.json"`} {
+		for _, want := range []string{tt.want, "validatorUrl: null", `new URL("../swagger.json", document.currentScript.src)`} {
 			if !strings.Contains(string(body), want) {
 				t.Errorf("tryItOut=%v initializer missing %q:\n%s", tt.tryItOut, want, body)
 			}

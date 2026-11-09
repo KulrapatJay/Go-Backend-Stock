@@ -121,7 +121,7 @@ func newApp(log *slog.Logger) *fiber.App {
 		ReadTimeout:  readTimeout,
 		WriteTimeout: writeTimeout,
 		IdleTimeout:  idleTimeout,
-		// StrictRouting keeps /docs and /docs/ distinct so the docs redirect cannot loop.
+		// StrictRouting keeps /docs and /docs/ distinct: each serves its own index (asset URLs differ).
 		StrictRouting: true,
 		CaseSensitive: true,
 	})

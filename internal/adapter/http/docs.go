@@ -2,6 +2,7 @@ package http
 
 import (
 	"io/fs"
+	"strings"
 
 	"github.com/gofiber/fiber/v3"
 
@@ -34,14 +35,17 @@ func registerDocs(app *fiber.App, opts DocsOptions) {
 	}
 	getAndHead(app, "/swagger.json", sendBytes("application/json", opts.SpecJSON))
 	getAndHead(app, "/swagger.yaml", sendBytes("application/yaml", opts.SpecYAML))
-	getAndHead(app, "/docs", func(c fiber.Ctx) error {
-		// Relative so the redirect also works behind a reverse proxy path prefix.
-		c.Set(fiber.HeaderLocation, "docs/")
-		return c.SendStatus(fiber.StatusMovedPermanently)
-	})
-	getAndHead(app, "/docs/", func(c fiber.Ctx) error {
-		return sendAsset(c, "index.html", "text/html; charset=utf-8")
-	})
+	// /docs and /docs/ both serve the UI instead of redirecting one to the other: a proxy that
+	// normalizes the trailing slash (e.g. Next.js strips it) would otherwise loop forever.
+	// Asset URLs stay relative to keep working behind a reverse-proxy path prefix, so the
+	// slashless page resolves them through the "docs/" segment.
+	index, err := fs.ReadFile(assets.SwaggerUI, "swagger-ui/index.html")
+	if err != nil {
+		panic("swagger-ui/index.html missing from embedded assets: " + err.Error())
+	}
+	const htmlType = "text/html; charset=utf-8"
+	getAndHead(app, "/docs", sendDocsBytes(htmlType, prefixAssetURLs(index, "docs/")))
+	getAndHead(app, "/docs/", sendDocsBytes(htmlType, index))
 	getAndHead(app, "/docs/swagger-initializer.js", sendDocsBytes("text/javascript; charset=utf-8", swaggerInitializer(opts.TryItOutEnabled)))
 	getAndHead(app, "/docs/:file", func(c fiber.Ctx) error {
 		name := c.Params("file")
@@ -51,6 +55,12 @@ func registerDocs(app *fiber.App, opts DocsOptions) {
 		}
 		return sendAsset(c, name, contentType)
 	})
+}
+
+// prefixAssetURLs rewrites the relative href/src attributes of the embedded index.html.
+func prefixAssetURLs(index []byte, prefix string) []byte {
+	out := strings.ReplaceAll(string(index), `href="`, `href="`+prefix)
+	return []byte(strings.ReplaceAll(out, `src="`, `src="`+prefix))
 }
 
 func sendBytes(contentType string, body []byte) fiber.Handler {
@@ -88,9 +98,12 @@ func swaggerInitializer(tryItOut bool) []byte {
 	if tryItOut {
 		methods = `["get", "post", "put", "patch", "delete"]`
 	}
-	return []byte(`window.addEventListener("load", function () {
+	// The spec URL is resolved from this script's own URL (always .../docs/swagger-initializer.js),
+	// so it is correct whether the page was opened as /docs or /docs/, with or without a path prefix.
+	return []byte(`var specUrl = new URL("../swagger.json", document.currentScript.src).href;
+window.addEventListener("load", function () {
   window.ui = SwaggerUIBundle({
-    url: "../swagger.json",
+    url: specUrl,
     dom_id: "#swagger-ui",
     deepLinking: true,
     validatorUrl: null,
