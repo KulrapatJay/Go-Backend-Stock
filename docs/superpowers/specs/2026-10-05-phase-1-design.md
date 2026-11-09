@@ -155,7 +155,7 @@ Holding / PortfolioValuation = computed values ไม่มีตาราง ba
 | portfolios | id uuid PK, user_id uuid FK users RESTRICT, name varchar(100), description varchar(1000), currency char(3) CHECK USD, version integer DEFAULT 1 CHECK > 0, created_at, updated_at |
 | instruments | id uuid PK, symbol varchar(15) UNIQUE, provider_asset_id varchar(64)?, name varchar(200), exchange varchar(20), asset_class text CHECK us_equity, status text CHECK active/inactive, source text CHECK alpaca/demo, verified_at, created_at, updated_at |
 | transactions | id uuid PK, portfolio_id uuid FK portfolios RESTRICT, sequence bigint GENERATED ALWAYS AS IDENTITY UNIQUE, instrument_id uuid FK instruments RESTRICT, side text CHECK buy/sell, quantity numeric(28,10), price numeric(28,10), fee numeric(28,10), executed_at, version integer DEFAULT 1 CHECK > 0, created_at, updated_at |
-| otp_challenges | id uuid PK, user_id uuid FK users RESTRICT, purpose text CHECK email_verification/password_reset, otp_hash bytea, created_at, expires_at, failed_attempts smallint DEFAULT 0, consumed_at?, invalidated_at? (รวมสอง flow ที่มีโครง/query/cleanup เหมือนกันไว้ตารางเดียว ยืนยัน 2026-10-14) |
+| otp_challenges | id uuid PK, user_id uuid FK users RESTRICT, purpose text CHECK email_verification/password_reset, otp_hash bytea, created_at, expires_at, failed_attempts smallint DEFAULT 0, consumed_at?, invalidated_at?, verified_at?, reset_token_hash bytea? UNIQUE, reset_binding_hash bytea?, reset_token_expires_at? (รวมสอง flow ที่มีโครง/query/cleanup เหมือนกันไว้ตารางเดียว ยืนยัน 2026-10-14; สี่คอลัมน์ท้ายคือ grant ของ password reset แบบสองขั้น ว่างหรือมีครบพร้อมกัน เฉพาะ purpose password_reset, migrations 00006/00007, [ADR-0022](../../adr/0022-two-step-password-reset.md)) |
 | oauth_flows | id uuid PK, purpose text CHECK login/link, user_id uuid? FK users RESTRICT, state_hash bytea UNIQUE, nonce_hash bytea, browser_binding_hash bytea, created_at, expires_at, consumed_at? |
 | rate_limit_keys | key_hash bytea PK, scope text CHECK ตามรายการ scope ด้านล่าง, expires_at, last_denial_audit_at? |
 | rate_limit_events | id bigint GENERATED ALWAYS AS IDENTITY PK, key_hash bytea FK rate_limit_keys RESTRICT, occurred_at |
@@ -224,6 +224,9 @@ type EmailVerificationService interface {
 type PasswordResetService interface {
     Request(context.Context, domain.Email, domain.RequestMeta) (domain.OTPReceipt, error)
     Reset(context.Context, domain.ResetPasswordInput, domain.RequestMeta) error
+    // สองขั้น (ADR-0022): Verify ใช้รหัสแล้วออก reset token ที่ผูกกับ CSRF binding; ResetWithToken ใช้ token แทนรหัส
+    Verify(context.Context, domain.VerifyResetInput, domain.RequestMeta) (domain.ResetGrantReceipt, error)
+    ResetWithToken(context.Context, domain.ResetWithTokenInput, domain.RequestMeta) error
 }
 type PortfolioService interface {
     Create(context.Context, domain.Principal, domain.PortfolioInput, domain.RequestMeta) (domain.Portfolio, error)
@@ -307,7 +310,10 @@ type OTPChallengeRepository interface { // ทุก method ที่อ่า�
     InvalidateOpen(context.Context, domain.ID, domain.OTPPurpose, time.Time) error // userID
     Insert(context.Context, domain.OTPChallenge) error
     RecordFailure(context.Context, domain.OTPPurpose, domain.ID) error
-    Consume(context.Context, domain.OTPPurpose, domain.ID, time.Time) error
+    Consume(context.Context, domain.OTPPurpose, domain.ID, time.Time) error // ปฏิเสธ challenge ที่มี grant
+    GrantReset(context.Context, domain.ID, domain.ResetGrant) error           // password_reset เท่านั้น (ADR-0022)
+    ByResetTokenHash(context.Context, []byte) (domain.OTPChallenge, error)
+    ConsumeResetGrant(context.Context, domain.ID, time.Time) error
 }
 type PortfolioRepository interface {
     Insert(context.Context, domain.Portfolio) error
@@ -462,7 +468,8 @@ Base path `/api/v1`; JSON UTF-8; UUID เป็น string; timestamp RFC3339 UTC
 | POST /auth/google/link | required+CSRF | ไม่มี body → 200 `{authorization_url}`; flow ผูก current user |
 | GET /auth/google/callback | state/binding | query code/state → 303 ไป fixed same-origin `/docs/` ใน backend stage; success login set cookie, link ไม่สร้าง session ใหม่ |
 | POST /auth/password-reset/request | public+CSRF | `{email}` → 202 `{message,challenge_id,expires_in:600}` |
-| POST /auth/password-reset/confirm | public+CSRF | `{challenge_id,otp,new_password}` → 204; login ใหม่เอง |
+| POST /auth/password-reset/verify | public+CSRF | `{challenge_id,otp}` → 200 `{reset_token,expires_in:600}` no-store; ใช้รหัสและนับ attempts/rate limit ร่วมกับ confirm ([ADR-0022](../../adr/0022-two-step-password-reset.md)) |
+| POST /auth/password-reset/confirm | public+CSRF | `{reset_token,new_password}` หรือ `{challenge_id,otp,new_password}` อย่างใดอย่างหนึ่ง → 204; login ใหม่เอง |
 | POST /portfolios | required+CSRF | PortfolioInput → 201 Portfolio; ชื่อซ้ำ → 409 `portfolio_name_conflict` |
 | GET /portfolios | required | cursor/limit → 200 PortfolioPage |
 | GET /portfolios/{portfolio_id} | required | 200 Portfolio |

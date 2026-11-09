@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"fmt"
+	"time"
 )
 
 const (
@@ -37,4 +38,29 @@ func HashSessionToken(token string) (hash []byte, ok bool) {
 	}
 	sum := sha256.Sum256(raw)
 	return sum[:], true
+}
+
+// resetTokenLifetime is how long the reset token of a verified code lasts (ADR-0022): long enough
+// to choose a password, as short as the code itself.
+const resetTokenLifetime = 10 * time.Minute
+
+// NewResetToken returns a random reset token and the hash to store, built like a session token: 32
+// random bytes, unpadded base64url, and SHA-256 of the raw bytes so a token has one spelling.
+func NewResetToken() (token string, hash []byte, err error) {
+	token, hash, err = NewSessionToken()
+	if err != nil {
+		return "", nil, fmt.Errorf("generate reset token: %w", err)
+	}
+	return token, hash, nil
+}
+
+// HashResetToken returns the stored hash of a reset token; ok is false for anything NewResetToken
+// could not have produced.
+func HashResetToken(token string) (hash []byte, ok bool) { return HashSessionToken(token) }
+
+// HashResetBinding is what a reset grant stores of the CSRF binding of the browser that verified
+// the code. The label keeps it apart from any other hash of the same binding.
+func HashResetBinding(binding string) []byte {
+	sum := sha256.Sum256([]byte("password_reset\x00" + binding))
+	return sum[:]
 }

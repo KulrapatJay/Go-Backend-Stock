@@ -67,5 +67,17 @@ type OTPChallengeRepository interface {
 	// RecordFailure counts one wrong code and saturates at 20, the database ceiling; services
 	// compare against their configured maximum (at most 20).
 	RecordFailure(ctx context.Context, purpose domain.OTPPurpose, id domain.ID) error
+	// Consume refuses a password reset challenge that has a grant: only ConsumeResetGrant spends it.
 	Consume(ctx context.Context, purpose domain.OTPPurpose, id domain.ID, at time.Time) error
+
+	// The two-step password reset (ADR-0022); these only ever touch password_reset challenges.
+
+	// GrantReset stores the grant of a verified code. It succeeds once, while the challenge is open
+	// and its code unexpired at grant.VerifiedAt; otherwise it returns domain.ErrNotFound.
+	GrantReset(ctx context.Context, id domain.ID, grant domain.ResetGrant) error
+	// ByResetTokenHash returns the challenge whose grant has this token hash, or domain.ErrNotFound.
+	ByResetTokenHash(ctx context.Context, tokenHash []byte) (domain.OTPChallenge, error)
+	// ConsumeResetGrant spends the grant: once, while the challenge is open and the grant
+	// unexpired at `at`; otherwise it returns domain.ErrNotFound.
+	ConsumeResetGrant(ctx context.Context, id domain.ID, at time.Time) error
 }

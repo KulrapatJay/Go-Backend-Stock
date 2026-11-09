@@ -601,7 +601,7 @@
         },
         "/api/v1/auth/password-reset/confirm": {
             "post": {
-                "description": "Checks the 6-digit code sent by \"ask for a password reset code\" and replaces the password. A code works once and may be tried wrong 5 times; a wrong, expired, already used, exhausted or unknown code all give the same 400 invalid_reset. The new password follows the same rules as register; the rule that it must not contain the part of the email before \"@\" is checked only after the code is right, so a wrong code never reveals anything about the account. Each IP address can try 20 times in 15 minutes. Success verifies the email, signs the account out on every device, sends a notice email and does not sign in: call POST /api/v1/auth/login next. Needs X-CSRF-Token and the csrf_nonce cookie.",
+                "description": "Replaces the password. Send either reset_token from POST /api/v1/auth/password-reset/verify (two steps, recommended: a wrong code is reported before the user picks a password) or challenge_id with otp (one step, still supported); sending both, or neither, is 400 invalid_input. A wrong, expired, used, other-browser or superseded reset_token, and a wrong, expired, already used, exhausted or unknown code, all give the same 400 invalid_reset; a code may be tried wrong 5 times. The new password follows the same rules as register; the rule that it must not contain the part of the email before \"@\" is checked only after the token or code is accepted, so a refusal never reveals anything about the account, and failing that rule spends neither, so another password can be tried. Each IP address can try 20 times in 15 minutes, shared with verify. Success verifies the email, signs the account out on every device, sends a notice email and does not sign in: call POST /api/v1/auth/login next. Needs X-CSRF-Token and the csrf_nonce cookie.",
                 "consumes": [
                     "application/json"
                 ],
@@ -611,7 +611,7 @@
                 "tags": [
                     "Password Reset"
                 ],
-                "summary": "Set a new password with the reset code",
+                "summary": "Set a new password with the reset token or the reset code",
                 "operationId": "confirmPasswordReset",
                 "parameters": [
                     {
@@ -622,7 +622,7 @@
                         "required": true
                     },
                     {
-                        "description": "challenge_id from the 202 response, the 6 ASCII digits from the email and the new password",
+                        "description": "new_password with either reset_token, or challenge_id and the 6 ASCII digits from the email",
                         "name": "body",
                         "in": "body",
                         "required": true,
@@ -636,7 +636,7 @@
                         "description": "Password changed"
                     },
                     "400": {
-                        "description": "invalid_reset, invalid_input (password rules, details lists the reasons) or malformed_json",
+                        "description": "invalid_reset, invalid_input (password rules, details lists the reasons; or both or neither of reset_token and challenge_id/otp) or malformed_json",
                         "schema": {
                             "$ref": "#/definitions/http.ErrorResponse"
                         }
@@ -721,6 +721,90 @@
                     },
                     "400": {
                         "description": "invalid_input or malformed_json",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "csrf_failed",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
+                    },
+                    "429": {
+                        "description": "rate_limited; wait Retry-After seconds",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        },
+                        "headers": {
+                            "Retry-After": {
+                                "type": "integer",
+                                "description": "Seconds to wait"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "audit_write_failed or internal",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "dependency_unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/auth/password-reset/verify": {
+            "post": {
+                "description": "First step of the two-step reset. Checks the 6-digit code sent by \"ask for a password reset code\" without changing the password, so a wrong code shows up before the user picks a new password. A code works once and may be tried wrong 5 times, counted together with the one-step confirm; a wrong, expired, already used, exhausted or unknown code all give the same 400 invalid_reset. Each IP address can try 20 times in 15 minutes, shared with confirm. A right code is spent and turned into reset_token: send it with the new password to POST /api/v1/auth/password-reset/confirm within expires_in seconds (10 minutes). The token works once, only from the same browser (it is tied to the csrf_nonce cookie, or to the session when signed in), and stops working when a new code is requested. Nothing about the account changes yet. Needs X-CSRF-Token and the csrf_nonce cookie.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Password Reset"
+                ],
+                "summary": "Check the reset code and get a reset token",
+                "operationId": "verifyPasswordReset",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Token from GET /api/v1/auth/csrf",
+                        "name": "X-CSRF-Token",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "description": "challenge_id from the 202 response and the 6 ASCII digits from the email",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/http.VerifyResetRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/http.ResetTokenResponse"
+                        },
+                        "headers": {
+                            "Cache-Control": {
+                                "type": "string",
+                                "description": "no-store"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "invalid_reset, invalid_input or malformed_json",
                         "schema": {
                             "$ref": "#/definitions/http.ErrorResponse"
                         }
@@ -2523,9 +2607,7 @@
         "http.ResetPasswordRequest": {
             "type": "object",
             "required": [
-                "challenge_id",
-                "new_password",
-                "otp"
+                "new_password"
             ],
             "properties": {
                 "challenge_id": {
@@ -2539,6 +2621,27 @@
                 "otp": {
                     "type": "string",
                     "example": "042731"
+                },
+                "reset_token": {
+                    "type": "string",
+                    "example": "Jt1bV8m0yQ2cX9rKp4sL7wE3nA6dF5gH0iJ2kM8oP1q"
+                }
+            }
+        },
+        "http.ResetTokenResponse": {
+            "type": "object",
+            "required": [
+                "expires_in",
+                "reset_token"
+            ],
+            "properties": {
+                "expires_in": {
+                    "type": "integer",
+                    "example": 600
+                },
+                "reset_token": {
+                    "type": "string",
+                    "example": "Jt1bV8m0yQ2cX9rKp4sL7wE3nA6dF5gH0iJ2kM8oP1q"
                 }
             }
         },
@@ -2818,6 +2921,23 @@
                     "type": "string",
                     "x-nullable": true,
                     "example": "13.5"
+                }
+            }
+        },
+        "http.VerifyResetRequest": {
+            "type": "object",
+            "required": [
+                "challenge_id",
+                "otp"
+            ],
+            "properties": {
+                "challenge_id": {
+                    "type": "string",
+                    "example": "0192f0c1-7a8e-7cc4-9d2b-3f6c1a2b4c5d"
+                },
+                "otp": {
+                    "type": "string",
+                    "example": "042731"
                 }
             }
         }

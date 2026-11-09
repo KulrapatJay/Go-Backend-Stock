@@ -85,6 +85,42 @@ func (r *OTPChallengeRepository) Consume(ctx context.Context, purpose domain.OTP
 	return nil
 }
 
+// GrantReset stores the reset token of a verified password reset code (ADR-0022).
+func (r *OTPChallengeRepository) GrantReset(ctx context.Context, id domain.ID, g domain.ResetGrant) error {
+	n, err := r.q.GrantPasswordReset(ctx, sqlc.GrantPasswordResetParams{
+		ID: pgUUID(id), VerifiedAt: pgTime(g.VerifiedAt), ResetTokenHash: g.TokenHash,
+		ResetBindingHash: g.BindingHash, ResetTokenExpiresAt: pgTime(g.ExpiresAt),
+	})
+	if err != nil {
+		return mapError(err)
+	}
+	if n == 0 {
+		return domain.ErrNotFound
+	}
+	return nil
+}
+
+// ByResetTokenHash returns the password reset challenge that holds this token hash.
+func (r *OTPChallengeRepository) ByResetTokenHash(ctx context.Context, tokenHash []byte) (domain.OTPChallenge, error) {
+	row, err := r.q.GetOTPChallengeByResetToken(ctx, tokenHash)
+	if err != nil {
+		return domain.OTPChallenge{}, mapError(err)
+	}
+	return otpChallengeFromRow(row)
+}
+
+// ConsumeResetGrant spends the reset token once, while the challenge is open and the token unexpired.
+func (r *OTPChallengeRepository) ConsumeResetGrant(ctx context.Context, id domain.ID, at time.Time) error {
+	n, err := r.q.ConsumePasswordResetGrant(ctx, sqlc.ConsumePasswordResetGrantParams{ID: pgUUID(id), At: pgTime(at)})
+	if err != nil {
+		return mapError(err)
+	}
+	if n == 0 {
+		return domain.ErrNotFound
+	}
+	return nil
+}
+
 func otpChallengeFromRow(row sqlc.AppOtpChallenge) (domain.OTPChallenge, error) {
 	id, err := idFromPG("otp_challenge.id", row.ID)
 	if err != nil {
@@ -98,7 +134,19 @@ func otpChallengeFromRow(row sqlc.AppOtpChallenge) (domain.OTPChallenge, error) 
 	if err != nil {
 		return domain.OTPChallenge{}, fromStored(err)
 	}
+	var grant *domain.ResetGrant
+	if row.VerifiedAt.Valid {
+		g, err := domain.NewResetGrant(domain.ResetGrant{
+			TokenHash: row.ResetTokenHash, BindingHash: row.ResetBindingHash,
+			VerifiedAt: timeFromPG(row.VerifiedAt), ExpiresAt: timeFromPG(row.ResetTokenExpiresAt),
+		})
+		if err != nil {
+			return domain.OTPChallenge{}, fromStored(err)
+		}
+		grant = &g
+	}
 	return domain.OTPChallenge{
+		Grant:          grant,
 		ID:             id,
 		UserID:         userID,
 		Purpose:        purpose,

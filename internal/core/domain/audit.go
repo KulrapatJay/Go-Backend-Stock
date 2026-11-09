@@ -38,6 +38,8 @@ const (
 	EventAuthPasswordResetRequested     EventType = "auth.password_reset_requested"
 	EventAuthOTPVerificationFailed      EventType = "auth.otp_verification_failed"
 	EventAuthPasswordResetSucceeded     EventType = "auth.password_reset_succeeded"
+	EventAuthPasswordResetVerified      EventType = "auth.password_reset_verified" // two-step reset: the code was right (ADR-0022)
+	EventAuthPasswordResetFailed        EventType = "auth.password_reset_failed"   // two-step reset: the token was refused
 	EventAuthIdentityLinked             EventType = "auth.identity_linked"
 	EventAuthIdentityLinkFailed         EventType = "auth.identity_link_failed"
 	EventPortfolioCreated               EventType = "portfolio.created"
@@ -57,6 +59,7 @@ func EventTypes() []EventType {
 		EventAuthEmailVerificationRequested, EventAuthEmailVerified, EventAuthEmailVerificationFailed,
 		EventAuthLogout, EventAuthSessionsRevoked,
 		EventAuthPasswordResetRequested, EventAuthOTPVerificationFailed, EventAuthPasswordResetSucceeded,
+		EventAuthPasswordResetVerified, EventAuthPasswordResetFailed,
 		EventAuthIdentityLinked, EventAuthIdentityLinkFailed,
 		EventPortfolioCreated, EventPortfolioUpdated, EventPortfolioDeleted,
 		EventTransactionCreated, EventTransactionUpdated, EventTransactionDeleted,

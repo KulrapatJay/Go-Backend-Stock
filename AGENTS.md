@@ -373,7 +373,7 @@ sqlc.yaml
 | สมัคร/เข้าสู่ระบบ | auth.registered, auth.login_succeeded, auth.login_failed โดยระบุ method เป็น password/google |
 | ยืนยันอีเมล | auth.email_verification_requested, auth.email_verified, auth.email_verification_failed โดยไม่เก็บตัวรหัส |
 | ออกจากระบบ | auth.logout, auth.sessions_revoked โดยระบุเหตุผล เช่น password_reset |
-| กู้รหัสผ่าน | auth.password_reset_requested, auth.otp_verification_failed, auth.password_reset_succeeded โดยไม่เก็บตัวรหัส |
+| กู้รหัสผ่าน | auth.password_reset_requested, auth.otp_verification_failed, auth.password_reset_succeeded โดยไม่เก็บตัวรหัส; แบบสองขั้นเพิ่ม auth.password_reset_verified และ auth.password_reset_failed (token ถูกปฏิเสธ) ตาม ADR-0022 |
 | เชื่อม identity | auth.identity_linked, auth.identity_link_failed โดยระบุ provider |
 | พอร์ต | portfolio.created, portfolio.updated, portfolio.deleted |
 | รายการซื้อขาย | transaction.created, transaction.updated, transaction.deleted |

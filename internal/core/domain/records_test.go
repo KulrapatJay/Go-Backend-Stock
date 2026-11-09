@@ -122,8 +122,8 @@ func TestNewAuditEvent(t *testing.T) {
 
 func TestAuditEventTypesMatchAgentsList(t *testing.T) {
 	types := domain.EventTypes()
-	if len(types) != 21 {
-		t.Fatalf("EventTypes() has %d types, AGENTS.md lists 21", len(types))
+	if len(types) != 23 {
+		t.Fatalf("EventTypes() has %d types, AGENTS.md lists 23", len(types))
 	}
 	seen := map[domain.EventType]bool{}
 	for _, et := range types {

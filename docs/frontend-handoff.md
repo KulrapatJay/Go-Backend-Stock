@@ -99,7 +99,8 @@ browser ──► https://<web origin>/            Next.js pages
 | GET `/auth/me` | getCurrentUser | 200 `UserResponse` | 401 = ไม่ได้ login |
 | POST `/auth/logout` | logout | 204 | ล้าง cookie |
 | POST `/auth/password-reset/request` | requestPasswordReset | 202 `OTPAcceptedResponse` | ตอบแบบเดียวกันทุกอีเมล |
-| POST `/auth/password-reset/confirm` | confirmPasswordReset | 204 | `{challenge_id, otp, new_password}` แล้วทุก session ของบัญชีถูกออกจากระบบ |
+| POST `/auth/password-reset/verify` | verifyPasswordReset | 200 `{reset_token, expires_in}` | `{challenge_id, otp}` ตรวจรหัสก่อนตั้งรหัสผ่านใหม่ ยังไม่เปลี่ยนอะไรในบัญชี (ADR-0022) |
+| POST `/auth/password-reset/confirm` | confirmPasswordReset | 204 | `{reset_token, new_password}` (แนะนำ) หรือ `{challenge_id, otp, new_password}` (แบบเดิม ยังใช้ได้) ห้ามส่งทั้งสองแบบพร้อมกัน แล้วทุก session ของบัญชีถูกออกจากระบบ |
 | POST `/auth/google/start` | startGoogleSignIn | 200 `{authorization_url}` | 503 `feature_disabled` ถ้าไม่ได้ตั้ง Google |
 | GET `/auth/google/callback` | completeGoogleSignIn | 303 | Google เรียก ไม่ใช่ frontend (ดูหัวข้อ 7) |
 | POST `/auth/google/link` | linkGoogleAccount | 200 `{authorization_url}` | ต้อง login อยู่ |
@@ -232,12 +233,27 @@ core ยังมี code `access_denied` และ `identity_conflict` แต�
 - `POST /auth/logout` → 204 แล้วขอ CSRF token ใหม่ก่อน POST ถัดไป
 - การปิดแท็บไม่ใช่ logout; session หมดเองตาม `expires_at`
 
-### ลืมรหัสผ่าน
+### ลืมรหัสผ่าน (สองขั้น, ADR-0022)
 
 1. `POST /auth/password-reset/request {email}` → 202 `{challenge_id, ...}` ข้อความเหมือนกันทุกอีเมล
    (บัญชีที่ไม่มีหรือบัญชี Google-only จะไม่ได้อีเมล แต่ UI ต้องไม่บอก)
-2. `POST /auth/password-reset/confirm {challenge_id, otp, new_password}` → 204
-3. ทุก session ของบัญชีถูกออกจากระบบ ให้พาไปหน้า login; รหัสใช้ได้ 10 นาที กรอกผิดได้ 5 ครั้ง
+2. หน้า "กรอก OTP": `POST /auth/password-reset/verify {challenge_id, otp}` → 200 `{reset_token, expires_in: 600}`
+   - รหัสผิด หมดอายุ ใช้แล้ว ครบ 5 ครั้ง หรือ `challenge_id` ไม่มีอยู่ ได้ 400 `invalid_reset` เหมือนกันทุกกรณี
+     ให้แสดง error ที่หน้า OTP ทันที (ไม่ต้องแยกสาเหตุ เพราะ API ไม่บอก)
+   - รหัสที่ถูกจะถูกใช้ไปแล้ว: กรอกรหัสเดิมซ้ำหรือส่งไป confirm แบบเดิมจะได้ `invalid_reset`
+3. หน้า "ตั้งรหัสผ่านใหม่": `POST /auth/password-reset/confirm {reset_token, new_password}` → 204
+   - เก็บ `reset_token` ใน state ของหน้าเท่านั้น (memory) ห้ามใส่ใน URL, localStorage, sessionStorage หรือ log
+   - token ใช้ได้ครั้งเดียว อายุ 10 นาทีนับจากตอน verify ใช้ได้เฉพาะ browser เดิม (ผูกกับ cookie `csrf_nonce`
+     หรือ session ถ้า login อยู่) อย่าล้าง cookie หรือ login/logout ระหว่างสองหน้า
+   - ขอรหัสใหม่ (`request`) แล้ว token เดิมใช้ไม่ได้ทันที
+   - token ผิด หมดอายุ ใช้แล้ว หรือมาจาก browser อื่น ได้ 400 `invalid_reset`: ให้กลับไปขอรหัสใหม่
+   - รหัสผ่านไม่ผ่านกติกา ได้ 400 `invalid_input` พร้อม `details` (รวม `password_contains_email` ที่ตรวจหลังยอมรับ token)
+     token ยังใช้ได้ต่อ ให้ผู้ใช้เลือกรหัสใหม่ที่หน้าเดิม
+4. ทุก session ของบัญชีถูกออกจากระบบ ให้พาไปหน้า login
+5. verify และ confirm ใช้โควตาเดียวกัน 20 ครั้ง/15 นาที/IP; เกินได้ 429 พร้อม `Retry-After`
+
+แบบขั้นเดียว `POST /auth/password-reset/confirm {challenge_id, otp, new_password}` ยังใช้ได้ตาม ADR-0011
+แต่ผู้ใช้จะรู้ว่ารหัสผิดหลังตั้งรหัสผ่านเสร็จแล้วเท่านั้น
 
 ### Google
 

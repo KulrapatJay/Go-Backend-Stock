@@ -54,4 +54,12 @@ type PasswordResetService interface {
 	// transaction. A wrong, expired, used or exhausted challenge returns domain.ErrInvalidReset; a
 	// wrong code is counted and audited before that error returns.
 	Reset(ctx context.Context, in domain.ResetPasswordInput, meta domain.RequestMeta) error
+	// Verify is the first step of the two-step reset (ADR-0022): it checks the code like Reset
+	// does, with the same errors and attempt counting, and on success spends the code and returns
+	// a one-time reset token tied to in.BrowserBinding. Nothing about the account changes.
+	Verify(ctx context.Context, in domain.VerifyResetInput, meta domain.RequestMeta) (domain.ResetGrantReceipt, error)
+	// ResetWithToken is the second step: like Reset, but it spends a reset token from Verify
+	// instead of a code. A wrong, expired, used or other-browser token returns
+	// domain.ErrInvalidReset, audited before it returns.
+	ResetWithToken(ctx context.Context, in domain.ResetWithTokenInput, meta domain.RequestMeta) error
 }

@@ -96,6 +96,7 @@ func registerAuthRoutes(app *fiber.App, opts AuthOptions, chain authChain) {
 	}
 	if opts.PasswordReset != nil {
 		app.Post("/api/v1/auth/password-reset/request", session, csrf, h.requestPasswordReset)
+		app.Post("/api/v1/auth/password-reset/verify", session, csrf, h.verifyPasswordReset)
 		app.Post("/api/v1/auth/password-reset/confirm", session, csrf, h.confirmPasswordReset)
 	}
 }

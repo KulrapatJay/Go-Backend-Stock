@@ -17,6 +17,7 @@ var documentedAuthOperations = []struct {
 	{"post", "/api/v1/auth/email-verification/request", []int{202, 400, 403, 429, 500, 503}},
 	{"post", "/api/v1/auth/email-verification/confirm", []int{204, 400, 403, 429, 500, 503}},
 	{"post", "/api/v1/auth/password-reset/request", []int{202, 400, 403, 429, 500, 503}},
+	{"post", "/api/v1/auth/password-reset/verify", []int{200, 400, 403, 429, 500, 503}},
 	{"post", "/api/v1/auth/password-reset/confirm", []int{204, 400, 403, 429, 500, 503}},
 	{"post", "/api/v1/auth/login", []int{200, 400, 401, 403, 429, 500, 503}},
 	{"get", "/api/v1/auth/me", []int{200, 401, 503}},
@@ -49,7 +50,9 @@ var requiredAuthFields = map[string][]string{
 	"http.RegisterRequest":      {"email", "password"},
 	"http.LoginRequest":         {"email", "password"},
 	"http.EmailRequest":         {"email"},
-	"http.ResetPasswordRequest": {"challenge_id", "new_password", "otp"},
+	"http.ResetPasswordRequest": {"new_password"}, // reset_token, or challenge_id with otp
+	"http.VerifyResetRequest":   {"challenge_id", "otp"},
+	"http.ResetTokenResponse":   {"expires_in", "reset_token"},
 	"http.ConfirmEmailRequest":  {"challenge_id", "otp"},
 	"http.CSRFResponse":         {"csrf_token", "expires_at"},
 	"http.OTPAcceptedResponse":  {"challenge_id", "expires_in", "message"},
