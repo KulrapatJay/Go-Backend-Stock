@@ -24,7 +24,7 @@ func (h *authHandlers) authConfig(c fiber.Ctx) error {
 
 // GoogleStart godoc
 // @Summary      Start signing in with Google
-// @Description  Returns the Google URL to open in the same browser, and sets the HttpOnly cookie oidc_binding (__Host-oidc_binding over HTTPS) that must come back with the callback; the flow lasts 10 minutes. Google sends the browser to GET /api/v1/auth/google/callback, which ends at /docs/?google=success|link_required|failed. A Google account whose email already belongs to an account is not linked automatically: sign in to that account and use POST /api/v1/auth/google/link. Needs X-CSRF-Token and the csrf_nonce cookie. Swagger UI and curl cannot complete the Google page; open authorization_url in the browser.
+// @Description  Returns the Google URL to open in the same browser, and sets the HttpOnly cookie oidc_binding (__Host-oidc_binding over HTTPS) that must come back with the callback; the flow lasts 10 minutes. Google sends the browser to GET /api/v1/auth/google/callback, which ends at /login?google=success|link_required|failed. A Google account whose email already belongs to an account is not linked automatically: sign in to that account and use POST /api/v1/auth/google/link. Needs X-CSRF-Token and the csrf_nonce cookie. Swagger UI and curl cannot complete the Google page; open authorization_url in the browser.
 // @Tags         Auth
 // @ID           startGoogleSignIn
 // @Produce      json
@@ -43,7 +43,7 @@ func (h *authHandlers) googleStart(c fiber.Ctx) error {
 
 // GoogleLink godoc
 // @Summary      Link Google to the signed-in account
-// @Description  Like POST /api/v1/auth/google/start, but the flow belongs to the signed-in user: after Google, the callback adds the Google account to this account (/docs/?google=linked) without opening a new session. The callback must come with the same session. Needs the session cookie and an X-CSRF-Token bound to it.
+// @Description  Like POST /api/v1/auth/google/start, but the flow belongs to the signed-in user: after Google, the callback adds the Google account to this account (/login?google=linked) without opening a new session. The callback must come with the same session. Needs the session cookie and an X-CSRF-Token bound to it.
 // @Tags         Auth
 // @ID           linkGoogleAccount
 // @Produce      json
@@ -77,22 +77,22 @@ func (h *authHandlers) startGoogle(c fiber.Ctx, purpose domain.OIDCPurpose) erro
 }
 
 // googleResultPath is where every callback ends; the outcome follows. It is fixed (no return URL from
-// the request) and same-origin. It changes when the frontend exists.
-const googleResultPath = "/docs/?google="
+// the request) and same-origin: the web's login page, served from the same origin as /api/v1 via its proxy.
+const googleResultPath = "/login?google="
 
 // GoogleCallback godoc
 // @Summary      Come back from Google
-// @Description  Google sends the browser here after GET authorization_url. It is not called directly: it needs the state from that URL and the oidc_binding cookie of the browser that started the flow, and it takes no X-CSRF-Token (the state, the binding and the ID token's nonce protect it). It always clears oidc_binding and answers 303 to /docs/?google=success (signed in: the session cookie is set), linked (Google added to the signed-in account), link_required (the email belongs to an account: sign in to it and use POST /api/v1/auth/google/link) or failed (cancelled, expired, replayed, another browser, or refused). Infrastructure failures answer JSON instead.
+// @Description  Google sends the browser here after GET authorization_url. It is not called directly: it needs the state from that URL and the oidc_binding cookie of the browser that started the flow, and it takes no X-CSRF-Token (the state, the binding and the ID token's nonce protect it). It always clears oidc_binding and answers 303 to /login?google=success (signed in: the session cookie is set), linked (Google added to the signed-in account), link_required (the email belongs to an account: sign in to it and use POST /api/v1/auth/google/link) or failed (cancelled, expired, replayed, another browser, or refused). Infrastructure failures answer JSON instead.
 // @Tags         Auth
 // @ID           completeGoogleSignIn
 // @Produce      json
 // @Param        code   query  string  false  "Authorization code from Google"
 // @Param        state  query  string  false  "The state of the flow"
 // @Param        error  query  string  false  "Set by Google when the user cancelled"
-// @Success      303  "Redirect to /docs/?google=success|linked|link_required|failed"
+// @Success      303  "Redirect to /login?google=success|linked|link_required|failed"
 // @Failure      500  {object}  ErrorResponse  "audit_write_failed or internal"
 // @Failure      503  {object}  ErrorResponse  "feature_disabled (Google is not configured) or dependency_unavailable"
-// @Header       303  {string}  Location    "/docs/?google=success"
+// @Header       303  {string}  Location    "/login?google=success"
 // @Header       303  {string}  Set-Cookie  "oidc_binding=; Expires=Tue, 10 Nov 2009 23:00:00 GMT — and session=… on success"
 // @Router       /api/v1/auth/google/callback [get]
 func (h *authHandlers) googleCallback(c fiber.Ctx) error {

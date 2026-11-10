@@ -264,8 +264,9 @@ core ยังมี code `access_denied` และ `identity_conflict` แต�
    - `linked` = เชื่อม Google กับบัญชีที่ login อยู่แล้ว
    - `link_required` = อีเมลนี้มีบัญชีอยู่แล้ว: ให้ login ด้วยรหัสผ่านก่อน แล้วเรียก `POST /auth/google/link` แทน start
    - `failed` = ยกเลิก หมดเวลา 10 นาที เปิด callback ซ้ำ หรือคนละ browser
-4. **ตอนนี้ปลายทางยัง hardcode เป็น `/docs/?google=…`** (`internal/adapter/http/google.go`)
-   frontend ต้องเสนอ path หน้าผลลัพธ์ แล้วให้ฝั่ง backend แก้ปลายทางพร้อม test, annotations และ generated docs
+4. ปลายทางคือ **`/login?google=<outcome>`** (`googleResultPath` ใน `internal/adapter/http/google.go`, เปลี่ยนจาก
+   `/docs/?google=` เมื่อ 2026-11-09) หน้า login ของ web อ่าน `?google=` แล้วพาไปต่อหรือแสดงข้อความ
+   path ตายตัวและเป็น same-origin เสมอ ไม่รับ return URL จาก request
    ระบบไม่เชื่อมบัญชีอัตโนมัติเพราะอีเมลตรงกัน และบัญชี Google-only ใช้ "ลืมรหัสผ่าน" ไม่ได้
 
 ## 8. Holdings และ valuation: ห้ามแสดงสิ่งที่ข้อมูลไม่รองรับ (ADR-0020)
@@ -305,7 +306,7 @@ core ยังมี code `access_denied` และ `identity_conflict` แต�
 
 ห้าม frontend สร้าง business logic ซ้ำเพื่อแก้ปัญหาเหล่านี้ ให้แจ้งฝั่ง backend แก้พร้อม regression test:
 
-- เปลี่ยนปลายทาง Google callback จาก `/docs/?google=` เป็นหน้า frontend
+- ~~เปลี่ยนปลายทาง Google callback จาก `/docs/?google=` เป็นหน้า frontend~~ — เสร็จแล้ว 2026-11-09 (`/login?google=`)
 - Swagger `basePath` ตายตัวเป็น `/` ทำให้ Try it out หลัง proxy ที่มี prefix ยิงผิด URL
 - ตั้ง `PUBLIC_ORIGIN`, `GOOGLE_REDIRECT_URI`, `TRUSTED_PROXY_CIDRS` ให้ตรงกับ origin ของ web
 - เพิ่ม web service, web Dockerfile และ web CI ตามที่ตัดสินใจในหัวข้อ 0 ข้อ 1
