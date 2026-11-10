@@ -322,3 +322,35 @@ func TestPortfolioExistsIgnoresTheOwner(t *testing.T) {
 		t.Errorf("Exists(deleted) = %v, %v; want false", ok, err)
 	}
 }
+
+// TestPortfolioListAllOwnedReturnsEveryPortfolioOfTheOwnerOnly: the account summary needs all of a
+// user's portfolios in one statement, in the order of the paged list, and none of anyone else's.
+func TestPortfolioListAllOwnedReturnsEveryPortfolioOfTheOwnerOnly(t *testing.T) {
+	store := newRuntimeStore(t)
+	owner, stranger := insertUser(t, store), insertUser(t, store)
+	base := now().Add(-time.Hour)
+	var want []domain.ID
+	for i := range 3 {
+		p := newPortfolio(t, owner.ID, "Portfolio "+newID(t).String(), base.Add(time.Duration(i)*time.Minute))
+		if err := store.Portfolios().Insert(t.Context(), p); err != nil {
+			t.Fatalf("insert portfolio: %v", err)
+		}
+		want = append([]domain.ID{p.ID}, want...) // newest first
+	}
+	insertPortfolio(t, store, stranger.ID)
+
+	got, err := store.Portfolios().ListAllOwned(t.Context(), owner.ID)
+	if err != nil || len(got) != len(want) {
+		t.Fatalf("ListAllOwned = %+v, %v; want the owner's %d portfolios", got, err, len(want))
+	}
+	for i, id := range want {
+		if got[i].ID != id || got[i].UserID != owner.ID || got[i].Name.IsZero() {
+			t.Errorf("portfolio %d = %+v, want %s (newest first)", i, got[i], id)
+		}
+	}
+
+	none, err := store.Portfolios().ListAllOwned(t.Context(), insertUser(t, store).ID)
+	if err != nil || len(none) != 0 {
+		t.Errorf("ListAllOwned(user without portfolios) = %+v, %v; want empty, no error", none, err)
+	}
+}

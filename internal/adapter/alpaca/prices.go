@@ -160,6 +160,7 @@ func (p *Prices) quoteFor(symbol domain.Symbol, bars []bar, sessions []session, 
 	quote, err := domain.NewPriceQuote(domain.PriceQuote{
 		Symbol: symbol, Price: price, Currency: "USD", AsOf: ref.AsOf, FetchedAt: fetchedAt,
 		Source: "alpaca", Feed: "sip", Stale: ref.Stale, SessionStatus: ref.Status,
+		PriceType: domain.PriceTypeDelayedBarClose,
 	})
 	if err != nil {
 		return domain.PriceQuote{}, false

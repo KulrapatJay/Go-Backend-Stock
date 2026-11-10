@@ -245,6 +245,7 @@ type TransactionService interface {
 type ValuationService interface {
     Holdings(context.Context, domain.Principal, domain.ID) ([]domain.Holding, error)
     Value(context.Context, domain.Principal, domain.ID) (domain.PortfolioValuation, error)
+    ValueAll(context.Context, domain.Principal) (domain.AccountValuation, error) // ทุกพอร์ตของผู้ใช้ ขอราคาครั้งเดียว (ADR-0023)
 }
 type Clock interface { Now() time.Time }
 type PriceProvider interface {
@@ -320,12 +321,14 @@ type PortfolioRepository interface {
     GetOwned(context.Context, domain.ID, domain.ID) (domain.Portfolio, error)
     LockOwned(context.Context, domain.ID, domain.ID) (domain.Portfolio, error)
     ListOwned(context.Context, domain.ID, domain.Page) (domain.PortfolioPage, error)
+    ListAllOwned(context.Context, domain.ID) ([]domain.Portfolio, error) // ทุกพอร์ตของเจ้าของใน statement เดียว สำหรับสรุปทั้งบัญชี (ADR-0023)
     UpdateOwned(context.Context, domain.Portfolio, domain.ID) (domain.Portfolio, error) // version = version + 1
     DeleteOwnedEmpty(context.Context, domain.ID, domain.ID) error
     Exists(context.Context, domain.ID) (bool, error) // ไม่กรองเจ้าของ: ใช้ตัดสินเฉพาะว่าจะเขียน audit security.access_denied ห้ามใช้ตัดสินสิทธิ์อ่าน/เขียน
 }
 type TransactionRepository interface {
     History(context.Context, domain.ID, domain.ID) ([]domain.Transaction, error)
+    OwnerHistory(context.Context, domain.ID) ([]domain.Transaction, error) // ประวัติของทุกพอร์ตของเจ้าของ เรียง (executed_at, sequence) ภายในแต่ละพอร์ต (ADR-0023)
     List(context.Context, domain.ID, domain.ID, domain.TransactionFilter) (domain.TransactionPage, error)
     Get(context.Context, domain.ID, domain.ID, domain.ID) (domain.Transaction, error)
     Insert(context.Context, domain.ID, domain.Transaction) (domain.Transaction, error)
@@ -350,7 +353,7 @@ ID arguments เรียง ownerID, portfolioID, transactionID เมื่อ
 
 `OIDCStart` = Purpose, optional Principal, BrowserBinding; `OIDCRedirect` = URL, BrowserBindingCookie, ExpiresAt. `OIDCCallback` = Code, State, BrowserBinding, optional current Principal; `OIDCResult` = Purpose, optional SessionGrant. AuthorizationRequest มี State/Nonce/RedirectURI/CodeChallenge (S256); CodeExchange มี Code/CodeVerifier/RedirectURI; VerifiedIdentity มี Issuer/Subject/Email/EmailVerified/Nonce ที่ adapter ตรวจลายเซ็นและ claims พื้นฐานแล้ว service ตรวจ nonce กับ flow อีกครั้ง
 
-`OTPReceipt` = ChallengeID/ExpiresIn ใช้ทั้ง register, ขอรหัสยืนยันอีเมลใหม่ และ password reset; `OTPMail` = To/OTP/ChallengeID/ExpiresAt ห้าม log; `OTPChallenge` = ID/UserID/Purpose/OTPHash/CreatedAt/ExpiresAt/FailedAttempts/ConsumedAt/InvalidatedAt โดย Purpose เป็นชนิด `domain.OTPPurpose` ค่า `email_verification` หรือ `password_reset` ตรงกับ CHECK ของ otp_challenges และถูกรวมใน HMAC เพื่อไม่ให้รหัสของ flow หนึ่งใช้กับอีก flow ได้; `VerifyEmailInput` = ChallengeID/OTP. `QuoteBatch` แยก Quotes ตาม symbol และ UnavailableSymbols; `PriceQuote` มี Price/Currency/AsOf/FetchedAt/Source/Feed/IsDemo/Stale/Cached/SessionStatus. `IdempotencyScope` = UserID/PortfolioID/Operation; record มี Key/RequestHash/Result/ExpiresAt. RateLimitRule = Scope/KeyHash/Limit/Window; decision = Allowed/RetryAfter/RecordDenialAudit โดย flag สุดท้ายได้จาก atomic update ของ last_denial_audit_at
+`OTPReceipt` = ChallengeID/ExpiresIn ใช้ทั้ง register, ขอรหัสยืนยันอีเมลใหม่ และ password reset; `OTPMail` = To/OTP/ChallengeID/ExpiresAt ห้าม log; `OTPChallenge` = ID/UserID/Purpose/OTPHash/CreatedAt/ExpiresAt/FailedAttempts/ConsumedAt/InvalidatedAt โดย Purpose เป็นชนิด `domain.OTPPurpose` ค่า `email_verification` หรือ `password_reset` ตรงกับ CHECK ของ otp_challenges และถูกรวมใน HMAC เพื่อไม่ให้รหัสของ flow หนึ่งใช้กับอีก flow ได้; `VerifyEmailInput` = ChallengeID/OTP. `QuoteBatch` แยก Quotes ตาม symbol และ UnavailableSymbols; `PriceQuote` มี Price/Currency/AsOf/FetchedAt/Source/Feed/IsDemo/Stale/Cached/SessionStatus/PriceType (PriceType เพิ่ม 2026-11-10 ตาม ADR-0023 ตอนนี้มีค่าเดียวคือ `delayed_bar_close`). `IdempotencyScope` = UserID/PortfolioID/Operation; record มี Key/RequestHash/Result/ExpiresAt. RateLimitRule = Scope/KeyHash/Limit/Window; decision = Allowed/RetryAfter/RecordDenialAudit โดย flag สุดท้ายได้จาก atomic update ของ last_denial_audit_at
 
 Repositories ที่อ่านนอก transaction inject ได้เป็น concrete adapters ผ่าน port เดิม (milestone 7 เพิ่ม accessor `Transactions()` และ `Instruments()` ให้ `port.Repositories` สำหรับอ่านรายการ/รายการเดี่ยวและค้น instrument นอก transaction) ส่วน mutations ที่ต้อง atomic ใช้เฉพาะ repositories จาก callback. `Lock*` ใช้ได้เฉพาะ transaction-bound instance; ห้ามเปิด nested transactions เอง
 
@@ -482,6 +485,7 @@ Base path `/api/v1`; JSON UTF-8; UUID เป็น string; timestamp RFC3339 UTC
 | DELETE /portfolios/{portfolio_id}/transactions/{transaction_id} | required+CSRF+If-Match | 204 หาก history ที่เหลือถูกต้อง |
 | GET /portfolios/{portfolio_id}/holdings | required | 200 `{data:[Holding]}` ไม่มี network price dependency |
 | GET /portfolios/{portfolio_id}/valuation | required | 200 PortfolioValuation รวมราคาและ freshness/coverage |
+| GET /valuation | required | 200 AccountValuation: ยอดรวมทุกพอร์ตของผู้ใช้, ยอดรายพอร์ต และ allocation ต่อหุ้น (ADR-0023, เพิ่ม 2026-11-10) |
 
 User = `{id,email,email_verified,created_at}` ไม่ส่ง password_hash; PortfolioInput = `{name,description}` description optional default empty; Portfolio = input + `{id,currency:"USD",version,created_at,updated_at}`
 

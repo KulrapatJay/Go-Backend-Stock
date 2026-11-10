@@ -85,6 +85,10 @@ func TestValuationGoldenExample(t *testing.T) {
 		q.Source != "test" || q.Feed != "test" {
 		t.Fatalf("quote = %+v", q)
 	}
+	// The kind of price comes from the data, so a client need not hard-code "delayed 15 minutes".
+	if rawQuote := rawPositions(t, body)["AAPL"]["quote"].(map[string]any); rawQuote["price_type"] != "delayed_bar_close" || rawQuote["delay_minutes"] != float64(15) {
+		t.Errorf("price_type = %v, delay_minutes = %v; want delayed_bar_close and 15", rawQuote["price_type"], rawQuote["delay_minutes"])
+	}
 	if !strings.HasSuffix(rawObject(t, body)["positions"].([]any)[0].(map[string]any)["quote"].(map[string]any)["as_of"].(string), "Z") {
 		t.Errorf("quote.as_of is not UTC in %s", body)
 	}
@@ -130,6 +134,80 @@ func TestValuationPartiallyPricedSaysNullNotZero(t *testing.T) {
 	}
 }
 
+// rawPositions returns the positions of a valuation body by symbol, as raw JSON objects.
+func rawPositions(t *testing.T, body []byte) map[string]map[string]any {
+	t.Helper()
+	out := map[string]map[string]any{}
+	for _, p := range rawObject(t, body)["positions"].([]any) {
+		position := p.(map[string]any)
+		out[position["symbol"].(string)] = position
+	}
+	return out
+}
+
+// requireNull fails unless the object carries the key with the value null: a field that is left out
+// is not the same contract as one that is null.
+func requireNull(t *testing.T, label string, object map[string]any, key string) {
+	t.Helper()
+	if value, ok := object[key]; !ok || value != nil {
+		t.Errorf("%s.%s = %v (present %t), want null", label, key, value, ok)
+	}
+}
+
+func TestValuationReportsPercentages(t *testing.T) {
+	h := newAuthHarness(t, withValuation())
+	b, _ := signedIn(t, h)
+	p := b.mustCreatePortfolio("Long term", "")
+	goldenTrades(b, p.ID) // 1.5 AAPL left on a cost of 151.5
+	b.trade(p.ID, "MSFT", "buy", "1", "55", "0", time.Hour)
+	b.trade(p.ID, "NVDA", "buy", "1", "20", "0", 50*time.Minute)
+	b.trade(p.ID, "NVDA", "sell", "1", "20", "0", 40*time.Minute) // sold out
+	h.prices.setPrice("AAPL", "110")                              // 165, +13.5
+	h.prices.setPrice("MSFT", "55")                               // 55, break even
+
+	_, body := b.getValuation(p.ID)
+	raw := rawObject(t, body)
+	// Cost 151.5 + 55 = 206.5, value 220, unrealized 13.5: 13.5 / 206.5 x 100 = 2700 / 413.
+	if raw["cost_basis"] != "206.5" || raw["unrealized_pnl_percent"] != "6.5375302663438256658595641646" {
+		t.Errorf("cost_basis = %v, unrealized_pnl_percent = %v", raw["cost_basis"], raw["unrealized_pnl_percent"])
+	}
+	positions := rawPositions(t, body)
+	aapl, msft, nvda := positions["AAPL"], positions["MSFT"], positions["NVDA"]
+	if aapl["unrealized_pnl_percent"] != "8.9108910891089108910891089109" || aapl["weight_percent"] != "75" {
+		t.Errorf("AAPL percent = %v, weight = %v; want 900/101 and 75", aapl["unrealized_pnl_percent"], aapl["weight_percent"])
+	}
+	if msft["unrealized_pnl_percent"] != "0" || msft["weight_percent"] != "25" {
+		t.Errorf("MSFT percent = %v, weight = %v; want a real 0 (break even) and 25", msft["unrealized_pnl_percent"], msft["weight_percent"])
+	}
+	requireNull(t, "NVDA (sold out)", nvda, "unrealized_pnl_percent")
+	if nvda["weight_percent"] != "0" {
+		t.Errorf("NVDA (sold out) weight = %v, want 0", nvda["weight_percent"])
+	}
+}
+
+func TestValuationPercentagesAreNullWhenAPriceIsMissing(t *testing.T) {
+	h := newAuthHarness(t, withValuation())
+	b, _ := signedIn(t, h)
+	p := b.mustCreatePortfolio("Long term", "")
+	b.trade(p.ID, "AAPL", "buy", "1", "100", "0", 2*time.Hour)
+	b.trade(p.ID, "MSFT", "buy", "1", "30", "0", time.Hour)
+	h.prices.setPrice("AAPL", "110")
+
+	_, body := b.getValuation(p.ID)
+	raw := rawObject(t, body)
+	if raw["coverage"] != "partial" || raw["cost_basis"] != "130" {
+		t.Fatalf("coverage = %v, cost_basis = %v; want partial and a cost basis that needs no price", raw["coverage"], raw["cost_basis"])
+	}
+	requireNull(t, "valuation", raw, "unrealized_pnl_percent")
+	positions := rawPositions(t, body)
+	if positions["AAPL"]["unrealized_pnl_percent"] != "10" {
+		t.Errorf("AAPL percent = %v, want 10: its own price is known", positions["AAPL"]["unrealized_pnl_percent"])
+	}
+	requireNull(t, "AAPL", positions["AAPL"], "weight_percent")
+	requireNull(t, "MSFT", positions["MSFT"], "unrealized_pnl_percent")
+	requireNull(t, "MSFT", positions["MSFT"], "weight_percent")
+}
+
 func TestValuationWithoutPricesKeepsRealizedAndSaysUnavailable(t *testing.T) {
 	h := newAuthHarness(t, withValuation())
 	b, _ := signedIn(t, h)
@@ -168,6 +246,11 @@ func TestValuationOfAnEmptyPortfolio(t *testing.T) {
 	if got.Coverage != "complete" || got.MarketValue == nil || *got.MarketValue != "0" || got.UnrealizedPnL == nil || *got.UnrealizedPnL != "0" ||
 		got.RealizedPnL != "0" || got.PricedMarketValue != "0" || got.Positions == nil || len(got.Positions) != 0 {
 		t.Errorf("valuation = %+v", got)
+	}
+	if raw := rawObject(t, body); raw["cost_basis"] != "0" {
+		t.Errorf("cost_basis = %v, want 0", raw["cost_basis"])
+	} else {
+		requireNull(t, "empty valuation", raw, "unrealized_pnl_percent")
 	}
 	if !strings.Contains(string(body), `"positions":[]`) || !strings.Contains(string(body), `"missing_symbols":[]`) {
 		t.Errorf("body %s should carry empty arrays, not null", body)

@@ -1,5 +1,160 @@
 basePath: /
 definitions:
+  http.AccountPortfolioResponse:
+    properties:
+      cost_basis:
+        example: "200"
+        type: string
+      coverage:
+        enum:
+        - complete
+        - partial
+        - unavailable
+        example: complete
+        type: string
+      market_value:
+        example: "300"
+        type: string
+        x-nullable: true
+      name:
+        example: Long term
+        type: string
+      portfolio_id:
+        example: 0192f0c1-7a8e-7cc4-9d2b-3f6c1a2b4c5d
+        type: string
+      realized_pnl:
+        example: "2"
+        type: string
+      unrealized_pnl:
+        example: "100"
+        type: string
+        x-nullable: true
+      unrealized_pnl_percent:
+        example: "50"
+        type: string
+        x-nullable: true
+      weight_percent:
+        example: "37.5"
+        type: string
+        x-nullable: true
+    required:
+    - cost_basis
+    - coverage
+    - market_value
+    - name
+    - portfolio_id
+    - realized_pnl
+    - unrealized_pnl
+    - unrealized_pnl_percent
+    - weight_percent
+    type: object
+  http.AccountValuationResponse:
+    properties:
+      allocation:
+        items:
+          $ref: '#/definitions/http.AllocationResponse'
+        type: array
+      calculated_at:
+        example: "2026-11-10T15:00:00Z"
+        format: date-time
+        type: string
+      cost_basis:
+        example: "610"
+        type: string
+      coverage:
+        enum:
+        - complete
+        - partial
+        - unavailable
+        example: complete
+        type: string
+      currency:
+        enum:
+        - USD
+        example: USD
+        type: string
+      market_value:
+        example: "800"
+        type: string
+        x-nullable: true
+      missing_symbols:
+        example:
+        - MSFT
+        - NVDA
+        items:
+          type: string
+        type: array
+      portfolios:
+        items:
+          $ref: '#/definitions/http.AccountPortfolioResponse'
+        type: array
+      priced_market_value:
+        example: "800"
+        type: string
+      realized_pnl:
+        example: "2"
+        type: string
+      unrealized_pnl:
+        example: "190"
+        type: string
+        x-nullable: true
+      unrealized_pnl_percent:
+        example: "31.1475409836065573770491803279"
+        type: string
+        x-nullable: true
+    required:
+    - allocation
+    - calculated_at
+    - cost_basis
+    - coverage
+    - currency
+    - market_value
+    - missing_symbols
+    - portfolios
+    - priced_market_value
+    - realized_pnl
+    - unrealized_pnl
+    - unrealized_pnl_percent
+    type: object
+  http.AllocationResponse:
+    properties:
+      instrument_name:
+        example: Apple Inc.
+        type: string
+      market_value:
+        example: "750"
+        type: string
+        x-nullable: true
+      quantity:
+        example: "5"
+        type: string
+      quote:
+        allOf:
+        - $ref: '#/definitions/http.QuoteResponse'
+        x-nullable: true
+      symbol:
+        example: AAPL
+        type: string
+      unavailable_reason:
+        enum:
+        - no_price
+        - provider_unavailable
+        example: no_price
+        type: string
+        x-nullable: true
+      weight_percent:
+        example: "93.75"
+        type: string
+        x-nullable: true
+    required:
+    - instrument_name
+    - market_value
+    - quantity
+    - quote
+    - symbol
+    - unavailable_reason
+    - weight_percent
+    type: object
   http.AuthConfigResponse:
     properties:
       google_enabled:
@@ -256,6 +411,14 @@ definitions:
         example: "13.5"
         type: string
         x-nullable: true
+      unrealized_pnl_percent:
+        example: "8.9108910891089108910891089109"
+        type: string
+        x-nullable: true
+      weight_percent:
+        example: "100"
+        type: string
+        x-nullable: true
     required:
     - average_cost
     - cost_basis
@@ -267,6 +430,8 @@ definitions:
     - symbol
     - unavailable_reason
     - unrealized_pnl
+    - unrealized_pnl_percent
+    - weight_percent
     type: object
   http.QuoteResponse:
     properties:
@@ -282,6 +447,10 @@ definitions:
         - USD
         example: USD
         type: string
+      delay_minutes:
+        example: 15
+        minimum: 0
+        type: integer
       feed:
         example: demo
         type: string
@@ -294,6 +463,11 @@ definitions:
         type: boolean
       price:
         example: "110"
+        type: string
+      price_type:
+        enum:
+        - delayed_bar_close
+        example: delayed_bar_close
         type: string
       session_status:
         enum:
@@ -312,10 +486,12 @@ definitions:
     - as_of
     - cached
     - currency
+    - delay_minutes
     - feed
     - fetched_at
     - is_demo
     - price
+    - price_type
     - session_status
     - source
     - stale
@@ -527,6 +703,9 @@ definitions:
         example: "2026-11-04T15:00:00Z"
         format: date-time
         type: string
+      cost_basis:
+        example: "151.5"
+        type: string
       coverage:
         enum:
         - complete
@@ -567,8 +746,13 @@ definitions:
         example: "13.5"
         type: string
         x-nullable: true
+      unrealized_pnl_percent:
+        example: "8.9108910891089108910891089109"
+        type: string
+        x-nullable: true
     required:
     - calculated_at
+    - cost_basis
     - coverage
     - currency
     - market_value
@@ -578,6 +762,7 @@ definitions:
     - priced_market_value
     - realized_pnl
     - unrealized_pnl
+    - unrealized_pnl_percent
     type: object
   http.VerifyResetRequest:
     properties:
@@ -2128,16 +2313,23 @@ paths:
     get:
       description: 'Prices every stock still held with a delayed reference price:
         the close of the last bar before 15 minutes ago. It is not a bid or ask price
-        and not a price one could trade at. A price that is missing is null and never
-        "0": coverage says whether every stock still held has a price (complete),
-        some do (partial) or none does (unavailable, which is also the answer when
-        the price provider cannot be reached). Unless coverage is complete, market_value
-        and unrealized_pnl are null and priced_market_value is only the subtotal of
-        the priced stocks; realized_pnl and the holdings never depend on prices. unrealized_pnl
-        = quantity x price - remaining cost, without any selling fee. With PRICE_PROVIDER=demo
-        the prices are sample data and is_demo is true. calculated_at is when the
-        transactions were read. A portfolio that belongs to someone else gets exactly
-        the same 404 as one that does not exist. Needs the session cookie.'
+        and not a price one could trade at; each quote says so in price_type (delayed_bar_close)
+        and delay_minutes (15), so label the price from those fields. A price that
+        is missing is null and never "0": coverage says whether every stock still
+        held has a price (complete), some do (partial) or none does (unavailable,
+        which is also the answer when the price provider cannot be reached). Unless
+        coverage is complete, market_value, unrealized_pnl and unrealized_pnl_percent
+        are null and priced_market_value is only the subtotal of the priced stocks;
+        realized_pnl, cost_basis and the holdings never depend on prices. unrealized_pnl
+        = quantity x price - remaining cost, without any selling fee. unrealized_pnl_percent
+        = unrealized_pnl / cost_basis x 100 and weight_percent = market_value / market_value
+        of the portfolio x 100; both are in percent ("8.5" is 8.5%), exact and not
+        rounded, and null when they cannot be known (no price, a stock that was sold
+        out for unrealized_pnl_percent, coverage that is not complete for weight_percent):
+        null never means 0%. With PRICE_PROVIDER=demo the prices are sample data and
+        is_demo is true. calculated_at is when the transactions were read. A portfolio
+        that belongs to someone else gets exactly the same 404 as one that does not
+        exist. Needs the session cookie.'
       operationId: getValuation
       parameters:
       - description: Portfolio ID
@@ -2178,6 +2370,54 @@ paths:
           schema:
             $ref: '#/definitions/http.ErrorResponse'
       summary: Value a portfolio with delayed prices
+      tags:
+      - Holdings/Prices
+  /api/v1/valuation:
+    get:
+      description: 'The summary for a dashboard: every portfolio of the signed-in
+        user valued with the same delayed reference prices as GET /api/v1/portfolios/{portfolio_id}/valuation
+        and added up. Each stock is priced once per request, however many portfolios
+        hold it. portfolios has one entry per portfolio (newest first, not paged,
+        because the totals count all of them) with the totals of its own valuation
+        and its share of the account; allocation merges the same stock from every
+        portfolio into one row, the largest market_value first, for a chart of what
+        the account holds. The rules for missing prices are those of a single portfolio,
+        over all of them: coverage is complete only when every stock still held in
+        any portfolio has a price; unless it is, market_value, unrealized_pnl and
+        unrealized_pnl_percent are null (never "0") and priced_market_value is only
+        the subtotal of the priced stocks, while cost_basis and realized_pnl never
+        depend on prices. Each portfolio keeps its own coverage, so one portfolio
+        can be complete while the account is partial. Percentages are in percent ("8.5"
+        is 8.5%), exact and not rounded; weight_percent is null unless the coverage
+        of the account is complete. When the price provider cannot be reached the
+        answer is still 200 with coverage unavailable. A user without portfolios or
+        trades gets zeros and empty lists. Only the caller''s own portfolios are ever
+        counted. Needs the session cookie.'
+      operationId: getAccountValuation
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/http.AccountValuationResponse'
+        "401":
+          description: unauthenticated
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+        "500":
+          description: internal
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+        "503":
+          description: dependency_unavailable or server_busy
+          headers:
+            Retry-After:
+              description: Seconds to wait; only sent with server_busy, not with dependency_unavailable
+              type: integer
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+      summary: Value every portfolio of the user together
       tags:
       - Holdings/Prices
   /healthz:

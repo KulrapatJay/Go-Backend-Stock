@@ -352,3 +352,118 @@ func TestValueTellsNoPriceFromNoAnswer(t *testing.T) {
 		t.Errorf("coverage = %q, missing = %v; want partial with both unpriced symbols missing", got.Coverage, got.MissingSymbols)
 	}
 }
+
+func requireNoPercent(t *testing.T, label string, got *decimal.Decimal) {
+	t.Helper()
+	if got != nil {
+		t.Errorf("%s = %s, want nil", label, got.String())
+	}
+}
+
+func TestValuePercentagesOfTheGoldenExample(t *testing.T) {
+	// Cost 151.5, market value 165, unrealized 13.5: 13.5 / 151.5 x 100 = 900 / 101 = 8.91089108...
+	// with a period of "9108". The 29th decimal is 9, so the 28th rounds up from 8 to 9.
+	id := mustNewID(t)
+	holdings := holdingsOf(t, []Transaction{
+		tradeIn(t, id, "AAPL", SideBuy, "2", "100", "2"),
+		tradeIn(t, id, "AAPL", SideSell, "0.5", "120", "1"),
+	}, nil)
+
+	got := ValuePortfolio(mustNewID(t), valuedAt, holdings, batchOf(quoteOf(t, "AAPL", "110")), false)
+
+	requireDecimal(t, "cost basis", got.CostBasis, "151.5")
+	requireOptional(t, "unrealized percent", got.UnrealizedPnLPercent, "8.9108910891089108910891089109")
+	requireOptional(t, "position unrealized percent", got.Positions[0].UnrealizedPnLPercent, "8.9108910891089108910891089109")
+	requireOptional(t, "position weight", got.Positions[0].WeightPercent, "100")
+}
+
+func TestValueWeightsShareTheMarketValue(t *testing.T) {
+	// AAPL 1 x 150 = 150 on a cost of 100 (+50%), MSFT 1 x 50 = 50 on a cost of 100 (-50%). Portfolio:
+	// cost 200, value 200, unrealized 0 (0%); weights 75% and 25%.
+	a, b := mustNewID(t), mustNewID(t)
+	holdings := holdingsOf(t, []Transaction{
+		tradeIn(t, a, "AAPL", SideBuy, "1", "100", "0"),
+		tradeIn(t, b, "MSFT", SideBuy, "1", "100", "0"),
+	}, nil)
+
+	got := ValuePortfolio(mustNewID(t), valuedAt, holdings, batchOf(quoteOf(t, "AAPL", "150"), quoteOf(t, "MSFT", "50")), false)
+
+	requireDecimal(t, "cost basis", got.CostBasis, "200")
+	requireOptional(t, "unrealized percent", got.UnrealizedPnLPercent, "0")
+	requireOptional(t, "AAPL percent", got.Positions[0].UnrealizedPnLPercent, "50")
+	requireOptional(t, "AAPL weight", got.Positions[0].WeightPercent, "75")
+	requireOptional(t, "MSFT percent", got.Positions[1].UnrealizedPnLPercent, "-50")
+	requireOptional(t, "MSFT weight", got.Positions[1].WeightPercent, "25")
+}
+
+func TestValueNegativePercentRoundsHalfEvenLikeAPositiveOne(t *testing.T) {
+	// Cost 3. At 2: -1 / 3 x 100 = -33.333...; at 4: +33.333... Both keep 28 decimals.
+	id := mustNewID(t)
+	holdings := holdingsOf(t, []Transaction{tradeIn(t, id, "AAPL", SideBuy, "1", "3", "0")}, nil)
+	thirds := "33." + strings.Repeat("3", 28)
+
+	loss := ValuePortfolio(mustNewID(t), valuedAt, holdings, batchOf(quoteOf(t, "AAPL", "2")), false)
+	gain := ValuePortfolio(mustNewID(t), valuedAt, holdings, batchOf(quoteOf(t, "AAPL", "4")), false)
+
+	requireOptional(t, "loss percent", loss.UnrealizedPnLPercent, "-"+thirds)
+	requireOptional(t, "gain percent", gain.UnrealizedPnLPercent, thirds)
+	requireOptional(t, "loss position percent", loss.Positions[0].UnrealizedPnLPercent, "-"+thirds)
+}
+
+func TestValuePercentagesAreNilWithoutCompleteCoverage(t *testing.T) {
+	aapl, msft := mustNewID(t), mustNewID(t)
+	holdings := holdingsOf(t, []Transaction{
+		tradeIn(t, aapl, "AAPL", SideBuy, "1", "100", "0"),
+		tradeIn(t, msft, "MSFT", SideBuy, "1", "30", "0"),
+	}, nil)
+	batch := batchOf(quoteOf(t, "AAPL", "110"))
+	batch.Unavailable = []Symbol{symbolOf(t, "MSFT")}
+
+	got := ValuePortfolio(mustNewID(t), valuedAt, holdings, batch, false)
+
+	requireDecimal(t, "cost basis", got.CostBasis, "130") // never depends on prices
+	requireNoPercent(t, "unrealized percent", got.UnrealizedPnLPercent)
+	// AAPL has a price, so its own gain is known; its share of a total that is not known is not.
+	requireOptional(t, "AAPL percent", got.Positions[0].UnrealizedPnLPercent, "10")
+	requireNoPercent(t, "AAPL weight", got.Positions[0].WeightPercent)
+	requireNoPercent(t, "MSFT percent", got.Positions[1].UnrealizedPnLPercent)
+	requireNoPercent(t, "MSFT weight", got.Positions[1].WeightPercent)
+}
+
+func TestValueClosedPositionHasNoPercentAndAZeroWeight(t *testing.T) {
+	// AAPL was sold out (cost basis 0: a gain in percent of nothing does not exist); MSFT is all that
+	// is left, so it is 100% of the portfolio and the closed AAPL is 0% of it.
+	aapl, msft := mustNewID(t), mustNewID(t)
+	holdings := holdingsOf(t, []Transaction{
+		tradeIn(t, aapl, "AAPL", SideBuy, "1", "100", "0"),
+		tradeIn(t, aapl, "AAPL", SideSell, "1", "108.5", "0"),
+		tradeIn(t, msft, "MSFT", SideBuy, "2", "30", "0"),
+	}, nil)
+
+	got := ValuePortfolio(mustNewID(t), valuedAt, holdings, batchOf(quoteOf(t, "MSFT", "33")), false)
+
+	requireDecimal(t, "cost basis", got.CostBasis, "60")
+	requireOptional(t, "unrealized percent", got.UnrealizedPnLPercent, "10")
+	requireNoPercent(t, "closed AAPL percent", got.Positions[0].UnrealizedPnLPercent)
+	requireOptional(t, "closed AAPL weight", got.Positions[0].WeightPercent, "0")
+	requireOptional(t, "MSFT weight", got.Positions[1].WeightPercent, "100")
+}
+
+func TestValuePortfolioWorthNothingHasNoPercentages(t *testing.T) {
+	id := mustNewID(t)
+	closed := holdingsOf(t, []Transaction{
+		tradeIn(t, id, "AAPL", SideBuy, "1", "100", "0"),
+		tradeIn(t, id, "AAPL", SideSell, "1", "108.5", "0"),
+	}, nil)
+	for name, holdings := range map[string][]Holding{"empty": nil, "closed": closed} {
+		t.Run(name, func(t *testing.T) {
+			got := ValuePortfolio(mustNewID(t), valuedAt, holdings, QuoteBatch{}, false)
+			requireDecimal(t, "cost basis", got.CostBasis, "0")
+			requireNoPercent(t, "unrealized percent", got.UnrealizedPnLPercent)
+			for _, p := range got.Positions {
+				requireNoPercent(t, "position percent", p.UnrealizedPnLPercent)
+				requireNoPercent(t, "position weight", p.WeightPercent) // a share of zero does not exist
+			}
+		})
+	}
+}

@@ -67,7 +67,7 @@ func TestQuotesPricesHeldSymbols(t *testing.T) {
 	}
 	q, ok := batch.Quotes["AAPL"]
 	if !ok || q.Price.String() != "189.5" || q.Currency != "USD" || q.Source != "alpaca" || q.Feed != "sip" ||
-		q.IsDemo || q.Cached || q.Stale || q.SessionStatus != domain.SessionOpen {
+		q.IsDemo || q.Cached || q.Stale || q.SessionStatus != domain.SessionOpen || q.PriceType != domain.PriceTypeDelayedBarClose {
 		t.Fatalf("AAPL quote = %+v", q)
 	}
 	if !q.AsOf.Equal(utc(2026, 11, 3, 14, 45)) || !q.FetchedAt.Equal(f.clock.now) {

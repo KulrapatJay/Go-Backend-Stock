@@ -12,6 +12,16 @@ JOIN app.instruments i ON i.id = t.instrument_id
 WHERE t.portfolio_id = @portfolio_id
 ORDER BY t.executed_at, t.sequence;
 
+-- The history of every portfolio of the owner in one statement (one consistent snapshot), in replay
+-- order inside each portfolio.
+-- name: OwnerTransactionHistory :many
+SELECT t.id, t.portfolio_id, t.sequence, t.instrument_id, i.symbol, t.side, t.quantity, t.price, t.fee,
+       t.executed_at, t.version, t.created_at, t.updated_at
+FROM app.transactions t
+JOIN app.portfolios p ON p.id = t.portfolio_id AND p.user_id = @owner_id
+JOIN app.instruments i ON i.id = t.instrument_id
+ORDER BY t.portfolio_id, t.executed_at, t.sequence;
+
 -- Newest first by (executed_at, sequence). Filters and the cursor are NULL when unused; from and
 -- to are inclusive.
 -- name: ListOwnedTransactions :many

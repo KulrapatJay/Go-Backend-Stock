@@ -19,7 +19,7 @@ func cachedQuote(t *testing.T, symbol, price string, fetchedAt time.Time) domain
 	}
 	q, err := domain.NewPriceQuote(domain.PriceQuote{
 		Symbol: mustSymbol(t, symbol), Price: p, Currency: "USD", AsOf: fetchedAt.Add(-time.Minute), FetchedAt: fetchedAt,
-		Source: "alpaca", Feed: "sip", SessionStatus: domain.SessionOpen,
+		Source: "alpaca", Feed: "sip", SessionStatus: domain.SessionOpen, PriceType: domain.PriceTypeDelayedBarClose,
 	})
 	if err != nil {
 		t.Fatal(err)

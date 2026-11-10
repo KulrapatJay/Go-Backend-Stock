@@ -40,6 +40,7 @@ var documentedValuationOperations = []struct {
 }{
 	{"get", "/api/v1/portfolios/{portfolio_id}/holdings", []int{200, 400, 401, 404, 500, 503}},
 	{"get", "/api/v1/portfolios/{portfolio_id}/valuation", []int{200, 400, 401, 404, 500, 503}},
+	{"get", "/api/v1/valuation", []int{200, 401, 500, 503}},
 }
 
 func TestPortfolioOperationsAreDocumented(t *testing.T) {
@@ -70,9 +71,13 @@ var requiredPortfolioFields = map[string][]string{
 
 	"http.HoldingResponse":   {"average_cost", "cost_basis", "instrument_name", "quantity", "realized_pnl", "symbol"},
 	"http.HoldingsResponse":  {"data"},
-	"http.QuoteResponse":     {"as_of", "cached", "currency", "feed", "fetched_at", "is_demo", "price", "session_status", "source", "stale"},
-	"http.PositionResponse":  {"average_cost", "cost_basis", "instrument_name", "market_value", "quantity", "quote", "realized_pnl", "symbol", "unavailable_reason", "unrealized_pnl"},
-	"http.ValuationResponse": {"calculated_at", "coverage", "currency", "market_value", "missing_symbols", "portfolio_id", "positions", "priced_market_value", "realized_pnl", "unrealized_pnl"},
+	"http.QuoteResponse":     {"as_of", "cached", "currency", "delay_minutes", "feed", "fetched_at", "is_demo", "price", "price_type", "session_status", "source", "stale"},
+	"http.PositionResponse":  {"average_cost", "cost_basis", "instrument_name", "market_value", "quantity", "quote", "realized_pnl", "symbol", "unavailable_reason", "unrealized_pnl", "unrealized_pnl_percent", "weight_percent"},
+	"http.ValuationResponse": {"calculated_at", "cost_basis", "coverage", "currency", "market_value", "missing_symbols", "portfolio_id", "positions", "priced_market_value", "realized_pnl", "unrealized_pnl", "unrealized_pnl_percent"},
+
+	"http.AccountPortfolioResponse": {"cost_basis", "coverage", "market_value", "name", "portfolio_id", "realized_pnl", "unrealized_pnl", "unrealized_pnl_percent", "weight_percent"},
+	"http.AllocationResponse":       {"instrument_name", "market_value", "quantity", "quote", "symbol", "unavailable_reason", "weight_percent"},
+	"http.AccountValuationResponse": {"allocation", "calculated_at", "cost_basis", "coverage", "currency", "market_value", "missing_symbols", "portfolios", "priced_market_value", "realized_pnl", "unrealized_pnl", "unrealized_pnl_percent"},
 }
 
 func TestPortfolioSchemasDeclareRequiredFieldsAndTimestampFormats(t *testing.T) {
@@ -105,8 +110,11 @@ func TestPortfolioSchemasDeclareRequiredFieldsAndTimestampFormats(t *testing.T) 
 func TestValuationDeclaresWhichFieldsCanBeNull(t *testing.T) {
 	spec := loadSpec(t)
 	for definition, fields := range map[string][]string{
-		"http.ValuationResponse": {"market_value", "unrealized_pnl"},
-		"http.PositionResponse":  {"market_value", "unrealized_pnl", "quote", "unavailable_reason"},
+		"http.ValuationResponse":        {"market_value", "unrealized_pnl", "unrealized_pnl_percent"},
+		"http.PositionResponse":         {"market_value", "unrealized_pnl", "unrealized_pnl_percent", "weight_percent", "quote", "unavailable_reason"},
+		"http.AccountValuationResponse": {"market_value", "unrealized_pnl", "unrealized_pnl_percent"},
+		"http.AccountPortfolioResponse": {"market_value", "unrealized_pnl", "unrealized_pnl_percent", "weight_percent"},
+		"http.AllocationResponse":       {"market_value", "weight_percent", "quote", "unavailable_reason"},
 	} {
 		for _, field := range fields {
 			if !spec.Definitions[definition].Properties[field].Nullable {
@@ -114,9 +122,9 @@ func TestValuationDeclaresWhichFieldsCanBeNull(t *testing.T) {
 			}
 		}
 	}
-	for _, field := range []string{"calculated_at"} {
-		if got := spec.Definitions["http.ValuationResponse"].Properties[field].Format; got != "date-time" {
-			t.Errorf("http.ValuationResponse.%s format = %q, want date-time", field, got)
+	for _, definition := range []string{"http.ValuationResponse", "http.AccountValuationResponse"} {
+		if got := spec.Definitions[definition].Properties["calculated_at"].Format; got != "date-time" {
+			t.Errorf("%s.calculated_at format = %q, want date-time", definition, got)
 		}
 	}
 	for _, field := range []string{"as_of", "fetched_at"} {

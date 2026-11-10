@@ -160,12 +160,13 @@ func TestEveryOperationIsDescribed(t *testing.T) {
 	}
 }
 
-// moneyFreeIntegers are the only integer fields in the API: counters and a number of seconds. Money,
-// prices and share counts are decimal strings (AGENTS.md), so a new integer or any number is a
-// decision to make deliberately, not by accident.
+// moneyFreeIntegers are the only integer fields in the API: counters and numbers of seconds or
+// minutes. Money, prices, share counts and percentages are decimal strings (AGENTS.md), so a new
+// integer or any number is a decision to make deliberately, not by accident.
 var moneyFreeIntegers = []string{
 	"http.OTPAcceptedResponse.expires_in",
 	"http.PortfolioResponse.version",
+	"http.QuoteResponse.delay_minutes",
 	"http.ResetTokenResponse.expires_in",
 	"http.TransactionResponse.version",
 }
