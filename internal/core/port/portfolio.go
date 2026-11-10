@@ -22,6 +22,10 @@ type PortfolioRepository interface {
 	// LockOwned takes the portfolio row lock that serializes every change inside the portfolio.
 	LockOwned(ctx context.Context, ownerID, portfolioID domain.ID) (domain.Portfolio, error)
 	ListOwned(ctx context.Context, ownerID domain.ID, page domain.Page) (domain.PortfolioPage, error)
+	// ListAllOwned returns every portfolio of the owner, newest first like ListOwned, in one
+	// statement. It is for the account summary, which adds up all of them; lists shown to a user
+	// are paged with ListOwned.
+	ListAllOwned(ctx context.Context, ownerID domain.ID) ([]domain.Portfolio, error)
 	// UpdateOwned writes name and description when portfolio.Version still matches and returns
 	// the row with version + 1; a mismatch returns domain.ErrVersionConflict and a name the owner
 	// already uses returns domain.ErrPortfolioNameConflict.
@@ -40,6 +44,10 @@ type PortfolioRepository interface {
 type TransactionRepository interface {
 	// History returns the whole portfolio history ordered by (executed_at, sequence) for replay.
 	History(ctx context.Context, ownerID, portfolioID domain.ID) ([]domain.Transaction, error)
+	// OwnerHistory returns the history of every portfolio of the owner in one statement, ordered by
+	// (executed_at, sequence) inside each portfolio (Transaction.PortfolioID tells them apart). An
+	// owner without trades gets an empty list, not an error.
+	OwnerHistory(ctx context.Context, ownerID domain.ID) ([]domain.Transaction, error)
 	List(ctx context.Context, ownerID, portfolioID domain.ID, filter domain.TransactionFilter) (domain.TransactionPage, error)
 	Get(ctx context.Context, ownerID, portfolioID, transactionID domain.ID) (domain.Transaction, error)
 	// Insert returns the stored row, including the database-assigned sequence.

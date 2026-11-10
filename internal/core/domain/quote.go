@@ -20,9 +20,31 @@ func ParseSessionStatus(s string) (SessionStatus, error) {
 	return parseEnum("session_status", s, SessionOpen, SessionMarketClosed, SessionUnknown)
 }
 
+// ReferencePriceDelay is how far behind the valuation the reference price is: the close of the last bar
+// that ended at or before now - 15 minutes (AGENTS.md, delayed prices; ADR-0020).
+const ReferencePriceDelay = 15 * time.Minute
+
+// PriceType says what kind of price a quote is, so a client labels it from the data instead of
+// hard-coding "delayed". Kinds are added when a provider can serve them (a latest trade, for one);
+// a client must show a kind it does not know as a plain price with its as_of.
+type PriceType string
+
+// PriceTypeDelayedBarClose is the close of the last bar that ended at or before the cutoff, which is
+// ReferencePriceDelay behind the valuation. It is the only kind in phase 1.
+const PriceTypeDelayedBarClose PriceType = "delayed_bar_close"
+
+// MinimumDelay is how old a price of this kind is at least, by the way it is chosen: the reference
+// delay for a delayed bar close and zero for any other kind. The real age of one quote is its AsOf.
+func (t PriceType) MinimumDelay() time.Duration {
+	if t == PriceTypeDelayedBarClose {
+		return ReferencePriceDelay
+	}
+	return 0
+}
+
 // PriceQuote is one delayed reference price: the close of the last bar before the cutoff. AsOf is the
 // time of the source data (the end of the bar), never the moment the server fetched it; FetchedAt is
-// that moment and is what a cache ages by. IsDemo marks sample data.
+// that moment and is what a cache ages by. IsDemo marks sample data. PriceType names the kind of price.
 type PriceQuote struct {
 	Symbol        Symbol
 	Price         Price
@@ -35,6 +57,7 @@ type PriceQuote struct {
 	Stale         bool
 	Cached        bool
 	SessionStatus SessionStatus
+	PriceType     PriceType
 }
 
 // NewPriceQuote checks a quote an adapter built. A violation is a bug in the adapter, so it returns an
@@ -60,6 +83,8 @@ func NewPriceQuote(q PriceQuote) (PriceQuote, error) {
 		err = invariant("quote.feed", "must be 1-40 printable characters")
 	case !isOneOf(q.SessionStatus, SessionOpen, SessionMarketClosed, SessionUnknown):
 		err = invariant("quote.session_status", "must be open, market_closed or unknown")
+	case !isOneOf(q.PriceType, PriceTypeDelayedBarClose):
+		err = invariant("quote.price_type", "must be delayed_bar_close")
 	}
 	if err != nil {
 		return PriceQuote{}, err

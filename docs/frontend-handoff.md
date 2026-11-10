@@ -2,6 +2,7 @@
 
 เอกสารนี้สรุปสิ่งที่ frontend (Next.js) ต้องรู้เพื่อเชื่อม Go API ของเฟส 1 ให้ถูกต้อง
 เขียนจาก backend ณ 2026-11-07 (branch `developer`, หลัง milestone 9 evidence)
+แก้ไข 2026-11-10: เพิ่มเปอร์เซ็นต์ใน valuation, `GET /valuation` และชนิดราคาใน `quote` (หัวข้อ 1, 4, 8)
 
 **แหล่งความจริงของ contract คือ [`docs/api/swagger.json`](api/swagger.json)** (Swagger 2.0 ที่ generate จาก annotations)
 หากเอกสารนี้ขัดกับ swagger.json ให้เชื่อ swagger.json และแจ้งให้แก้เอกสารนี้
@@ -24,6 +25,8 @@
 ## 1. นอกขอบเขตเฟส 1 (ห้ามทำหรือห้ามสมมติว่ามี)
 
 - หน้าหุ้นรายตัว กราฟราคา ราคา live/pre-market/after-hours ([ADR-0012](adr/0012-defer-stock-page-and-charts.md))
+- กราฟเทียบผลตอบแทนกับดัชนี (S&P 500, Nasdaq-100) และราคารายวันย้อนหลัง: ยังไม่มี endpoint
+  ราคายังเป็นราคาล่าช้า 15 นาที (`price_type: delayed_bar_close`) ไม่มีราคาล่าสุด
 - dividend, split, merger, การเปลี่ยน symbol, short selling, margin, FX, ยอดเงินสด, โอนหุ้นระหว่างพอร์ต
 - การส่งคำสั่งซื้อขายจริง: ระบบนี้บันทึกรายการที่ผู้ใช้ทำที่อื่นเท่านั้น
 - การตั้งรหัสผ่านให้บัญชี Google-only
@@ -110,6 +113,7 @@ browser ──► https://<web origin>/            Next.js pages
 | GET/PUT/DELETE `/portfolios/{id}/transactions/{transaction_id}` | getTransaction / updateTransaction / deleteTransaction | 200 + ETag / 200 + ETag / 204 | PUT/DELETE ต้องมี `If-Match` |
 | GET `/portfolios/{id}/holdings` | listHoldings | 200 `{data: HoldingResponse[]}` | ไม่เรียกผู้ให้บริการราคา จึงเร็วและดูได้เสมอ |
 | GET `/portfolios/{id}/valuation` | getValuation | 200 `ValuationResponse` | ตอบ 200 แม้ไม่มีราคา (ดูหัวข้อ 8) |
+| GET `/valuation` | getAccountValuation | 200 `AccountValuationResponse` | สรุปทุกพอร์ตของผู้ใช้สำหรับ dashboard: ยอดรวม, ยอดรายพอร์ต และ `allocation` สำหรับกราฟวงกลม (ดูหัวข้อ 8) |
 
 ## 5. กติกาข้อมูลที่ frontend ทำผิดแล้วเสียหาย
 
@@ -288,6 +292,29 @@ core ยังมี code `access_denied` และ `identity_conflict` แต�
   - `stale: true` = ราคาเก่ากว่าที่ควร; `cached: true` = ใช้ราคาที่ API เก็บไว้
   - `session_status`: `open` | `market_closed` (ใช้แท่งปิดของ session ล่าสุด ต้องแสดงวันเวลาจริง ไม่ทำเหมือนอัปเดตวันนี้)
     | `unknown` (อ่านปฏิทินตลาดไม่ได้ ราคาอาจมาจากนอก regular session)
+  - `price_type` และ `delay_minutes` บอกชนิดราคา: ตอนนี้เป็น `delayed_bar_close` กับ `15` เสมอ
+    ให้ติดป้าย "ราคาล่าช้า N นาที" จากสองฟิลด์นี้ ไม่เขียนข้อความตายตัว
+    ค่า `price_type` ที่ไม่รู้จัก (อาจเพิ่มภายหลัง) ให้แสดงเป็นราคาพร้อม `as_of`
+- **เปอร์เซ็นต์ ([ADR-0023](adr/0023-valuation-percentages-and-account-summary.md)):** ฟิลด์ที่ลงท้าย `_percent`
+  เป็นหน่วยเปอร์เซ็นต์ (`"8.5"` คือ 8.5%) เป็น decimal string เต็มความละเอียด (ถึง 28 ตำแหน่ง) ปัดตอนแสดงผลเท่านั้น
+  และ**ห้ามหารเองที่ฝั่งเว็บ**
+  - `cost_basis` ระดับพอร์ต = ต้นทุนคงเหลือรวมของหุ้นที่ยังถือ ไม่ขึ้นกับราคา จึงไม่เป็น `null`
+  - `unrealized_pnl_percent` = `unrealized_pnl / cost_basis × 100` เป็น `null` เมื่อไม่มีราคา
+    หรือต้นทุนเป็น 0 (หุ้นที่ขายหมดแล้ว, พอร์ตที่ไม่ถืออะไร) ระดับพอร์ตเป็น `null` เมื่อ `coverage` ไม่ `complete` ด้วย
+  - `weight_percent` = `market_value / market_value ของพอร์ต × 100` เป็น `null` เมื่อ `coverage` ไม่ `complete`
+    หรือพอร์ตมีมูลค่า 0; หุ้นที่ขายหมดในพอร์ตที่ `complete` ได้ `"0"`
+  - `null` ไม่ใช่ 0%: `"0"` แปลว่าเท่าทุนจริง หรือไม่มีส่วนในพอร์ตจริง ให้แสดง `null` เป็น "ไม่มีข้อมูล"
+- **`GET /valuation` สรุปทั้งบัญชี:** กติกา `null`/`coverage` เหมือนพอร์ตเดียวแต่นับทุกพอร์ต
+  - `coverage` ของบัญชีเป็น `complete` เมื่อหุ้นที่ยังถือทุกตัวในทุกพอร์ตมีราคา พอร์ตหนึ่งอาจ `complete`
+    ขณะที่บัญชีเป็น `partial`; เมื่อไม่ `complete` ยอดรวมและ `weight_percent` ทุกตัวเป็น `null`
+  - `portfolios[]`: `portfolio_id`, `name`, `coverage`, `cost_basis`, `market_value`, `unrealized_pnl`,
+    `unrealized_pnl_percent`, `realized_pnl`, `weight_percent` (สัดส่วนของพอร์ตในบัญชี) เรียงใหม่ไปเก่า ไม่แบ่งหน้า
+  - `allocation[]`: หุ้นตัวเดียวกันจากทุกพอร์ตรวมเป็นแถวเดียว เฉพาะที่ยังถือ เรียงมูลค่ามากไปน้อย
+    แถวที่ไม่มีราคาอยู่ท้ายและ `market_value` เป็น `null`; ใช้ `weight_percent` วาดกราฟวงกลมได้ตรงๆ
+    และใช้ `quote` ของแถวติดป้ายเดโม/ราคาล่าช้า
+  - ผู้ใช้ที่ยังไม่มีพอร์ตหรือรายการได้ 200 พร้อมยอด `"0"` และ list ว่าง
+  - ราคาแต่ละ symbol ถูกดึงครั้งเดียวต่อคำขอ จึงเรียก endpoint นี้ครั้งเดียวต่อการเปิด dashboard
+    แทนการเรียก `.../valuation` ทีละพอร์ต
 - unrealized P&L ไม่หักค่าธรรมเนียมขายในอนาคต
 - หน้าพอร์ตต้องระบุว่าไม่รองรับ dividends/splits/mergers/symbol changes จึงอาจคำนวณไม่ครบ
   และผลคำนวณใช้ moving weighted-average cost ไม่ใช่รายงานภาษี

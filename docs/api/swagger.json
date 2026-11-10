@@ -2016,7 +2016,7 @@
         },
         "/api/v1/portfolios/{portfolio_id}/valuation": {
             "get": {
-                "description": "Prices every stock still held with a delayed reference price: the close of the last bar before 15 minutes ago. It is not a bid or ask price and not a price one could trade at. A price that is missing is null and never \"0\": coverage says whether every stock still held has a price (complete), some do (partial) or none does (unavailable, which is also the answer when the price provider cannot be reached). Unless coverage is complete, market_value and unrealized_pnl are null and priced_market_value is only the subtotal of the priced stocks; realized_pnl and the holdings never depend on prices. unrealized_pnl = quantity x price - remaining cost, without any selling fee. With PRICE_PROVIDER=demo the prices are sample data and is_demo is true. calculated_at is when the transactions were read. A portfolio that belongs to someone else gets exactly the same 404 as one that does not exist. Needs the session cookie.",
+                "description": "Prices every stock still held with a delayed reference price: the close of the last bar before 15 minutes ago. It is not a bid or ask price and not a price one could trade at; each quote says so in price_type (delayed_bar_close) and delay_minutes (15), so label the price from those fields. A price that is missing is null and never \"0\": coverage says whether every stock still held has a price (complete), some do (partial) or none does (unavailable, which is also the answer when the price provider cannot be reached). Unless coverage is complete, market_value, unrealized_pnl and unrealized_pnl_percent are null and priced_market_value is only the subtotal of the priced stocks; realized_pnl, cost_basis and the holdings never depend on prices. unrealized_pnl = quantity x price - remaining cost, without any selling fee. unrealized_pnl_percent = unrealized_pnl / cost_basis x 100 and weight_percent = market_value / market_value of the portfolio x 100; both are in percent (\"8.5\" is 8.5%), exact and not rounded, and null when they cannot be known (no price, a stock that was sold out for unrealized_pnl_percent, coverage that is not complete for weight_percent): null never means 0%. With PRICE_PROVIDER=demo the prices are sample data and is_demo is true. calculated_at is when the transactions were read. A portfolio that belongs to someone else gets exactly the same 404 as one that does not exist. Needs the session cookie.",
                 "produces": [
                     "application/json"
                 ],
@@ -2056,6 +2056,51 @@
                     },
                     "404": {
                         "description": "not_found",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "internal",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "dependency_unavailable or server_busy",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        },
+                        "headers": {
+                            "Retry-After": {
+                                "type": "integer",
+                                "description": "Seconds to wait; only sent with server_busy, not with dependency_unavailable"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/valuation": {
+            "get": {
+                "description": "The summary for a dashboard: every portfolio of the signed-in user valued with the same delayed reference prices as GET /api/v1/portfolios/{portfolio_id}/valuation and added up. Each stock is priced once per request, however many portfolios hold it. portfolios has one entry per portfolio (newest first, not paged, because the totals count all of them) with the totals of its own valuation and its share of the account; allocation merges the same stock from every portfolio into one row, the largest market_value first, for a chart of what the account holds. The rules for missing prices are those of a single portfolio, over all of them: coverage is complete only when every stock still held in any portfolio has a price; unless it is, market_value, unrealized_pnl and unrealized_pnl_percent are null (never \"0\") and priced_market_value is only the subtotal of the priced stocks, while cost_basis and realized_pnl never depend on prices. Each portfolio keeps its own coverage, so one portfolio can be complete while the account is partial. Percentages are in percent (\"8.5\" is 8.5%), exact and not rounded; weight_percent is null unless the coverage of the account is complete. When the price provider cannot be reached the answer is still 200 with coverage unavailable. A user without portfolios or trades gets zeros and empty lists. Only the caller's own portfolios are ever counted. Needs the session cookie.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Holdings/Prices"
+                ],
+                "summary": "Value every portfolio of the user together",
+                "operationId": "getAccountValuation",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/http.AccountValuationResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "unauthenticated",
                         "schema": {
                             "$ref": "#/definitions/http.ErrorResponse"
                         }
@@ -2143,6 +2188,209 @@
         }
     },
     "definitions": {
+        "http.AccountPortfolioResponse": {
+            "type": "object",
+            "required": [
+                "cost_basis",
+                "coverage",
+                "market_value",
+                "name",
+                "portfolio_id",
+                "realized_pnl",
+                "unrealized_pnl",
+                "unrealized_pnl_percent",
+                "weight_percent"
+            ],
+            "properties": {
+                "cost_basis": {
+                    "type": "string",
+                    "example": "200"
+                },
+                "coverage": {
+                    "type": "string",
+                    "enum": [
+                        "complete",
+                        "partial",
+                        "unavailable"
+                    ],
+                    "example": "complete"
+                },
+                "market_value": {
+                    "type": "string",
+                    "x-nullable": true,
+                    "example": "300"
+                },
+                "name": {
+                    "type": "string",
+                    "example": "Long term"
+                },
+                "portfolio_id": {
+                    "type": "string",
+                    "example": "0192f0c1-7a8e-7cc4-9d2b-3f6c1a2b4c5d"
+                },
+                "realized_pnl": {
+                    "type": "string",
+                    "example": "2"
+                },
+                "unrealized_pnl": {
+                    "type": "string",
+                    "x-nullable": true,
+                    "example": "100"
+                },
+                "unrealized_pnl_percent": {
+                    "type": "string",
+                    "x-nullable": true,
+                    "example": "50"
+                },
+                "weight_percent": {
+                    "type": "string",
+                    "x-nullable": true,
+                    "example": "37.5"
+                }
+            }
+        },
+        "http.AccountValuationResponse": {
+            "type": "object",
+            "required": [
+                "allocation",
+                "calculated_at",
+                "cost_basis",
+                "coverage",
+                "currency",
+                "market_value",
+                "missing_symbols",
+                "portfolios",
+                "priced_market_value",
+                "realized_pnl",
+                "unrealized_pnl",
+                "unrealized_pnl_percent"
+            ],
+            "properties": {
+                "allocation": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/http.AllocationResponse"
+                    }
+                },
+                "calculated_at": {
+                    "type": "string",
+                    "format": "date-time",
+                    "example": "2026-11-10T15:00:00Z"
+                },
+                "cost_basis": {
+                    "type": "string",
+                    "example": "610"
+                },
+                "coverage": {
+                    "type": "string",
+                    "enum": [
+                        "complete",
+                        "partial",
+                        "unavailable"
+                    ],
+                    "example": "complete"
+                },
+                "currency": {
+                    "type": "string",
+                    "enum": [
+                        "USD"
+                    ],
+                    "example": "USD"
+                },
+                "market_value": {
+                    "type": "string",
+                    "x-nullable": true,
+                    "example": "800"
+                },
+                "missing_symbols": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "MSFT",
+                        "NVDA"
+                    ]
+                },
+                "portfolios": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/http.AccountPortfolioResponse"
+                    }
+                },
+                "priced_market_value": {
+                    "type": "string",
+                    "example": "800"
+                },
+                "realized_pnl": {
+                    "type": "string",
+                    "example": "2"
+                },
+                "unrealized_pnl": {
+                    "type": "string",
+                    "x-nullable": true,
+                    "example": "190"
+                },
+                "unrealized_pnl_percent": {
+                    "type": "string",
+                    "x-nullable": true,
+                    "example": "31.1475409836065573770491803279"
+                }
+            }
+        },
+        "http.AllocationResponse": {
+            "type": "object",
+            "required": [
+                "instrument_name",
+                "market_value",
+                "quantity",
+                "quote",
+                "symbol",
+                "unavailable_reason",
+                "weight_percent"
+            ],
+            "properties": {
+                "instrument_name": {
+                    "type": "string",
+                    "example": "Apple Inc."
+                },
+                "market_value": {
+                    "type": "string",
+                    "x-nullable": true,
+                    "example": "750"
+                },
+                "quantity": {
+                    "type": "string",
+                    "example": "5"
+                },
+                "quote": {
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/http.QuoteResponse"
+                        }
+                    ],
+                    "x-nullable": true
+                },
+                "symbol": {
+                    "type": "string",
+                    "example": "AAPL"
+                },
+                "unavailable_reason": {
+                    "type": "string",
+                    "enum": [
+                        "no_price",
+                        "provider_unavailable"
+                    ],
+                    "x-nullable": true,
+                    "example": "no_price"
+                },
+                "weight_percent": {
+                    "type": "string",
+                    "x-nullable": true,
+                    "example": "93.75"
+                }
+            }
+        },
         "http.AuthConfigResponse": {
             "type": "object",
             "required": [
@@ -2455,7 +2703,9 @@
                 "realized_pnl",
                 "symbol",
                 "unavailable_reason",
-                "unrealized_pnl"
+                "unrealized_pnl",
+                "unrealized_pnl_percent",
+                "weight_percent"
             ],
             "properties": {
                 "average_cost": {
@@ -2508,6 +2758,16 @@
                     "type": "string",
                     "x-nullable": true,
                     "example": "13.5"
+                },
+                "unrealized_pnl_percent": {
+                    "type": "string",
+                    "x-nullable": true,
+                    "example": "8.9108910891089108910891089109"
+                },
+                "weight_percent": {
+                    "type": "string",
+                    "x-nullable": true,
+                    "example": "100"
                 }
             }
         },
@@ -2517,10 +2777,12 @@
                 "as_of",
                 "cached",
                 "currency",
+                "delay_minutes",
                 "feed",
                 "fetched_at",
                 "is_demo",
                 "price",
+                "price_type",
                 "session_status",
                 "source",
                 "stale"
@@ -2542,6 +2804,11 @@
                     ],
                     "example": "USD"
                 },
+                "delay_minutes": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "example": 15
+                },
                 "feed": {
                     "type": "string",
                     "example": "demo"
@@ -2558,6 +2825,13 @@
                 "price": {
                     "type": "string",
                     "example": "110"
+                },
+                "price_type": {
+                    "type": "string",
+                    "enum": [
+                        "delayed_bar_close"
+                    ],
+                    "example": "delayed_bar_close"
                 },
                 "session_status": {
                     "type": "string",
@@ -2852,6 +3126,7 @@
             "type": "object",
             "required": [
                 "calculated_at",
+                "cost_basis",
                 "coverage",
                 "currency",
                 "market_value",
@@ -2860,13 +3135,18 @@
                 "positions",
                 "priced_market_value",
                 "realized_pnl",
-                "unrealized_pnl"
+                "unrealized_pnl",
+                "unrealized_pnl_percent"
             ],
             "properties": {
                 "calculated_at": {
                     "type": "string",
                     "format": "date-time",
                     "example": "2026-11-04T15:00:00Z"
+                },
+                "cost_basis": {
+                    "type": "string",
+                    "example": "151.5"
                 },
                 "coverage": {
                     "type": "string",
@@ -2921,6 +3201,11 @@
                     "type": "string",
                     "x-nullable": true,
                     "example": "13.5"
+                },
+                "unrealized_pnl_percent": {
+                    "type": "string",
+                    "x-nullable": true,
+                    "example": "8.9108910891089108910891089109"
                 }
             }
         },

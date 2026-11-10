@@ -16,4 +16,8 @@ type ValuationService interface {
 	// Value prices the holdings with delayed prices. A provider that fails or has no price leaves the
 	// affected positions unpriced (see domain.PortfolioValuation); it is not an error.
 	Value(ctx context.Context, p domain.Principal, portfolioID domain.ID) (domain.PortfolioValuation, error)
+	// ValueAll prices every portfolio of the principal with the same delayed prices, asked for once,
+	// and adds them up (see domain.AccountValuation). A principal without portfolios gets a summary
+	// of zeros, not an error.
+	ValueAll(ctx context.Context, p domain.Principal) (domain.AccountValuation, error)
 }

@@ -98,6 +98,23 @@ func (r *PortfolioRepository) ListOwned(ctx context.Context, ownerID domain.ID, 
 	return out, nil
 }
 
+// ListAllOwned returns every portfolio of the owner, newest first, in one statement.
+func (r *PortfolioRepository) ListAllOwned(ctx context.Context, ownerID domain.ID) ([]domain.Portfolio, error) {
+	rows, err := r.q.ListAllOwnedPortfolios(ctx, pgUUID(ownerID))
+	if err != nil {
+		return nil, mapError(err)
+	}
+	out := make([]domain.Portfolio, 0, len(rows))
+	for _, row := range rows {
+		p, err := portfolioFromRow(row)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, p)
+	}
+	return out, nil
+}
+
 // UpdateOwned writes name and description when the version matches and returns the row at
 // version + 1. A stale version returns domain.ErrVersionConflict, a missing or foreign portfolio
 // domain.ErrNotFound. A name the owner already uses returns domain.ErrPortfolioNameConflict and

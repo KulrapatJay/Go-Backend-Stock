@@ -450,3 +450,46 @@ func TestTransactionListRejectsCursorFromAnotherPortfolio(t *testing.T) {
 
 	requireCode(t, err, domain.CodeInvalidInput)
 }
+
+// TestTransactionOwnerHistoryReturnsEveryPortfolioOfTheOwnerInReplayOrder: one statement reads the
+// trades of all the owner's portfolios; inside each portfolio they are in (executed_at, sequence)
+// order, and another user's trades never appear.
+func TestTransactionOwnerHistoryReturnsEveryPortfolioOfTheOwnerInReplayOrder(t *testing.T) {
+	store := newRuntimeStore(t)
+	owner, stranger := insertUser(t, store), insertUser(t, store)
+	long, short := insertPortfolio(t, store, owner.ID), insertPortfolio(t, store, owner.ID)
+	foreign := insertPortfolio(t, store, stranger.ID)
+	instrument := insertInstrument(t, store)
+	at := now().Add(-time.Hour)
+	later := insertTrade(t, store, owner.ID, newTrade(t, long.ID, instrument, domain.SideBuy, "1", "10", at))
+	inShort := insertTrade(t, store, owner.ID, newTrade(t, short.ID, instrument, domain.SideBuy, "2", "10", at))
+	sameInstant := insertTrade(t, store, owner.ID, newTrade(t, long.ID, instrument, domain.SideBuy, "3", "10", at))
+	backdated := insertTrade(t, store, owner.ID, newTrade(t, long.ID, instrument, domain.SideBuy, "4", "10", at.Add(-time.Minute)))
+	insertTrade(t, store, stranger.ID, newTrade(t, foreign.ID, instrument, domain.SideBuy, "9", "10", at))
+
+	history, err := store.Transactions().OwnerHistory(t.Context(), owner.ID)
+	if err != nil || len(history) != 4 {
+		t.Fatalf("OwnerHistory = %+v, %v; want the owner's 4 trades", history, err)
+	}
+	byPortfolio := map[domain.ID][]domain.ID{}
+	for _, trade := range history {
+		if trade.Symbol != instrument.Symbol {
+			t.Errorf("trade %s has symbol %q, want the instrument's %q", trade.ID, trade.Symbol, instrument.Symbol)
+		}
+		byPortfolio[trade.PortfolioID] = append(byPortfolio[trade.PortfolioID], trade.ID)
+	}
+	if got := byPortfolio[long.ID]; len(got) != 3 || got[0] != backdated.ID || got[1] != later.ID || got[2] != sameInstant.ID {
+		t.Errorf("trades of the first portfolio = %v, want backdated, then the two at the same instant by sequence", got)
+	}
+	if got := byPortfolio[short.ID]; len(got) != 1 || got[0] != inShort.ID {
+		t.Errorf("trades of the second portfolio = %v, want its one trade", got)
+	}
+	if _, leaked := byPortfolio[foreign.ID]; leaked {
+		t.Error("OwnerHistory returned a trade of another user's portfolio")
+	}
+
+	none, err := store.Transactions().OwnerHistory(t.Context(), insertUser(t, store).ID)
+	if err != nil || len(none) != 0 {
+		t.Errorf("OwnerHistory(user without trades) = %+v, %v; want empty, no error", none, err)
+	}
+}

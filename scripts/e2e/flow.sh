@@ -117,10 +117,30 @@ flow_full() {
   expect_json .unrealized_pnl 148.5
   expect_json .realized_pnl 8.5
   expect_json '.positions[0].quote.is_demo' true
+  expect_json '.positions[0].quote.price_type' delayed_bar_close
+  expect_json '.positions[0].quote.delay_minutes' 15
+  expect_json .cost_basis 151.5
+  expect_json '.positions[0].weight_percent' 100
   call "$jar_a" GET "/portfolios/$long/holdings"
   expect_status 200
   expect_json '.data | length' 1
   expect_json '.data[0].symbol' MSFT
+
+  step "the account summary adds up both portfolios and nobody else's"
+  call "$jar_a" GET /valuation
+  expect_status 200
+  expect_json .coverage complete
+  expect_json .market_value 720
+  expect_json .cost_basis 551.5
+  expect_json .unrealized_pnl 168.5
+  expect_json '.portfolios | length' 2
+  expect_json '.allocation | length' 2
+  expect_json '.allocation[0].symbol' MSFT
+  expect_json '.allocation[0].weight_percent' 58.3333333333333333333333333333
+  call "$jar_b" GET /valuation
+  expect_status 200
+  expect_json .market_value 0
+  expect_json '.portfolios | length' 0
 
   step "another user cannot see or change any of it"
   call "$jar_b" GET "/portfolios/$short"

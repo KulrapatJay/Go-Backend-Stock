@@ -23,6 +23,7 @@ func goodQuote(t *testing.T) domain.PriceQuote {
 		AsOf:      time.Date(2026, time.November, 4, 14, 30, 0, 0, time.UTC),
 		FetchedAt: time.Date(2026, time.November, 4, 14, 46, 0, 0, time.UTC),
 		Source:    "demo", Feed: "demo", IsDemo: true, SessionStatus: domain.SessionUnknown,
+		PriceType: domain.PriceTypeDelayedBarClose,
 	}
 }
 
@@ -55,6 +56,10 @@ func TestNewPriceQuoteRefusesWhatAnAdapterMustNotBuild(t *testing.T) {
 			q.Source = "0123456789012345678901234567890123456789x"
 		},
 		"an unknown session": func(q *domain.PriceQuote) { q.SessionStatus = "closed" },
+		"no price type":      func(q *domain.PriceQuote) { q.PriceType = "" },
+		"an unknown price type": func(q *domain.PriceQuote) {
+			q.PriceType = "latest_trade" // not a kind of price this server can serve yet
+		},
 	}
 	for name, mutate := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -87,5 +92,19 @@ func TestParseSessionStatus(t *testing.T) {
 		if _, err := domain.ParseSessionStatus(bad); !errors.Is(err, domain.ErrInvalidInput) {
 			t.Errorf("ParseSessionStatus(%q) error = %v, want invalid_input", bad, err)
 		}
+	}
+}
+
+// A delayed bar close is, by definition, at least the reference delay behind: a client shows this
+// number instead of hard-coding "15 minutes".
+func TestDelayedBarCloseIsFifteenMinutesBehind(t *testing.T) {
+	if domain.ReferencePriceDelay != 15*time.Minute {
+		t.Errorf("ReferencePriceDelay = %v, want 15 minutes", domain.ReferencePriceDelay)
+	}
+	if got := domain.PriceTypeDelayedBarClose.MinimumDelay(); got != domain.ReferencePriceDelay {
+		t.Errorf("MinimumDelay() = %v, want the reference delay", got)
+	}
+	if got := domain.PriceType("").MinimumDelay(); got != 0 {
+		t.Errorf("MinimumDelay() of no price type = %v, want 0", got)
 	}
 }

@@ -27,6 +27,14 @@ WHERE user_id = @user_id
 ORDER BY created_at DESC, id DESC
 LIMIT @row_limit;
 
+-- Every portfolio of the owner in the order of ListOwnedPortfolios, for the account summary, which
+-- adds up all of them and so cannot work page by page.
+-- name: ListAllOwnedPortfolios :many
+SELECT id, user_id, name, description, currency, version, created_at, updated_at
+FROM app.portfolios
+WHERE user_id = $1
+ORDER BY created_at DESC, id DESC;
+
 -- A rename to a name the owner already uses violates portfolios_user_name_unique, which aborts
 -- the transaction; the service returns the conflict without writing anything else.
 -- name: UpdateOwnedPortfolio :one

@@ -77,28 +77,55 @@ const (
 // PositionValuation is a Holding with its price. MarketValue and UnrealizedPnL are nil when a position
 // that is still held has no price: a missing price is never valued as zero. A closed position has
 // neither a quote nor a reason, and its values are zero.
+//
+// UnrealizedPnLPercent is UnrealizedPnL / cost basis x 100. It is nil without a price and for a closed
+// position, whose cost basis is zero: nil never means 0%, which would read as "break even".
+// WeightPercent is MarketValue / the portfolio's market value x 100. It is nil unless the valuation is
+// complete and worth more than zero; a closed position then weighs 0.
 type PositionValuation struct {
-	Holding       Holding
-	Quote         *PriceQuote
-	MarketValue   *decimal.Decimal
-	UnrealizedPnL *decimal.Decimal
-	Reason        UnavailableReason
+	Holding              Holding
+	Quote                *PriceQuote
+	MarketValue          *decimal.Decimal
+	UnrealizedPnL        *decimal.Decimal
+	UnrealizedPnLPercent *decimal.Decimal
+	WeightPercent        *decimal.Decimal
+	Reason               UnavailableReason
 }
 
 // PortfolioValuation is the result of valuing a portfolio at CalculatedAt. MarketValue and
 // UnrealizedPnL are nil unless every position still held has a price; PricedMarketValue is then only
 // the subtotal of the priced positions and is never presented as the whole. RealizedPnL covers every
-// position, closed or open, and does not depend on prices.
+// position, closed or open, and does not depend on prices. CostBasis is the remaining cost of everything
+// still held and does not depend on prices either. UnrealizedPnLPercent is UnrealizedPnL / CostBasis x
+// 100 and is nil when UnrealizedPnL is, or when nothing is held (CostBasis zero).
 type PortfolioValuation struct {
-	PortfolioID       ID
-	CalculatedAt      time.Time
-	Coverage          Coverage
-	MarketValue       *decimal.Decimal
-	UnrealizedPnL     *decimal.Decimal
-	RealizedPnL       decimal.Decimal
-	PricedMarketValue decimal.Decimal
-	MissingSymbols    []Symbol
-	Positions         []PositionValuation
+	PortfolioID          ID
+	CalculatedAt         time.Time
+	Coverage             Coverage
+	CostBasis            decimal.Decimal
+	MarketValue          *decimal.Decimal
+	UnrealizedPnL        *decimal.Decimal
+	UnrealizedPnLPercent *decimal.Decimal
+	RealizedPnL          decimal.Decimal
+	PricedMarketValue    decimal.Decimal
+	MissingSymbols       []Symbol
+	Positions            []PositionValuation
+}
+
+var hundred = decimal.NewFromInt(100)
+
+// percentOf returns part / whole x 100 at 28 decimal places, rounded half to even, or nil when whole is
+// not above zero: a share of nothing does not exist. part may be negative (a loss); half-even rounding
+// is symmetric, so the magnitude is divided and the sign put back.
+func percentOf(part, whole decimal.Decimal) *decimal.Decimal {
+	if !whole.IsPositive() {
+		return nil
+	}
+	percent := divideHalfEven(part.Abs().Mul(hundred), whole)
+	if part.IsNegative() {
+		percent = percent.Neg()
+	}
+	return &percent
 }
 
 // trustworthy reports whether a quote can be used as the price of symbol at the valuation time: a price
@@ -126,6 +153,7 @@ func ValuePortfolio(portfolioID ID, at time.Time, holdings []Holding, batch Quot
 	open, pricedCount := 0, 0
 	for _, h := range holdings {
 		v.RealizedPnL = v.RealizedPnL.Add(h.RealizedPnL)
+		v.CostBasis = v.CostBasis.Add(h.CostBasis)
 		position := PositionValuation{Holding: h}
 		if !h.Quantity.IsPositive() {
 			zeroValue, zeroPnL := decimal.Zero, decimal.Zero
@@ -148,6 +176,7 @@ func ValuePortfolio(portfolioID ID, at time.Time, holdings []Holding, batch Quot
 			value := h.Quantity.Mul(quote.Price.Decimal())
 			pnl := value.Sub(h.CostBasis)
 			position.Quote, position.MarketValue, position.UnrealizedPnL = &quote, &value, &pnl
+			position.UnrealizedPnLPercent = percentOf(pnl, h.CostBasis)
 			priced = priced.Add(value)
 			unrealized = unrealized.Add(pnl)
 			pricedCount++
@@ -162,6 +191,10 @@ func ValuePortfolio(portfolioID ID, at time.Time, holdings []Holding, batch Quot
 	case open:
 		v.Coverage = CoverageComplete
 		v.MarketValue, v.UnrealizedPnL = &priced, &unrealized
+		v.UnrealizedPnLPercent = percentOf(unrealized, v.CostBasis)
+		for i := range v.Positions {
+			v.Positions[i].WeightPercent = percentOf(*v.Positions[i].MarketValue, priced)
+		}
 	case 0:
 		v.Coverage = CoverageUnavailable
 	default:

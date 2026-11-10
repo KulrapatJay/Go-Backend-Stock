@@ -43,7 +43,8 @@ func TestPricesQuoteTheDemoTable(t *testing.T) {
 			t.Fatalf("no quote for %s in %+v", symbol, batch)
 		}
 		if q.Price.String() != price || q.Currency != "USD" || !q.IsDemo || q.Stale || q.Cached ||
-			q.Source != "demo" || q.Feed != "demo" || q.SessionStatus != domain.SessionUnknown {
+			q.Source != "demo" || q.Feed != "demo" || q.SessionStatus != domain.SessionUnknown ||
+			q.PriceType != domain.PriceTypeDelayedBarClose {
 			t.Errorf("%s quote = %+v", symbol, q)
 		}
 		if !q.AsOf.Equal(time.Date(2026, 11, 4, 14, 37, 0, 0, time.UTC)) || !q.FetchedAt.Equal(clock.now) {

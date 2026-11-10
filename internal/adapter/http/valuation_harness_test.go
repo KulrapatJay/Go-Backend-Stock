@@ -74,6 +74,7 @@ func (f *fakePriceProvider) Quotes(_ context.Context, symbols []domain.Symbol, c
 		quote, err := domain.NewPriceQuote(domain.PriceQuote{
 			Symbol: symbol, Price: price, Currency: "USD", AsOf: asOf, FetchedAt: asOf.Add(time.Minute),
 			Source: "test", Feed: "test", IsDemo: true, SessionStatus: domain.SessionUnknown,
+			PriceType: domain.PriceTypeDelayedBarClose,
 		})
 		if err != nil {
 			return domain.QuoteBatch{}, err

@@ -61,6 +61,24 @@ func (r *TransactionRepository) History(ctx context.Context, ownerID, portfolioI
 	return out, nil
 }
 
+// OwnerHistory returns every trade of every portfolio of the owner in one statement, in replay order
+// inside each portfolio. An owner without trades gets an empty list.
+func (r *TransactionRepository) OwnerHistory(ctx context.Context, ownerID domain.ID) ([]domain.Transaction, error) {
+	rows, err := r.q.OwnerTransactionHistory(ctx, pgUUID(ownerID))
+	if err != nil {
+		return nil, mapError(err)
+	}
+	out := make([]domain.Transaction, 0, len(rows))
+	for _, row := range rows {
+		t, err := transactionFromRow(transactionRow(row))
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, t)
+	}
+	return out, nil
+}
+
 // List returns one page of the owner's portfolio transactions, newest first, narrowed by the
 // filter. A cursor from another list or filter is invalid_input; a missing or foreign portfolio
 // domain.ErrNotFound.

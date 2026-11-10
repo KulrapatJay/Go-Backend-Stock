@@ -341,6 +341,67 @@ func (q *Queries) OwnedTransactionHistory(ctx context.Context, arg OwnedTransact
 	return items, nil
 }
 
+const ownerTransactionHistory = `-- name: OwnerTransactionHistory :many
+SELECT t.id, t.portfolio_id, t.sequence, t.instrument_id, i.symbol, t.side, t.quantity, t.price, t.fee,
+       t.executed_at, t.version, t.created_at, t.updated_at
+FROM app.transactions t
+JOIN app.portfolios p ON p.id = t.portfolio_id AND p.user_id = $1
+JOIN app.instruments i ON i.id = t.instrument_id
+ORDER BY t.portfolio_id, t.executed_at, t.sequence
+`
+
+type OwnerTransactionHistoryRow struct {
+	ID           pgtype.UUID
+	PortfolioID  pgtype.UUID
+	Sequence     pgtype.Int8
+	InstrumentID pgtype.UUID
+	Symbol       string
+	Side         string
+	Quantity     pgtype.Numeric
+	Price        pgtype.Numeric
+	Fee          pgtype.Numeric
+	ExecutedAt   pgtype.Timestamptz
+	Version      int32
+	CreatedAt    pgtype.Timestamptz
+	UpdatedAt    pgtype.Timestamptz
+}
+
+// The history of every portfolio of the owner in one statement (one consistent snapshot), in replay
+// order inside each portfolio.
+func (q *Queries) OwnerTransactionHistory(ctx context.Context, ownerID pgtype.UUID) ([]OwnerTransactionHistoryRow, error) {
+	rows, err := q.db.Query(ctx, ownerTransactionHistory, ownerID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []OwnerTransactionHistoryRow
+	for rows.Next() {
+		var i OwnerTransactionHistoryRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.PortfolioID,
+			&i.Sequence,
+			&i.InstrumentID,
+			&i.Symbol,
+			&i.Side,
+			&i.Quantity,
+			&i.Price,
+			&i.Fee,
+			&i.ExecutedAt,
+			&i.Version,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const updateOwnedTransaction = `-- name: UpdateOwnedTransaction :one
 WITH upd AS (
     UPDATE app.transactions t

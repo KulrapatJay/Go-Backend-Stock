@@ -91,6 +91,44 @@ func (q *Queries) InsertPortfolio(ctx context.Context, arg InsertPortfolioParams
 	return result.RowsAffected(), nil
 }
 
+const listAllOwnedPortfolios = `-- name: ListAllOwnedPortfolios :many
+SELECT id, user_id, name, description, currency, version, created_at, updated_at
+FROM app.portfolios
+WHERE user_id = $1
+ORDER BY created_at DESC, id DESC
+`
+
+// Every portfolio of the owner in the order of ListOwnedPortfolios, for the account summary, which
+// adds up all of them and so cannot work page by page.
+func (q *Queries) ListAllOwnedPortfolios(ctx context.Context, userID pgtype.UUID) ([]AppPortfolio, error) {
+	rows, err := q.db.Query(ctx, listAllOwnedPortfolios, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []AppPortfolio
+	for rows.Next() {
+		var i AppPortfolio
+		if err := rows.Scan(
+			&i.ID,
+			&i.UserID,
+			&i.Name,
+			&i.Description,
+			&i.Currency,
+			&i.Version,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listOwnedPortfolios = `-- name: ListOwnedPortfolios :many
 SELECT id, user_id, name, description, currency, version, created_at, updated_at
 FROM app.portfolios

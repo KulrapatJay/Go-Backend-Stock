@@ -26,8 +26,8 @@ var _ port.PriceProvider = (*Prices)(nil)
 // NewPrices returns the provider of the fixed demo prices. clock stamps FetchedAt.
 func NewPrices(clock port.Clock) *Prices { return &Prices{clock: clock} }
 
-// Quotes prices every symbol of the demo list as of the minute of cutoff; any other symbol is
-// unavailable.
+// Quotes prices every symbol of the demo list as of the minute of cutoff, like the delayed bar close
+// of a real provider; any other symbol is unavailable.
 func (p *Prices) Quotes(ctx context.Context, symbols []domain.Symbol, cutoff time.Time) (domain.QuoteBatch, error) {
 	if err := ctx.Err(); err != nil {
 		return domain.QuoteBatch{}, err
@@ -51,6 +51,7 @@ func (p *Prices) Quotes(ctx context.Context, symbols []domain.Symbol, cutoff tim
 		quote, err := domain.NewPriceQuote(domain.PriceQuote{
 			Symbol: symbol, Price: price, Currency: "USD", AsOf: asOf, FetchedAt: fetchedAt,
 			Source: "demo", Feed: "demo", IsDemo: true, SessionStatus: domain.SessionUnknown,
+			PriceType: domain.PriceTypeDelayedBarClose,
 		})
 		if err != nil {
 			return domain.QuoteBatch{}, err

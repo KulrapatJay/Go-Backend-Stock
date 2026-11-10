@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"sort"
 	"time"
 
 	"go-backend-stock/internal/core/domain"
@@ -14,7 +15,7 @@ import (
 const (
 	// priceDelay is how far behind now the reference price is: the close of the last bar that ended
 	// before now - 15 minutes (AGENTS.md, delayed prices).
-	priceDelay = 15 * time.Minute
+	priceDelay = domain.ReferencePriceDelay
 	// priceTimeout bounds the one call to the price provider (spec section 12).
 	priceTimeout = 10 * time.Second
 	// priceMargin is the time of the request itself that the provider never gets, so that a slow
@@ -73,7 +74,7 @@ func (s *Valuation) Value(ctx context.Context, p domain.Principal, portfolioID d
 	var batch domain.QuoteBatch
 	failed := false
 	if open := domain.OpenSymbols(holdings); len(open) > 0 {
-		batch, failed, err = s.quotes(ctx, open, at, portfolioID)
+		batch, failed, err = s.quotes(ctx, open, at, slog.String("portfolio_id", portfolioID.String()))
 		if err != nil {
 			return domain.PortfolioValuation{}, err
 		}
@@ -81,10 +82,78 @@ func (s *Valuation) Value(ctx context.Context, p domain.Principal, portfolioID d
 	return domain.ValuePortfolio(portfolioID, at, holdings, batch, failed), nil
 }
 
+// ValueAll prices every portfolio of the caller and adds them up. It reads the portfolios and the
+// history of all of them (one statement each), replays each portfolio apart and then asks the price
+// provider once for every symbol still held anywhere: a symbol held in several portfolios costs one
+// request, and every portfolio is valued with the same price. A provider that fails leaves the
+// positions unpriced, as in Value.
+func (s *Valuation) ValueAll(ctx context.Context, p domain.Principal) (domain.AccountValuation, error) {
+	if p.IsZero() {
+		return domain.AccountValuation{}, domain.ErrUnauthenticated
+	}
+	portfolios, err := s.store.Portfolios().ListAllOwned(ctx, p.UserID)
+	if err != nil {
+		return domain.AccountValuation{}, err
+	}
+	history, err := s.store.Transactions().OwnerHistory(ctx, p.UserID)
+	if err != nil {
+		return domain.AccountValuation{}, err
+	}
+	at := s.clock.Now().UTC()
+	// A portfolio created after the list was read may already have trades here; it is not in
+	// portfolios and is left out as a whole.
+	byPortfolio := make(map[domain.ID][]domain.Transaction, len(portfolios))
+	for _, t := range history {
+		byPortfolio[t.PortfolioID] = append(byPortfolio[t.PortfolioID], t)
+	}
+	listed := make([]domain.Transaction, 0, len(history))
+	for _, portfolio := range portfolios {
+		listed = append(listed, byPortfolio[portfolio.ID]...)
+	}
+	names, err := s.instrumentNames(ctx, listed)
+	if err != nil {
+		return domain.AccountValuation{}, err
+	}
+
+	holdings := make([][]domain.Holding, len(portfolios))
+	var open []domain.Symbol
+	asked := map[string]bool{}
+	for i, portfolio := range portfolios {
+		holdings[i], err = s.replay(byPortfolio[portfolio.ID], names, portfolio.ID)
+		if err != nil {
+			return domain.AccountValuation{}, err
+		}
+		for _, symbol := range domain.OpenSymbols(holdings[i]) {
+			if !asked[symbol.String()] {
+				asked[symbol.String()] = true
+				open = append(open, symbol)
+			}
+		}
+	}
+	sort.Slice(open, func(i, j int) bool { return open[i].String() < open[j].String() })
+
+	var batch domain.QuoteBatch
+	failed := false
+	if len(open) > 0 {
+		batch, failed, err = s.quotes(ctx, open, at, slog.Int("portfolios", len(portfolios)))
+		if err != nil {
+			return domain.AccountValuation{}, err
+		}
+	}
+	valued := make([]domain.ValuedPortfolio, len(portfolios))
+	for i, portfolio := range portfolios {
+		valued[i] = domain.ValuedPortfolio{
+			Portfolio: portfolio, Valuation: domain.ValuePortfolio(portfolio.ID, at, holdings[i], batch, failed),
+		}
+	}
+	return domain.SummarizeAccount(at, valued), nil
+}
+
 // quotes asks the provider once. The provider gets priceTimeout, or less when the request's own
 // deadline is closer, keeping priceMargin for the answer: a provider that is slow or down leaves the
-// positions unpriced (failed) and is never an error. Only a request that was cancelled is.
-func (s *Valuation) quotes(ctx context.Context, symbols []domain.Symbol, at time.Time, portfolioID domain.ID) (domain.QuoteBatch, bool, error) {
+// positions unpriced (failed) and is never an error. Only a request that was cancelled is. scope says
+// in the log what was being valued.
+func (s *Valuation) quotes(ctx context.Context, symbols []domain.Symbol, at time.Time, scope slog.Attr) (domain.QuoteBatch, bool, error) {
 	timeout := priceTimeout
 	if deadline, ok := ctx.Deadline(); ok {
 		timeout = min(timeout, time.Until(deadline)-priceMargin)
@@ -108,7 +177,7 @@ func (s *Valuation) quotes(ctx context.Context, symbols []domain.Symbol, at time
 	s.log.Warn("could not get prices, valuing without them",
 		slog.String("event", "valuation.prices_failed"),
 		slog.String("error_class", errorClass(err)),
-		slog.String("portfolio_id", portfolioID.String()),
+		scope,
 		slog.Int("symbols", len(symbols)))
 	return domain.QuoteBatch{}, true, nil
 }
@@ -121,23 +190,41 @@ func (s *Valuation) snapshot(ctx context.Context, p domain.Principal, portfolioI
 		return time.Time{}, nil, err
 	}
 	at := s.clock.Now().UTC()
+	names, err := s.instrumentNames(ctx, history)
+	if err != nil {
+		return time.Time{}, nil, err
+	}
+	holdings, err := s.replay(history, names, portfolioID)
+	if err != nil {
+		return time.Time{}, nil, err
+	}
+	return at, holdings, nil
+}
+
+// replay turns the history of one portfolio into its holdings.
+func (s *Valuation) replay(history []domain.Transaction, names map[domain.ID]string, portfolioID domain.ID) ([]domain.Holding, error) {
 	positions, err := domain.ReplayHistory(history)
 	if err != nil {
 		// Stored history that sells more than it holds is damaged data, not a mistake of the caller.
 		s.log.Error("stored history cannot be replayed",
 			slog.String("event", "valuation.history_invalid"),
 			slog.String("portfolio_id", portfolioID.String()))
-		return time.Time{}, nil, fmt.Errorf("%w: stored history cannot be replayed", domain.ErrInternal)
+		return nil, fmt.Errorf("%w: stored history cannot be replayed", domain.ErrInternal)
 	}
+	return domain.BuildHoldings(positions, history, names), nil
+}
+
+// instrumentNames names the instruments of history with one read.
+func (s *Valuation) instrumentNames(ctx context.Context, history []domain.Transaction) (map[domain.ID]string, error) {
 	instruments, err := s.store.Instruments().ByIDs(ctx, instrumentIDs(history))
 	if err != nil {
-		return time.Time{}, nil, err
+		return nil, err
 	}
 	names := make(map[domain.ID]string, len(instruments))
 	for id, i := range instruments {
 		names[id] = i.Name
 	}
-	return at, domain.BuildHoldings(positions, history, names), nil
+	return names, nil
 }
 
 // instrumentIDs lists each instrument of history once, in order of first appearance.

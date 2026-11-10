@@ -30,3 +30,4 @@
 | [0020](0020-delayed-prices-and-valuation-coverage.md) | ราคาอ้างอิงแบบหน่วงเวลา และ coverage ของการประเมินมูลค่า | Accepted |
 | [0021](0021-retention-maintenance-job.md) | Retention cleanup เป็น one-shot job ด้วย maintenance role | Accepted |
 | [0022](0022-two-step-password-reset.md) | Password reset แบบสองขั้นด้วย reset token ที่ผูกกับ browser | Accepted |
+| [0023](0023-valuation-percentages-and-account-summary.md) | เปอร์เซ็นต์ใน valuation, สรุปรวมทุกพอร์ต และชนิดราคาใน quote | Proposed |
