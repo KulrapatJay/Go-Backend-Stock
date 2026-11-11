@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Drives the whole backend flow through HTTP, as a browser would, against a running stack.
 #
-#   scripts/e2e/flow.sh full           sign up, verify email, login, portfolios, trades, valuation,
+#   scripts/e2e/flow.sh full           sign up, verify email, login, portfolios, trades, valuation, daily bars,
 #                                      ownership, optimistic locking, logout, password reset
 #   scripts/e2e/flow.sh provider-down  the price provider cannot be reached: known symbols still
 #                                      record, new symbols get 503, valuation is "unavailable"
@@ -141,6 +141,32 @@ flow_full() {
   expect_status 200
   expect_json .market_value 0
   expect_json '.portfolios | length' 0
+
+  step "daily bars are exact, oldest first, shared and need a session"
+  call "$jar_a" GET "/instruments/AAPL/bars?from=2026-10-01&to=2026-10-09"
+  expect_status 200
+  expect_json .adjustment raw
+  expect_json .timeframe 1d
+  expect_json .is_demo true
+  expect_json '.data | length' 7
+  expect_json '.data[0].date' 2026-10-01
+  expect_json '.data[6].date' 2026-10-09
+  expect_json '.data[0].close | type' string
+  expect_json '.data_from' 2026-10-01
+  call "$jar_b" GET "/instruments/aapl/bars?from=2026-10-01&to=2026-10-09"
+  expect_status 200
+  expect_json '.data | length' 7
+  call "$jar_a" GET "/instruments/QQQ/bars?from=2026-10-01&to=2026-10-09"
+  expect_status 200
+  expect_json '.data | length' 7
+  call "$jar_a" GET "/instruments/AAPL/bars?from=2026-10-09&to=2026-10-01"
+  expect_error 400 invalid_input
+  call "$jar_a" GET "/instruments/AAPL/bars?from=2026-10-01"
+  expect_error 400 invalid_input
+  call "$jar_a" GET "/instruments/ZZZZ/bars?from=2026-10-01&to=2026-10-09"
+  expect_error 422 unknown_symbol
+  call "$WORK/anon.jar" GET "/instruments/AAPL/bars?from=2026-10-01&to=2026-10-09"
+  expect_error 401 unauthenticated
 
   step "another user cannot see or change any of it"
   call "$jar_b" GET "/portfolios/$short"

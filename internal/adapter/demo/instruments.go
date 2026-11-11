@@ -30,6 +30,7 @@ func NewInstruments() *Instruments {
 		"META":  {"Meta Platforms, Inc.", "NASDAQ"},
 		"TSLA":  {"Tesla, Inc.", "NASDAQ"},
 		"SPY":   {"SPDR S&P 500 ETF Trust", "ARCA"},
+		"QQQ":   {"Invesco QQQ Trust, Series 1", "NASDAQ"},
 	}}
 }
 

@@ -13,5 +13,6 @@ type Repositories interface {
 	Portfolios() PortfolioRepository
 	Transactions() TransactionRepository
 	Instruments() InstrumentRepository
+	PriceBars() PriceBarRepository // market data copies; Save runs its own transaction
 	OIDCFlows() OIDCFlowRepository // Consume is one conditional UPDATE, so it needs no transaction
 }

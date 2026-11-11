@@ -76,6 +76,9 @@ func (s *Store) Instruments() port.InstrumentRepository {
 	return &InstrumentRepository{q: sqlc.New(s.pool)}
 }
 
+// PriceBars returns the daily price bar repository. Save runs its own transaction.
+func (s *Store) PriceBars() port.PriceBarRepository { return &PriceBarRepository{store: s} }
+
 // txRepositories are the repositories bound to one database transaction (port.TxRepositories).
 type txRepositories struct {
 	q *sqlc.Queries

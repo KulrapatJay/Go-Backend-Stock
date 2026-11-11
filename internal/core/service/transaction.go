@@ -31,13 +31,13 @@ type TransactionDeps struct {
 // provider is only ever called before that lock is taken. Another user's portfolio is reported
 // exactly like a missing one.
 type Transactions struct {
-	store       port.Repositories
-	uow         port.UnitOfWork
-	clock       port.Clock
-	limits      *RateLimitPolicy
-	instruments port.InstrumentProvider
-	log         *slog.Logger
-	denials     accessDenials
+	store    port.Repositories
+	uow      port.UnitOfWork
+	clock    port.Clock
+	limits   *RateLimitPolicy
+	verifier instrumentVerifier
+	log      *slog.Logger
+	denials  accessDenials
 }
 
 var _ port.TransactionService = (*Transactions)(nil)
@@ -48,8 +48,9 @@ func NewTransactions(d TransactionDeps) (*Transactions, error) {
 		return nil, errors.New("transaction service is missing a dependency")
 	}
 	return &Transactions{
-		store: d.Store, uow: d.UnitOfWork, clock: d.Clock, limits: d.Limits, instruments: d.Instruments, log: d.Logger,
-		denials: accessDenials{store: d.Store, uow: d.UnitOfWork, clock: d.Clock, limits: d.Limits, log: d.Logger},
+		store: d.Store, uow: d.UnitOfWork, clock: d.Clock, limits: d.Limits, log: d.Logger,
+		verifier: instrumentVerifier{provider: d.Instruments, store: d.Store, uow: d.UnitOfWork, clock: d.Clock, limits: d.Limits, log: d.Logger},
+		denials:  accessDenials{store: d.Store, uow: d.UnitOfWork, clock: d.Clock, limits: d.Limits, log: d.Logger},
 	}, nil
 }
 
@@ -214,41 +215,8 @@ func (s *Transactions) instrumentFor(ctx context.Context, p domain.Principal, po
 		}
 		return domain.Instrument{}, false, err
 	}
-	rules, err := s.limits.InstrumentLookup(p.UserID)
-	if err != nil {
-		return domain.Instrument{}, false, err
-	}
-	if err := admitRules(ctx, s.store.RateLimits(), s.clock, rules, func(d domain.RateLimitDecision) {
-		// A lost marker is logged by commitFailureAudit; the client still gets its 429.
-		_ = commitFailureAudit(ctx, s.uow, s.log, meta, domain.EventSecurityRateLimited, func() (domain.AuditEvent, error) {
-			return newAuditEvent(s.clock, meta, rateLimitedSpec(p, d), securityMetadata{IP: meta.MaskedIP, UserAgent: meta.UserAgent, Scope: string(d.Scope)})
-		})
-	}); err != nil {
-		return domain.Instrument{}, false, err
-	}
-
-	found, err := s.instruments.Lookup(ctx, symbol)
-	switch {
-	case errors.Is(err, domain.ErrUnknownSymbol):
-		return domain.Instrument{}, false, err
-	case err != nil:
-		return domain.Instrument{}, false, fmt.Errorf("%w: %w", domain.ErrDependencyUnavailable, err)
-	case found.AssetClass != domain.AssetClassUSEquity:
-		return domain.Instrument{}, false, domain.ErrUnknownSymbol
-	case found.Symbol != symbol:
-		// The provider answered for another ticker (it followed a rename): phase 1 does not
-		// follow symbol changes, so the symbol asked for is not one it knows.
-		return domain.Instrument{}, false, domain.ErrUnknownSymbol
-	}
-	if found.ID, err = domain.NewID(); err != nil {
-		return domain.Instrument{}, false, err
-	}
-	now := NowForStorage(s.clock)
-	found.VerifiedAt, found.CreatedAt, found.UpdatedAt = now, now, now
-	if instrument, err = domain.NewInstrument(found); err != nil {
-		return domain.Instrument{}, false, err
-	}
-	return instrument, true, nil
+	instrument, err = s.verifier.verify(ctx, p, symbol, meta)
+	return instrument, err == nil, err
 }
 
 // List returns one page of the portfolio's transactions, newest first. Reading is not audited, and

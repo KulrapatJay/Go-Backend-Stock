@@ -13,7 +13,7 @@ func TestDemoInstrumentsKnowsTheFixedList(t *testing.T) {
 	provider := demo.NewInstruments()
 	now := time.Date(2026, 11, 2, 12, 0, 0, 0, time.UTC)
 
-	for _, raw := range []string{"AAPL", "MSFT", "NVDA", "GOOGL", "AMZN", "META", "TSLA", "SPY"} {
+	for _, raw := range []string{"AAPL", "MSFT", "NVDA", "GOOGL", "AMZN", "META", "TSLA", "SPY", "QQQ"} {
 		t.Run(raw, func(t *testing.T) {
 			symbol, err := domain.ParseSymbol(raw)
 			if err != nil {

@@ -17,6 +17,7 @@ import (
 	"go-backend-stock/internal/adapter/mail"
 	"go-backend-stock/internal/adapter/postgres"
 	"go-backend-stock/internal/config"
+	"go-backend-stock/internal/core/domain"
 	"go-backend-stock/internal/core/port"
 	"go-backend-stock/internal/core/service"
 )
@@ -262,4 +263,50 @@ func buildValuation(cfg config.Config, pool *pgxpool.Pool, log *slog.Logger) (ht
 		return httpadapter.ValuationOptions{}, fmt.Errorf("build valuation: %w", err)
 	}
 	return httpadapter.ValuationOptions{Service: valuation}, nil
+}
+
+// barSource is the source label of the stored daily bars for the configured provider. The stored bars of one
+// source are never read as another's, so switching PRICE_PROVIDER never serves sample bars as real prices.
+func barSource(cfg config.Config) (domain.BarSource, error) {
+	switch cfg.PriceProvider {
+	case config.ProviderDemo:
+		return domain.BarSourceDemo, nil
+	case config.ProviderAlpaca:
+		return domain.BarSourceAlpaca, nil
+	}
+	return "", errors.New("unknown PRICE_PROVIDER")
+}
+
+// buildPriceHistory wires the daily bars use case over the same store, providers and rate limits as the
+// others. It opens no connection.
+func buildPriceHistory(cfg config.Config, pool *pgxpool.Pool, log *slog.Logger) (httpadapter.PriceHistoryOptions, error) {
+	fail := func(what string, err error) (httpadapter.PriceHistoryOptions, error) {
+		return httpadapter.PriceHistoryOptions{}, fmt.Errorf("build price history: %s: %w", what, err)
+	}
+	clock := systemClock{}
+	source, err := barSource(cfg)
+	if err != nil {
+		return fail("source", err)
+	}
+	prices, err := priceProvider(cfg, clock)
+	if err != nil {
+		return fail("prices", err)
+	}
+	instruments, err := instrumentProvider(cfg)
+	if err != nil {
+		return fail("instruments", err)
+	}
+	limits, err := buildRateLimits(cfg)
+	if err != nil {
+		return fail("rate limits", err)
+	}
+	store := postgres.NewStore(pool)
+	history, err := service.NewPriceHistory(service.PriceHistoryDeps{
+		Store: store, UnitOfWork: store, Prices: prices, Instruments: instruments, Source: source,
+		Clock: clock, Limits: limits, Logger: log,
+	})
+	if err != nil {
+		return fail("service", err)
+	}
+	return httpadapter.PriceHistoryOptions{Service: history}, nil
 }

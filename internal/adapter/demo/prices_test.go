@@ -60,7 +60,7 @@ func TestPricesQuoteTheDemoTable(t *testing.T) {
 }
 
 func TestPricesCoverTheWholeDemoList(t *testing.T) {
-	want := map[string]string{"AAPL": "200", "MSFT": "420", "NVDA": "130", "GOOGL": "175", "AMZN": "190", "META": "520", "TSLA": "250", "SPY": "540"}
+	want := map[string]string{"AAPL": "200", "MSFT": "420", "NVDA": "130", "GOOGL": "175", "AMZN": "190", "META": "520", "TSLA": "250", "SPY": "540", "QQQ": "480"}
 	clock := fixedClock{now: time.Date(2026, 11, 4, 15, 0, 0, 0, time.UTC)}
 	for symbol, price := range want {
 		batch, err := demo.NewPrices(clock).Quotes(t.Context(), symbolsOf(t, symbol), clock.now.Add(-15*time.Minute))

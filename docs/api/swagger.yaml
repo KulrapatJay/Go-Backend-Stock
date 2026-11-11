@@ -163,6 +163,65 @@ definitions:
     required:
     - google_enabled
     type: object
+  http.BarsResponse:
+    properties:
+      adjustment:
+        enum:
+        - raw
+        example: raw
+        type: string
+      currency:
+        enum:
+        - USD
+        example: USD
+        type: string
+      data:
+        items:
+          $ref: '#/definitions/http.DailyBarResponse'
+        type: array
+      data_from:
+        example: "2025-11-11"
+        format: date
+        type: string
+        x-nullable: true
+      data_through:
+        example: "2026-11-10"
+        format: date
+        type: string
+        x-nullable: true
+      feed:
+        example: sip
+        type: string
+      instrument_name:
+        example: Apple Inc.
+        type: string
+      is_demo:
+        example: false
+        type: boolean
+      source:
+        example: alpaca
+        type: string
+      symbol:
+        example: AAPL
+        type: string
+      timeframe:
+        enum:
+        - 1d
+        example: 1d
+        type: string
+    required:
+    - adjustment
+    - currency
+    - data
+    - data_from
+    - data_through
+    - feed
+    - instrument_name
+    - is_demo
+    - source
+    - symbol
+    - timeframe
+    type: object
   http.CSRFResponse:
     properties:
       csrf_token:
@@ -187,6 +246,35 @@ definitions:
     required:
     - challenge_id
     - otp
+    type: object
+  http.DailyBarResponse:
+    properties:
+      close:
+        example: "348.51"
+        type: string
+      date:
+        example: "2026-11-10"
+        format: date
+        type: string
+      high:
+        example: "353.87"
+        type: string
+      low:
+        example: "346.4605"
+        type: string
+      open:
+        example: "351.35"
+        type: string
+      volume:
+        example: "29910098"
+        type: string
+    required:
+    - close
+    - date
+    - high
+    - low
+    - open
+    - volume
     type: object
   http.EmailRequest:
     properties:
@@ -1484,6 +1572,90 @@ paths:
       summary: Register with an email and a password
       tags:
       - Auth
+  /api/v1/instruments/{symbol}/bars:
+    get:
+      description: 'The daily bars (open, high, low, close, volume) of one US stock
+        dated from..to, oldest first, for a price chart. Prices are unadjusted (adjustment
+        raw): the price of the day as it was traded, so the chart of a stock that
+        split falls at the split and the history is not a basis for tax reports. Every
+        number is a decimal string. date is the market date in New York (YYYY-MM-DD).
+        from and to are required, both included; the range may be at most 3660 days
+        (400 invalid_input otherwise, also for to before from). Only days that have
+        closed in New York are included, so a to of today or later returns the days
+        up to yesterday. A day with no bar (weekend, holiday, before the stock was
+        listed, before the history starts at 2016-01-04) is left out, not filled with
+        0. The bars are a stored copy of market data shared by all users: the first
+        request for a range the server has not seen asks the price provider and is
+        slower, later requests are answered from the copy. A symbol the API has not
+        seen yet is checked with the instrument provider like when recording a trade
+        (422 unknown_symbol when it does not exist, 503 dependency_unavailable when
+        the provider cannot answer), at most 30 new symbols per user per hour (429
+        rate_limited). When the price provider cannot be reached the stored bars are
+        returned with 200 if the stock has any and data_through shows how far they
+        go; with none stored the answer is 503 dependency_unavailable. With PRICE_PROVIDER=demo
+        the bars are sample data and is_demo is true. Needs the session cookie.'
+      operationId: getInstrumentBars
+      parameters:
+      - description: Ticker symbol, case-insensitive, for example AAPL or BRK.B
+        in: path
+        name: symbol
+        required: true
+        type: string
+      - description: First date, YYYY-MM-DD
+        format: date
+        in: query
+        name: from
+        required: true
+        type: string
+      - description: Last date, YYYY-MM-DD, at most 3660 days after from
+        format: date
+        in: query
+        name: to
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/http.BarsResponse'
+        "400":
+          description: 'invalid_input: bad symbol, from or to, to before from, or
+            a range over 3660 days'
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+        "401":
+          description: unauthenticated
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+        "422":
+          description: unknown_symbol
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+        "429":
+          description: 'rate_limited: too many new symbols this hour'
+          headers:
+            Retry-After:
+              description: Seconds to wait
+              type: integer
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+        "500":
+          description: internal
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+        "503":
+          description: dependency_unavailable or server_busy
+          headers:
+            Retry-After:
+              description: Seconds to wait; only sent with server_busy, not with dependency_unavailable
+              type: integer
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+      summary: Daily price history of a stock
+      tags:
+      - Holdings/Prices
   /api/v1/portfolios:
     get:
       description: Newest first. Pass the next_cursor of a page as cursor to get the

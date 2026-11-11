@@ -130,6 +130,62 @@
     '''
   }
 
+  Table app.price_bars {
+    instrument_id uuid [not null]
+    source text [not null, note: 'Part of the key so sample bars made in demo mode are never read as real ones.']
+    bar_date date [not null, note: 'Market date in New York.']
+    open numeric(28,10) [not null]
+    high numeric(28,10) [not null]
+    low numeric(28,10) [not null]
+    close numeric(28,10) [not null]
+    volume numeric(28,0) [not null]
+    fetched_at timestamptz [not null]
+
+    indexes {
+      (instrument_id, source, bar_date) [pk, name: 'price_bars_pkey']
+    }
+
+    checks {
+      `source IN ('alpaca', 'demo')` [name: 'price_bars_source_allowed']
+      `open > 0 AND open < 'Infinity'::numeric` [name: 'price_bars_open_valid']
+      `high > 0 AND high < 'Infinity'::numeric` [name: 'price_bars_high_valid']
+      `low > 0 AND low < 'Infinity'::numeric` [name: 'price_bars_low_valid']
+      `close > 0 AND close < 'Infinity'::numeric` [name: 'price_bars_close_valid']
+      `high >= low` [name: 'price_bars_high_not_below_low']
+      `volume >= 0 AND volume < 'Infinity'::numeric` [name: 'price_bars_volume_valid']
+      `bar_date >= DATE '1970-01-01'` [name: 'price_bars_bar_date_min']
+    }
+
+    Note: '''
+      Unadjusted (raw) daily bars of a stock: a copy of market data (ADR-0024), not business data. The
+      runtime role may only add rows. Days that have not closed in New York are never stored.
+    '''
+  }
+
+  Table app.price_bar_coverage {
+    instrument_id uuid [not null]
+    source text [not null]
+    covered_from date [not null]
+    covered_through date [not null]
+    updated_at timestamptz [not null]
+
+    indexes {
+      (instrument_id, source) [pk, name: 'price_bar_coverage_pkey']
+    }
+
+    checks {
+      `source IN ('alpaca', 'demo')` [name: 'price_bar_coverage_source_allowed']
+      `covered_from <= covered_through` [name: 'price_bar_coverage_range_valid']
+      `covered_from >= DATE '1970-01-01'` [name: 'price_bar_coverage_from_min']
+    }
+
+    Note: '''
+      The one unbroken range of dates the provider has been asked about for a stock and source. A date inside
+      it with no bar was a day without trading (a holiday), not a day never fetched. It only grows when the
+      new range touches or overlaps it, so a gap is never recorded as fetched.
+    '''
+  }
+
   Table app.transactions {
     id uuid [pk, not null]
     portfolio_id uuid [not null]
@@ -321,6 +377,8 @@
   Ref: app.portfolios.user_id > app.users.id [delete: restrict, update: no action]
   Ref: app.transactions.portfolio_id > app.portfolios.id [delete: restrict, update: no action]
   Ref: app.transactions.instrument_id > app.instruments.id [delete: restrict, update: no action]
+  Ref: app.price_bars.instrument_id > app.instruments.id [delete: restrict, update: no action]
+  Ref: app.price_bar_coverage.instrument_id > app.instruments.id [delete: restrict, update: no action]
   Ref: app.otp_challenges.user_id > app.users.id [delete: restrict, update: no action]
   Ref: app.oauth_flows.user_id > app.users.id [delete: restrict, update: no action]
   Ref: app.rate_limit_events.key_hash > app.rate_limit_keys.key_hash [delete: restrict, update: no action]

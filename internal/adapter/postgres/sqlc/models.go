@@ -94,6 +94,26 @@ type AppPortfolio struct {
 	UpdatedAt   pgtype.Timestamptz
 }
 
+type AppPriceBar struct {
+	InstrumentID pgtype.UUID
+	Source       string
+	BarDate      pgtype.Date
+	Open         pgtype.Numeric
+	High         pgtype.Numeric
+	Low          pgtype.Numeric
+	Close        pgtype.Numeric
+	Volume       pgtype.Numeric
+	FetchedAt    pgtype.Timestamptz
+}
+
+type AppPriceBarCoverage struct {
+	InstrumentID   pgtype.UUID
+	Source         string
+	CoveredFrom    pgtype.Date
+	CoveredThrough pgtype.Date
+	UpdatedAt      pgtype.Timestamptz
+}
+
 type AppRateLimitEvent struct {
 	ID         int64
 	KeyHash    []byte

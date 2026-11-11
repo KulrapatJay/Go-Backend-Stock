@@ -281,6 +281,20 @@
 
 **ผ่านเมื่อ:** ระบบออนไลน์ผ่าน flow หลัก, ไม่มีข้อมูลเปิดเผยผ่าน Data API, runtime role ทำงานได้จริง และมีขั้นตอน backup/restore/rollback ที่ตรวจแล้วภายใต้งบฟรี
 
+## งานหลังเฟส 1 (เริ่มก่อนเฟส 1 จบ ตามที่ผู้ใช้ตัดสิน 2026-11-11)
+
+### A. ราคาปิดรายวันย้อนหลัง (ขั้น 1-2 ของกราฟเทียบดัชนี)
+
+**แผน:** [2026-11-11-daily-price-bars.md](2026-11-11-daily-price-bars.md) **การตัดสินใจ:** [ADR-0024](../../adr/0024-daily-price-bars-table.md) (Proposed)
+
+- [x] migration `00008`: `price_bars` และ `price_bar_coverage` พร้อมสิทธิ์ runtime (ไม่มี UPDATE/DELETE บน `price_bars`)
+- [x] domain `TradingDate`, `DailyBar`, `Volume`, `BarSource`, `MissingRanges`; port `PriceProvider.DailyBars`, `PriceBarRepository`, `PriceHistoryService`
+- [x] repository, Alpaca adapter, demo adapter (รวม QQQ) และ service `PriceHistory` พร้อม tests
+- [x] `GET /api/v1/instruments/{symbol}/bars`, Swagger, wiring ใน `cmd/api`
+- [x] smoke test กับบัญชี Alpaca จริง (`make smoke-alpaca`)
+- [ ] ผู้ใช้ตรวจรับแล้วเปลี่ยน ADR-0024 เป็น Accepted
+- [ ] ขั้น 3-4: มูลค่าพอร์ตรายวันและผลตอบแทน time-weighted เทียบ SPY/QQQ (ต้องมี ADR และแผนแยก)
+
 ## วิธีเดินงานในแต่ละ milestone
 
 - แตกเป็นแผนย่อยของ subsystem ที่กำลังทำ โดยระบุไฟล์จริง, signatures, test cases และคำสั่งตรวจตาม design ที่ยืนยันแล้ว

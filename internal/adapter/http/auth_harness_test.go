@@ -169,6 +169,7 @@ type harnessConfig struct {
 	portfolios bool                  // serve the portfolio routes
 	trades     bool                  // serve the transaction routes (needs portfolios)
 	valuation  bool                  // serve the holdings and valuation routes
+	bars       bool                  // serve the daily bars route
 	identity   port.IdentityProvider // nil = Google sign-in off
 }
 
@@ -295,6 +296,20 @@ func newAuthHarness(t *testing.T, opts ...harnessOption) *authHarness {
 		valuation, err := service.NewValuation(service.ValuationDeps{Store: store, Prices: prices, Clock: clock, Logger: log})
 		must(err)
 		options.Valuation = ValuationOptions{Service: valuation}
+	}
+	if cfg.bars {
+		if instruments == nil {
+			instruments = &fakeInstrumentProvider{calls: map[string]int{}}
+		}
+		if prices == nil {
+			prices = &fakePriceProvider{prices: map[string]string{}}
+		}
+		history, err := service.NewPriceHistory(service.PriceHistoryDeps{
+			Store: store, UnitOfWork: uow, Prices: prices, Instruments: instruments, Source: domain.BarSourceAlpaca,
+			Clock: clock, Limits: limits, Logger: log,
+		})
+		must(err)
+		options.PriceHistory = PriceHistoryOptions{Service: history}
 	}
 	app := NewServer(options)
 	return &authHarness{

@@ -926,6 +926,100 @@
                 }
             }
         },
+        "/api/v1/instruments/{symbol}/bars": {
+            "get": {
+                "description": "The daily bars (open, high, low, close, volume) of one US stock dated from..to, oldest first, for a price chart. Prices are unadjusted (adjustment raw): the price of the day as it was traded, so the chart of a stock that split falls at the split and the history is not a basis for tax reports. Every number is a decimal string. date is the market date in New York (YYYY-MM-DD). from and to are required, both included; the range may be at most 3660 days (400 invalid_input otherwise, also for to before from). Only days that have closed in New York are included, so a to of today or later returns the days up to yesterday. A day with no bar (weekend, holiday, before the stock was listed, before the history starts at 2016-01-04) is left out, not filled with 0. The bars are a stored copy of market data shared by all users: the first request for a range the server has not seen asks the price provider and is slower, later requests are answered from the copy. A symbol the API has not seen yet is checked with the instrument provider like when recording a trade (422 unknown_symbol when it does not exist, 503 dependency_unavailable when the provider cannot answer), at most 30 new symbols per user per hour (429 rate_limited). When the price provider cannot be reached the stored bars are returned with 200 if the stock has any and data_through shows how far they go; with none stored the answer is 503 dependency_unavailable. With PRICE_PROVIDER=demo the bars are sample data and is_demo is true. Needs the session cookie.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Holdings/Prices"
+                ],
+                "summary": "Daily price history of a stock",
+                "operationId": "getInstrumentBars",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Ticker symbol, case-insensitive, for example AAPL or BRK.B",
+                        "name": "symbol",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "format": "date",
+                        "description": "First date, YYYY-MM-DD",
+                        "name": "from",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "format": "date",
+                        "description": "Last date, YYYY-MM-DD, at most 3660 days after from",
+                        "name": "to",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/http.BarsResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "invalid_input: bad symbol, from or to, to before from, or a range over 3660 days",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "unauthenticated",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "unknown_symbol",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
+                    },
+                    "429": {
+                        "description": "rate_limited: too many new symbols this hour",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        },
+                        "headers": {
+                            "Retry-After": {
+                                "type": "integer",
+                                "description": "Seconds to wait"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "internal",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "dependency_unavailable or server_busy",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        },
+                        "headers": {
+                            "Retry-After": {
+                                "type": "integer",
+                                "description": "Seconds to wait; only sent with server_busy, not with dependency_unavailable"
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/api/v1/portfolios": {
             "get": {
                 "description": "Newest first. Pass the next_cursor of a page as cursor to get the following page; next_cursor is null on the last page. A cursor is opaque and only valid for the user it was issued to. Other users' portfolios never appear.",
@@ -2403,6 +2497,83 @@
                 }
             }
         },
+        "http.BarsResponse": {
+            "type": "object",
+            "required": [
+                "adjustment",
+                "currency",
+                "data",
+                "data_from",
+                "data_through",
+                "feed",
+                "instrument_name",
+                "is_demo",
+                "source",
+                "symbol",
+                "timeframe"
+            ],
+            "properties": {
+                "adjustment": {
+                    "type": "string",
+                    "enum": [
+                        "raw"
+                    ],
+                    "example": "raw"
+                },
+                "currency": {
+                    "type": "string",
+                    "enum": [
+                        "USD"
+                    ],
+                    "example": "USD"
+                },
+                "data": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/http.DailyBarResponse"
+                    }
+                },
+                "data_from": {
+                    "type": "string",
+                    "format": "date",
+                    "x-nullable": true,
+                    "example": "2025-11-11"
+                },
+                "data_through": {
+                    "type": "string",
+                    "format": "date",
+                    "x-nullable": true,
+                    "example": "2026-11-10"
+                },
+                "feed": {
+                    "type": "string",
+                    "example": "sip"
+                },
+                "instrument_name": {
+                    "type": "string",
+                    "example": "Apple Inc."
+                },
+                "is_demo": {
+                    "type": "boolean",
+                    "example": false
+                },
+                "source": {
+                    "type": "string",
+                    "example": "alpaca"
+                },
+                "symbol": {
+                    "type": "string",
+                    "example": "AAPL"
+                },
+                "timeframe": {
+                    "type": "string",
+                    "enum": [
+                        "1d"
+                    ],
+                    "example": "1d"
+                }
+            }
+        },
         "http.CSRFResponse": {
             "type": "object",
             "required": [
@@ -2435,6 +2606,44 @@
                 "otp": {
                     "type": "string",
                     "example": "042731"
+                }
+            }
+        },
+        "http.DailyBarResponse": {
+            "type": "object",
+            "required": [
+                "close",
+                "date",
+                "high",
+                "low",
+                "open",
+                "volume"
+            ],
+            "properties": {
+                "close": {
+                    "type": "string",
+                    "example": "348.51"
+                },
+                "date": {
+                    "type": "string",
+                    "format": "date",
+                    "example": "2026-11-10"
+                },
+                "high": {
+                    "type": "string",
+                    "example": "353.87"
+                },
+                "low": {
+                    "type": "string",
+                    "example": "346.4605"
+                },
+                "open": {
+                    "type": "string",
+                    "example": "351.35"
+                },
+                "volume": {
+                    "type": "string",
+                    "example": "29910098"
                 }
             }
         },

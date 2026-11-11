@@ -25,7 +25,7 @@
 ## 1. นอกขอบเขตเฟส 1 (ห้ามทำหรือห้ามสมมติว่ามี)
 
 - หน้าหุ้นรายตัว กราฟราคา ราคา live/pre-market/after-hours ([ADR-0012](adr/0012-defer-stock-page-and-charts.md))
-- กราฟเทียบผลตอบแทนกับดัชนี (S&P 500, Nasdaq-100) และราคารายวันย้อนหลัง: ยังไม่มี endpoint
+- กราฟเทียบผลตอบแทนกับดัชนี (S&P 500, Nasdaq-100): ยังไม่มี endpoint (ราคารายวันย้อนหลังมีแล้ว ดู `GET /instruments/{symbol}/bars`)
   ราคายังเป็นราคาล่าช้า 15 นาที (`price_type: delayed_bar_close`) ไม่มีราคาล่าสุด
 - dividend, split, merger, การเปลี่ยน symbol, short selling, margin, FX, ยอดเงินสด, โอนหุ้นระหว่างพอร์ต
 - การส่งคำสั่งซื้อขายจริง: ระบบนี้บันทึกรายการที่ผู้ใช้ทำที่อื่นเท่านั้น
@@ -114,6 +114,7 @@ browser ──► https://<web origin>/            Next.js pages
 | GET `/portfolios/{id}/holdings` | listHoldings | 200 `{data: HoldingResponse[]}` | ไม่เรียกผู้ให้บริการราคา จึงเร็วและดูได้เสมอ |
 | GET `/portfolios/{id}/valuation` | getValuation | 200 `ValuationResponse` | ตอบ 200 แม้ไม่มีราคา (ดูหัวข้อ 8) |
 | GET `/valuation` | getAccountValuation | 200 `AccountValuationResponse` | สรุปทุกพอร์ตของผู้ใช้สำหรับ dashboard: ยอดรวม, ยอดรายพอร์ต และ `allocation` สำหรับกราฟวงกลม (ดูหัวข้อ 8) |
+| GET `/instruments/{symbol}/bars?from&to` | getInstrumentBars | 200 `BarsResponse` | ราคาปิดรายวัน (open/high/low/close/volume) เรียงเก่าไปใหม่ สำหรับกราฟ (ดูหัวข้อ 8) |
 
 ## 5. กติกาข้อมูลที่ frontend ทำผิดแล้วเสียหาย
 
@@ -318,6 +319,21 @@ core ยังมี code `access_denied` และ `identity_conflict` แต�
 - unrealized P&L ไม่หักค่าธรรมเนียมขายในอนาคต
 - หน้าพอร์ตต้องระบุว่าไม่รองรับ dividends/splits/mergers/symbol changes จึงอาจคำนวณไม่ครบ
   และผลคำนวณใช้ moving weighted-average cost ไม่ใช่รายงานภาษี
+
+### ราคารายวันย้อนหลัง `GET /instruments/{symbol}/bars` (ADR-0024)
+
+- `from` และ `to` บังคับ รูปแบบ `YYYY-MM-DD` ช่วงยาวสุด 3,660 วัน (เกินได้ 400 `invalid_input`) `symbol` ใช้ตัวพิมพ์เล็กได้ และมีจุดได้ (`BRK.B`)
+- `date` เป็นวันที่ตลาดสหรัฐฯ (New York) ไม่ใช่ timestamp: ห้ามแปลงด้วย `new Date()` เพราะวันจะเลื่อนตาม timezone ของ browser
+  ราคาและ `volume` เป็น decimal string: แปลงเป็น `number` เฉพาะตอนส่งให้ไลบรารีกราฟ ห้ามคำนวณหรือบันทึกด้วยค่านั้น
+- `adjustment` เป็น `raw`: ราคาตามที่ซื้อขายจริงในวันนั้น ไม่ปรับ split และปันผล **กราฟของหุ้นที่แตกหุ้นจะตกเป็นหน้าผาในวันนั้น** ต้องมีคำอธิบายใต้กราฟ
+- วันที่ไม่มีแท่ง (วันหยุด, ก่อนหุ้นเข้าตลาด, ก่อน 2016-01-04) ไม่อยู่ในรายการ ไม่ใช่ 0 และ `data` เป็น `[]` ไม่ใช่ `null`
+- มีเฉพาะวันที่ปิดตลาดแล้วตามเวลา New York: ถ้า `to` เป็นวันนี้หรืออนาคต จะได้ถึงเมื่อวาน ราคาปิดของวันล่าสุดขึ้นหลังเที่ยงคืนเวลา New York
+  จุดสุดท้ายของกราฟจึงอาจไม่เท่ากับ `market_value` ใน valuation ซึ่งใช้ราคาล่าช้า 15 นาที
+- `data_from`/`data_through` คือช่วงที่เซิร์ฟเวอร์ตรวจกับ provider แล้ว (`null` เมื่อยังไม่เคย) ถ้า `data_through` ก่อนปลายช่วงที่ขอ แสดงว่าวันล่าสุดดึงไม่ได้
+  (provider ล่มแต่มีข้อมูลที่เก็บไว้: ได้ 200 พร้อมข้อมูลเท่าที่มี) ถ้าไม่มีข้อมูลเลยและ provider ล่มได้ 503 `dependency_unavailable`
+- ครั้งแรกที่ขอช่วงที่ยังไม่เคยดึงจะช้ากว่าปกติ (ต้องถาม provider) ครั้งต่อไปตอบจากข้อมูลที่เก็บไว้ ข้อมูลใช้ร่วมกันทุกผู้ใช้
+- symbol ที่ระบบยังไม่เคยเห็นถูกตรวจกับ provider: `422 unknown_symbol`, `503 dependency_unavailable`, `429 rate_limited` (โควตา 30 symbol ใหม่ต่อชั่วโมงร่วมกับการบันทึกรายการ)
+- โหมดเดโม: ราคาตัวอย่างที่ได้ค่าเดิมทุกครั้ง ตั้งแต่ 2016-01-04 เฉพาะวันธรรมดา และ `is_demo` เป็น `true`; symbol เดโมคือ AAPL, MSFT, NVDA, GOOGL, AMZN, META, TSLA, SPY, QQQ
 
 ## 9. สิ่งที่ต้องแก้ใน scaffold `next-frontend-stock` ปัจจุบัน
 
