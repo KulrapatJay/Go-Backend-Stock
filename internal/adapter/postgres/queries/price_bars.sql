@@ -26,3 +26,15 @@ ON CONFLICT (instrument_id, source) DO UPDATE SET
     updated_at      = EXCLUDED.updated_at
 WHERE EXCLUDED.covered_from <= app.price_bar_coverage.covered_through + 1
   AND EXCLUDED.covered_through >= app.price_bar_coverage.covered_from - 1;
+
+-- name: ListPriceBarCoverages :many
+SELECT instrument_id, source, covered_from, covered_through, updated_at
+FROM app.price_bar_coverage
+WHERE instrument_id = ANY(@instrument_ids::uuid[]) AND source = @source;
+
+-- name: ListPriceBarsOfInstruments :many
+SELECT instrument_id, source, bar_date, open, high, low, close, volume, fetched_at
+FROM app.price_bars
+WHERE instrument_id = ANY(@instrument_ids::uuid[]) AND source = @source
+  AND bar_date >= @from_date AND bar_date <= @to_date
+ORDER BY instrument_id, bar_date;

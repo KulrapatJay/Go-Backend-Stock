@@ -65,6 +65,34 @@ func (f *fakeBarRepo) Range(_ context.Context, _ domain.ID, source domain.BarSou
 	return out, nil
 }
 
+// Coverages and RangeMany serve every instrument the same data: this fake keeps one instrument's bars per
+// source, which is all the PriceHistory tests need.
+func (f *fakeBarRepo) Coverages(ctx context.Context, ids []domain.ID, source domain.BarSource) (map[domain.ID]domain.BarCoverage, error) {
+	out := map[domain.ID]domain.BarCoverage{}
+	for _, id := range ids {
+		if c, ok, err := f.Coverage(ctx, id, source); err != nil {
+			return nil, err
+		} else if ok {
+			out[id] = c
+		}
+	}
+	return out, nil
+}
+
+func (f *fakeBarRepo) RangeMany(ctx context.Context, ids []domain.ID, source domain.BarSource, from, to domain.TradingDate) (map[domain.ID][]domain.DailyBar, error) {
+	out := map[domain.ID][]domain.DailyBar{}
+	for _, id := range ids {
+		bars, err := f.Range(ctx, id, source, from, to)
+		if err != nil {
+			return nil, err
+		}
+		if len(bars) > 0 {
+			out[id] = bars
+		}
+	}
+	return out, nil
+}
+
 func (f *fakeBarRepo) Save(_ context.Context, _ domain.ID, source domain.BarSource, bars []domain.DailyBar, fetched domain.DateRange, now time.Time) error {
 	f.log.add("PriceBars.Save")
 	f.sources = append(f.sources, source)

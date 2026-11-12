@@ -61,6 +61,72 @@ func (r *PriceBarRepository) Range(ctx context.Context, instrumentID domain.ID, 
 	return out, nil
 }
 
+// Coverages returns the coverage of each instrument that has one for the source.
+func (r *PriceBarRepository) Coverages(ctx context.Context, instrumentIDs []domain.ID, source domain.BarSource) (map[domain.ID]domain.BarCoverage, error) {
+	out := map[domain.ID]domain.BarCoverage{}
+	if len(instrumentIDs) == 0 {
+		return out, nil
+	}
+	ids, err := barInstrumentKeys(instrumentIDs, source)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := sqlc.New(r.store.pool).ListPriceBarCoverages(ctx, sqlc.ListPriceBarCoveragesParams{InstrumentIds: ids, Source: string(source)})
+	if err != nil {
+		return nil, mapError(err)
+	}
+	for _, row := range rows {
+		id, err := idFromPG("price_bar_coverage.instrument_id", row.InstrumentID)
+		if err != nil {
+			return nil, err
+		}
+		out[id] = domain.BarCoverage{From: tradingDateFromPG(row.CoveredFrom), Through: tradingDateFromPG(row.CoveredThrough)}
+	}
+	return out, nil
+}
+
+// RangeMany returns the stored bars of the instruments with from <= date <= to, each list oldest first.
+func (r *PriceBarRepository) RangeMany(ctx context.Context, instrumentIDs []domain.ID, source domain.BarSource, from, to domain.TradingDate) (map[domain.ID][]domain.DailyBar, error) {
+	out := map[domain.ID][]domain.DailyBar{}
+	if len(instrumentIDs) == 0 {
+		return out, nil
+	}
+	ids, err := barInstrumentKeys(instrumentIDs, source)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := sqlc.New(r.store.pool).ListPriceBarsOfInstruments(ctx, sqlc.ListPriceBarsOfInstrumentsParams{
+		InstrumentIds: ids, Source: string(source), FromDate: pgDate(from), ToDate: pgDate(to),
+	})
+	if err != nil {
+		return nil, mapError(err)
+	}
+	for _, row := range rows {
+		id, err := idFromPG("price_bars.instrument_id", row.InstrumentID)
+		if err != nil {
+			return nil, err
+		}
+		bar, err := dailyBarFromRow(row)
+		if err != nil {
+			return nil, err
+		}
+		out[id] = append(out[id], bar)
+	}
+	return out, nil
+}
+
+// barInstrumentKeys checks every key like checkBarKey does and maps the ids for a query.
+func barInstrumentKeys(instrumentIDs []domain.ID, source domain.BarSource) ([]pgtype.UUID, error) {
+	ids := make([]pgtype.UUID, len(instrumentIDs))
+	for i, id := range instrumentIDs {
+		if err := checkBarKey(id, source); err != nil {
+			return nil, err
+		}
+		ids[i] = pgUUID(id)
+	}
+	return ids, nil
+}
+
 // Save stores the bars and widens the coverage in one transaction. It checks everything it can before it
 // opens the transaction, so a bar outside the fetched range writes nothing.
 func (r *PriceBarRepository) Save(ctx context.Context, instrumentID domain.ID, source domain.BarSource, bars []domain.DailyBar, fetched domain.DateRange, now time.Time) error {

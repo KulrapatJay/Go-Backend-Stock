@@ -34,6 +34,43 @@ func (q *Queries) GetPriceBarCoverage(ctx context.Context, arg GetPriceBarCovera
 	return i, err
 }
 
+const listPriceBarCoverages = `-- name: ListPriceBarCoverages :many
+SELECT instrument_id, source, covered_from, covered_through, updated_at
+FROM app.price_bar_coverage
+WHERE instrument_id = ANY($1::uuid[]) AND source = $2
+`
+
+type ListPriceBarCoveragesParams struct {
+	InstrumentIds []pgtype.UUID
+	Source        string
+}
+
+func (q *Queries) ListPriceBarCoverages(ctx context.Context, arg ListPriceBarCoveragesParams) ([]AppPriceBarCoverage, error) {
+	rows, err := q.db.Query(ctx, listPriceBarCoverages, arg.InstrumentIds, arg.Source)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []AppPriceBarCoverage
+	for rows.Next() {
+		var i AppPriceBarCoverage
+		if err := rows.Scan(
+			&i.InstrumentID,
+			&i.Source,
+			&i.CoveredFrom,
+			&i.CoveredThrough,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listPriceBars = `-- name: ListPriceBars :many
 SELECT instrument_id, source, bar_date, open, high, low, close, volume, fetched_at
 FROM app.price_bars
@@ -51,6 +88,56 @@ type ListPriceBarsParams struct {
 func (q *Queries) ListPriceBars(ctx context.Context, arg ListPriceBarsParams) ([]AppPriceBar, error) {
 	rows, err := q.db.Query(ctx, listPriceBars,
 		arg.InstrumentID,
+		arg.Source,
+		arg.FromDate,
+		arg.ToDate,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []AppPriceBar
+	for rows.Next() {
+		var i AppPriceBar
+		if err := rows.Scan(
+			&i.InstrumentID,
+			&i.Source,
+			&i.BarDate,
+			&i.Open,
+			&i.High,
+			&i.Low,
+			&i.Close,
+			&i.Volume,
+			&i.FetchedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listPriceBarsOfInstruments = `-- name: ListPriceBarsOfInstruments :many
+SELECT instrument_id, source, bar_date, open, high, low, close, volume, fetched_at
+FROM app.price_bars
+WHERE instrument_id = ANY($1::uuid[]) AND source = $2
+  AND bar_date >= $3 AND bar_date <= $4
+ORDER BY instrument_id, bar_date
+`
+
+type ListPriceBarsOfInstrumentsParams struct {
+	InstrumentIds []pgtype.UUID
+	Source        string
+	FromDate      pgtype.Date
+	ToDate        pgtype.Date
+}
+
+func (q *Queries) ListPriceBarsOfInstruments(ctx context.Context, arg ListPriceBarsOfInstrumentsParams) ([]AppPriceBar, error) {
+	rows, err := q.db.Query(ctx, listPriceBarsOfInstruments,
+		arg.InstrumentIds,
 		arg.Source,
 		arg.FromDate,
 		arg.ToDate,

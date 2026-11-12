@@ -324,3 +324,58 @@ func TestPriceBarsTheDatabaseRefusesBadRows(t *testing.T) {
 		})
 	}
 }
+
+func TestPriceBarsCoveragesAndRangeManyKeepInstrumentsAndSourcesApart(t *testing.T) {
+	store := newRuntimeStore(t)
+	a, b, c := insertInstrument(t, store), insertInstrument(t, store), insertInstrument(t, store)
+	save := func(id domain.ID, source domain.BarSource, from, to string, bars ...domain.DailyBar) {
+		t.Helper()
+		if err := store.PriceBars().Save(t.Context(), id, source, bars, rangeOf(t, from, to), now()); err != nil {
+			t.Fatalf("Save() error = %v", err)
+		}
+	}
+	save(a.ID, domain.BarSourceAlpaca, "2026-11-06", "2026-11-10",
+		newBar(t, "2026-11-06", "10", "11", "9", "10.5", "100"),
+		newBar(t, "2026-11-09", "10", "11", "9", "10.6", "100"),
+		newBar(t, "2026-11-10", "10", "11", "9", "10.7", "100"))
+	save(b.ID, domain.BarSourceAlpaca, "2026-11-09", "2026-11-10",
+		newBar(t, "2026-11-10", "20", "21", "19", "20.5", "100"),
+		newBar(t, "2026-11-09", "20", "21", "19", "20.4", "100"))
+	save(a.ID, domain.BarSourceDemo, "2026-11-06", "2026-11-06", newBar(t, "2026-11-06", "1", "2", "1", "1.5", "1"))
+
+	got, err := store.PriceBars().Coverages(t.Context(), []domain.ID{a.ID, b.ID, c.ID}, domain.BarSourceAlpaca)
+	if err != nil || len(got) != 2 {
+		t.Fatalf("Coverages() = %v, %v; want two instruments (c was never asked about)", got, err)
+	}
+	if cov := got[a.ID]; cov.From.String() != "2026-11-06" || cov.Through.String() != "2026-11-10" {
+		t.Errorf("coverage of a = %v", cov)
+	}
+	if cov := got[b.ID]; cov.From.String() != "2026-11-09" || cov.Through.String() != "2026-11-10" {
+		t.Errorf("coverage of b = %v", cov)
+	}
+	if _, has := got[c.ID]; has {
+		t.Error("coverage of c must be left out")
+	}
+
+	many, err := store.PriceBars().RangeMany(t.Context(), []domain.ID{a.ID, b.ID, c.ID}, domain.BarSourceAlpaca, barDate(t, "2026-11-09"), barDate(t, "2026-11-10"))
+	if err != nil || len(many) != 2 || len(many[a.ID]) != 2 || len(many[b.ID]) != 2 {
+		t.Fatalf("RangeMany() = %v, %v; want 2 bars each for a and b and nothing for c", many, err)
+	}
+	if many[a.ID][0].Date.String() != "2026-11-09" || many[a.ID][1].Date.String() != "2026-11-10" ||
+		many[b.ID][0].Date.String() != "2026-11-09" || many[b.ID][1].Close.String() != "20.5" {
+		t.Errorf("RangeMany() = %v; each list must be oldest first and exact", many)
+	}
+	demo, err := store.PriceBars().RangeMany(t.Context(), []domain.ID{a.ID}, domain.BarSourceDemo, barDate(t, "2026-11-06"), barDate(t, "2026-11-10"))
+	if err != nil || len(demo) != 1 || len(demo[a.ID]) != 1 {
+		t.Errorf("RangeMany(demo) = %v, %v; want the one demo bar of a", demo, err)
+	}
+
+	none, err := store.PriceBars().Coverages(t.Context(), nil, domain.BarSourceAlpaca)
+	if err != nil || none == nil || len(none) != 0 {
+		t.Errorf("Coverages(nil) = %v, %v; want an empty map", none, err)
+	}
+	noneBars, err := store.PriceBars().RangeMany(t.Context(), nil, domain.BarSourceAlpaca, barDate(t, "2026-11-06"), barDate(t, "2026-11-10"))
+	if err != nil || noneBars == nil || len(noneBars) != 0 {
+		t.Errorf("RangeMany(nil) = %v, %v; want an empty map", noneBars, err)
+	}
+}
