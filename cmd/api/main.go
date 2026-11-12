@@ -96,6 +96,10 @@ func run() error {
 	if err != nil {
 		return err
 	}
+	performance, err := buildPerformance(cfg, pool, log)
+	if err != nil {
+		return err
+	}
 
 	app := httpadapter.NewServer(httpadapter.Options{
 		Logger:       log,
@@ -105,6 +109,7 @@ func run() error {
 		Transactions: transactions,
 		Valuation:    valuation,
 		PriceHistory: priceHistory,
+		Performance:  performance,
 		Docs: httpadapter.DocsOptions{
 			Enabled:         cfg.DocsEnabled,
 			TryItOutEnabled: cfg.DocsTryItOutEnabled,

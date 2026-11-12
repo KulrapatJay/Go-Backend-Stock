@@ -310,3 +310,37 @@ func buildPriceHistory(cfg config.Config, pool *pgxpool.Pool, log *slog.Logger) 
 	}
 	return httpadapter.PriceHistoryOptions{Service: history}, nil
 }
+
+// buildPerformance wires the portfolio performance use case over the same store, providers and rate limits as
+// the others. It opens no connection.
+func buildPerformance(cfg config.Config, pool *pgxpool.Pool, log *slog.Logger) (httpadapter.PerformanceOptions, error) {
+	fail := func(what string, err error) (httpadapter.PerformanceOptions, error) {
+		return httpadapter.PerformanceOptions{}, fmt.Errorf("build performance: %s: %w", what, err)
+	}
+	clock := systemClock{}
+	source, err := barSource(cfg)
+	if err != nil {
+		return fail("source", err)
+	}
+	prices, err := priceProvider(cfg, clock)
+	if err != nil {
+		return fail("prices", err)
+	}
+	instruments, err := instrumentProvider(cfg)
+	if err != nil {
+		return fail("instruments", err)
+	}
+	limits, err := buildRateLimits(cfg)
+	if err != nil {
+		return fail("rate limits", err)
+	}
+	store := postgres.NewStore(pool)
+	performance, err := service.NewPerformance(service.PerformanceDeps{
+		Store: store, UnitOfWork: store, Prices: prices, Instruments: instruments, Source: source,
+		Clock: clock, Limits: limits, Logger: log,
+	})
+	if err != nil {
+		return fail("service", err)
+	}
+	return httpadapter.PerformanceOptions{Service: performance}, nil
+}

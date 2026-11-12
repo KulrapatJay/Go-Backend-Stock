@@ -1020,6 +1020,93 @@
                 }
             }
         },
+        "/api/v1/performance": {
+            "get": {
+                "description": "The daily value of the shares held at the end of each day and the cumulative time-weighted return since the first day, for a price chart against an index. range is required: 1m, 3m, 6m, ytd, 1y, 5y or all (all goes back to the first trade, at most 3660 days); it ends on the last day that has closed in New York. benchmarks is an optional comma-separated list of SPY and QQQ (no spaces, no repeats); without it the answer has no benchmark. Every number is a decimal string and every _percent is in percent (\"8.5\" is 8.5%), exact and not rounded. method is time_weighted: a day's return is (value at the end of the day + money from sales) / (value at the end of the previous day + money spent on purchases) - 1, where a purchase counts at the start of the day and a sale at its end, both with their fee (fees_included is true), so buying or selling more does not make the line jump but the gap between the price paid and the day's close, and the fees, are part of the return. The line starts on the first day of the range on which the portfolio is worth something, with return_percent \"0\" (range.from is that day; what happened on it is not in the line), and the benchmarks start on the same day at 0. While nothing is held the line is flat: market_value \"0\" and the return of the last day. A day on which a stock still held has no bar has market_value and return_percent null, never 0, and coverage is partial; the next day with a value links the return across the gap. coverage is unavailable when something was held but no day could be valued (the points are then empty) and complete with no points when nothing was held. Prices are unadjusted (adjustment raw), so a stock split makes the value of the days after it wrong until splits are supported, and dividends are not included, for the portfolio and for the benchmarks, which are the ETFs SPY and QQQ. A trade made on a weekend or a holiday counts on the next day that has a bar. Points are daily (interval 1d). The bars come from a stored copy of market data: the first request for a long range asks the price provider and can be slow, and one that does not finish in time answers with what was stored (coverage partial and data_through before range.to) or, when a stock has nothing stored, 503 dependency_unavailable; asking again continues where it stopped. A benchmark the API has not seen yet is checked with the instrument provider within the per-user limit of 30 new symbols per hour (429 rate_limited). With PRICE_PROVIDER=demo the prices are sample data and is_demo is true. This is a way to follow your own records, not a report for tax and not investment advice. The portfolios of the caller are added together: the same stock held in two portfolios counts once with the sum of the shares, and the portfolios of other users are never counted. Needs the session cookie.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Holdings/Prices"
+                ],
+                "summary": "Daily value and return of the whole account against SPY and QQQ",
+                "operationId": "getAccountPerformance",
+                "parameters": [
+                    {
+                        "enum": [
+                            "1m",
+                            "3m",
+                            "6m",
+                            "ytd",
+                            "1y",
+                            "5y",
+                            "all"
+                        ],
+                        "type": "string",
+                        "description": "How far back to look",
+                        "name": "range",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Comma-separated benchmarks to compare with, from SPY and QQQ, for example SPY,QQQ",
+                        "name": "benchmarks",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/http.PerformanceResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "invalid_input: range is missing or unknown, benchmarks has an unknown or repeated symbol",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "unauthenticated",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
+                    },
+                    "429": {
+                        "description": "rate_limited: too many new symbols this hour",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        },
+                        "headers": {
+                            "Retry-After": {
+                                "type": "integer",
+                                "description": "Seconds to wait"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "internal",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "dependency_unavailable or server_busy",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        },
+                        "headers": {
+                            "Retry-After": {
+                                "type": "integer",
+                                "description": "Seconds to wait; only sent with server_busy, not with dependency_unavailable"
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/api/v1/portfolios": {
             "get": {
                 "description": "Newest first. Pass the next_cursor of a page as cursor to get the following page; next_cursor is null on the last page. A cursor is opaque and only valid for the user it was issued to. Other users' portfolios never appear.",
@@ -1514,6 +1601,107 @@
                         "description": "not_found",
                         "schema": {
                             "$ref": "#/definitions/http.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "internal",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "dependency_unavailable or server_busy",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        },
+                        "headers": {
+                            "Retry-After": {
+                                "type": "integer",
+                                "description": "Seconds to wait; only sent with server_busy, not with dependency_unavailable"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/portfolios/{portfolio_id}/performance": {
+            "get": {
+                "description": "The performance of one of the caller's portfolios. The daily value of the shares held at the end of each day and the cumulative time-weighted return since the first day, for a price chart against an index. range is required: 1m, 3m, 6m, ytd, 1y, 5y or all (all goes back to the first trade, at most 3660 days); it ends on the last day that has closed in New York. benchmarks is an optional comma-separated list of SPY and QQQ (no spaces, no repeats); without it the answer has no benchmark. Every number is a decimal string and every _percent is in percent (\"8.5\" is 8.5%), exact and not rounded. method is time_weighted: a day's return is (value at the end of the day + money from sales) / (value at the end of the previous day + money spent on purchases) - 1, where a purchase counts at the start of the day and a sale at its end, both with their fee (fees_included is true), so buying or selling more does not make the line jump but the gap between the price paid and the day's close, and the fees, are part of the return. The line starts on the first day of the range on which the portfolio is worth something, with return_percent \"0\" (range.from is that day; what happened on it is not in the line), and the benchmarks start on the same day at 0. While nothing is held the line is flat: market_value \"0\" and the return of the last day. A day on which a stock still held has no bar has market_value and return_percent null, never 0, and coverage is partial; the next day with a value links the return across the gap. coverage is unavailable when something was held but no day could be valued (the points are then empty) and complete with no points when nothing was held. Prices are unadjusted (adjustment raw), so a stock split makes the value of the days after it wrong until splits are supported, and dividends are not included, for the portfolio and for the benchmarks, which are the ETFs SPY and QQQ. A trade made on a weekend or a holiday counts on the next day that has a bar. Points are daily (interval 1d). The bars come from a stored copy of market data: the first request for a long range asks the price provider and can be slow, and one that does not finish in time answers with what was stored (coverage partial and data_through before range.to) or, when a stock has nothing stored, 503 dependency_unavailable; asking again continues where it stopped. A benchmark the API has not seen yet is checked with the instrument provider within the per-user limit of 30 new symbols per hour (429 rate_limited). With PRICE_PROVIDER=demo the prices are sample data and is_demo is true. This is a way to follow your own records, not a report for tax and not investment advice. A portfolio that belongs to someone else gets exactly the same 404 as one that does not exist. Needs the session cookie.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Holdings/Prices"
+                ],
+                "summary": "Daily value and return of a portfolio against SPY and QQQ",
+                "operationId": "getPortfolioPerformance",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "format": "uuid",
+                        "description": "Portfolio ID",
+                        "name": "portfolio_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "enum": [
+                            "1m",
+                            "3m",
+                            "6m",
+                            "ytd",
+                            "1y",
+                            "5y",
+                            "all"
+                        ],
+                        "type": "string",
+                        "description": "How far back to look",
+                        "name": "range",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Comma-separated benchmarks to compare with, from SPY and QQQ, for example SPY,QQQ",
+                        "name": "benchmarks",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/http.PerformanceResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "invalid_input: portfolio_id is not a UUID, range is missing or unknown, benchmarks has an unknown or repeated symbol",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "unauthenticated",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "not_found",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        }
+                    },
+                    "429": {
+                        "description": "rate_limited: too many new symbols this hour",
+                        "schema": {
+                            "$ref": "#/definitions/http.ErrorResponse"
+                        },
+                        "headers": {
+                            "Retry-After": {
+                                "type": "integer",
+                                "description": "Seconds to wait"
+                            }
                         }
                     },
                     "500": {
@@ -2574,6 +2762,65 @@
                 }
             }
         },
+        "http.BenchmarkPerformanceResponse": {
+            "type": "object",
+            "required": [
+                "excess_return_percent",
+                "label",
+                "points",
+                "return_percent",
+                "symbol"
+            ],
+            "properties": {
+                "excess_return_percent": {
+                    "type": "string",
+                    "x-nullable": true,
+                    "example": "6.3"
+                },
+                "label": {
+                    "type": "string",
+                    "example": "S\u0026P 500 (SPY)"
+                },
+                "points": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/http.BenchmarkPointResponse"
+                    }
+                },
+                "return_percent": {
+                    "type": "string",
+                    "x-nullable": true,
+                    "example": "12.1"
+                },
+                "symbol": {
+                    "type": "string",
+                    "enum": [
+                        "SPY",
+                        "QQQ"
+                    ],
+                    "example": "SPY"
+                }
+            }
+        },
+        "http.BenchmarkPointResponse": {
+            "type": "object",
+            "required": [
+                "date",
+                "return_percent"
+            ],
+            "properties": {
+                "date": {
+                    "type": "string",
+                    "format": "date",
+                    "example": "2025-11-13"
+                },
+                "return_percent": {
+                    "type": "string",
+                    "x-nullable": true,
+                    "example": "0.8"
+                }
+            }
+        },
         "http.CSRFResponse": {
             "type": "object",
             "required": [
@@ -2814,6 +3061,138 @@
                 }
             }
         },
+        "http.PerformancePointResponse": {
+            "type": "object",
+            "required": [
+                "date",
+                "market_value",
+                "return_percent"
+            ],
+            "properties": {
+                "date": {
+                    "type": "string",
+                    "format": "date",
+                    "example": "2025-11-13"
+                },
+                "market_value": {
+                    "type": "string",
+                    "x-nullable": true,
+                    "example": "1012.5"
+                },
+                "return_percent": {
+                    "type": "string",
+                    "x-nullable": true,
+                    "example": "1.25"
+                }
+            }
+        },
+        "http.PerformanceRangeResponse": {
+            "type": "object",
+            "required": [
+                "from",
+                "to"
+            ],
+            "properties": {
+                "from": {
+                    "type": "string",
+                    "format": "date",
+                    "x-nullable": true,
+                    "example": "2025-11-12"
+                },
+                "to": {
+                    "type": "string",
+                    "format": "date",
+                    "x-nullable": true,
+                    "example": "2026-11-10"
+                }
+            }
+        },
+        "http.PerformanceResponse": {
+            "type": "object",
+            "required": [
+                "adjustment",
+                "benchmarks",
+                "coverage",
+                "currency",
+                "data_through",
+                "fees_included",
+                "interval",
+                "is_demo",
+                "method",
+                "portfolio",
+                "range",
+                "source"
+            ],
+            "properties": {
+                "adjustment": {
+                    "type": "string",
+                    "enum": [
+                        "raw"
+                    ],
+                    "example": "raw"
+                },
+                "benchmarks": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/http.BenchmarkPerformanceResponse"
+                    }
+                },
+                "coverage": {
+                    "type": "string",
+                    "enum": [
+                        "complete",
+                        "partial",
+                        "unavailable"
+                    ],
+                    "example": "complete"
+                },
+                "currency": {
+                    "type": "string",
+                    "enum": [
+                        "USD"
+                    ],
+                    "example": "USD"
+                },
+                "data_through": {
+                    "type": "string",
+                    "format": "date",
+                    "x-nullable": true,
+                    "example": "2026-11-10"
+                },
+                "fees_included": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "interval": {
+                    "type": "string",
+                    "enum": [
+                        "1d"
+                    ],
+                    "example": "1d"
+                },
+                "is_demo": {
+                    "type": "boolean",
+                    "example": false
+                },
+                "method": {
+                    "type": "string",
+                    "enum": [
+                        "time_weighted"
+                    ],
+                    "example": "time_weighted"
+                },
+                "portfolio": {
+                    "$ref": "#/definitions/http.PortfolioPerformanceResponse"
+                },
+                "range": {
+                    "$ref": "#/definitions/http.PerformanceRangeResponse"
+                },
+                "source": {
+                    "type": "string",
+                    "example": "alpaca"
+                }
+            }
+        },
         "http.PortfolioPageResponse": {
             "type": "object",
             "required": [
@@ -2831,6 +3210,26 @@
                     "type": "string",
                     "x-nullable": true,
                     "example": "eyJrIjoicG9ydGZvbGlvcyJ9"
+                }
+            }
+        },
+        "http.PortfolioPerformanceResponse": {
+            "type": "object",
+            "required": [
+                "points",
+                "return_percent"
+            ],
+            "properties": {
+                "points": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/http.PerformancePointResponse"
+                    }
+                },
+                "return_percent": {
+                    "type": "string",
+                    "x-nullable": true,
+                    "example": "18.4"
                 }
             }
         },

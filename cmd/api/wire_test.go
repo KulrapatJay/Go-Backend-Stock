@@ -488,3 +488,49 @@ func TestBuildPriceHistoryRejectsAProductionDemoProvider(t *testing.T) {
 		t.Fatal("buildPriceHistory(production, demo) error = nil, want a refusal")
 	}
 }
+
+func TestBuildServesThePerformanceRoutes(t *testing.T) {
+	cfg := wireConfig(t, "http://localhost:8080")
+	pool, err := pgxpool.New(t.Context(), cfg.DatabaseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pool.Close()
+	log := slog.New(slog.NewJSONHandler(io.Discard, nil))
+
+	auth, err := buildAuth(cfg, pool, log)
+	if err != nil {
+		t.Fatalf("buildAuth() error = %v", err)
+	}
+	defer func() { _ = auth.mail.Close(context.Background()) }()
+	performance, err := buildPerformance(cfg, pool, log)
+	if err != nil {
+		t.Fatalf("buildPerformance() error = %v", err)
+	}
+	if performance.Service == nil {
+		t.Fatal("buildPerformance() left the service unset")
+	}
+
+	app := httpadapter.NewServer(httpadapter.Options{Logger: log, Readiness: pool, Auth: auth.options, Performance: performance})
+	for _, path := range []string{
+		"/api/v1/performance?range=1m",
+		"/api/v1/portfolios/0b6b6c3e-3c0e-4b9e-9f3b-6f2f3b1c9d11/performance?range=1m",
+	} {
+		resp, err := app.Test(httptest.NewRequestWithContext(t.Context(), nethttp.MethodGet, path, nil))
+		if err != nil {
+			t.Fatal(err)
+		}
+		_ = resp.Body.Close()
+		if resp.StatusCode != nethttp.StatusUnauthorized {
+			t.Errorf("GET %s without a session = %d, want 401 (404 means the route is not wired)", path, resp.StatusCode)
+		}
+	}
+}
+
+// A production API must not start with the demo provider's bars.
+func TestBuildPerformanceRejectsAProductionDemoProvider(t *testing.T) {
+	cfg := config.Config{Env: config.EnvProduction, PriceProvider: config.ProviderDemo}
+	if _, err := buildPerformance(cfg, nil, slog.New(slog.NewJSONHandler(io.Discard, nil))); err == nil {
+		t.Fatal("buildPerformance(production, demo) error = nil, want a refusal")
+	}
+}
