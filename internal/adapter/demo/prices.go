@@ -11,7 +11,7 @@ import (
 // demoPrices are sample prices in USD for the demo list. They are invented numbers, not market data.
 var demoPrices = map[string]string{
 	"AAPL": "200", "MSFT": "420", "NVDA": "130", "GOOGL": "175",
-	"AMZN": "190", "META": "520", "TSLA": "250", "SPY": "540",
+	"AMZN": "190", "META": "520", "TSLA": "250", "SPY": "540", "QQQ": "480",
 }
 
 // Prices is the demo port.PriceProvider: fixed sample prices for the demo list, marked as demo data.

@@ -163,13 +163,15 @@ func (failingAudit) Append(context.Context, domain.AuditEvent) error {
 }
 
 type harnessConfig struct {
-	hasher     service.Argon2Params
-	floor      time.Duration
-	failAudit  bool
-	portfolios bool                  // serve the portfolio routes
-	trades     bool                  // serve the transaction routes (needs portfolios)
-	valuation  bool                  // serve the holdings and valuation routes
-	identity   port.IdentityProvider // nil = Google sign-in off
+	hasher      service.Argon2Params
+	floor       time.Duration
+	failAudit   bool
+	portfolios  bool                  // serve the portfolio routes
+	trades      bool                  // serve the transaction routes (needs portfolios)
+	valuation   bool                  // serve the holdings and valuation routes
+	bars        bool                  // serve the daily bars route
+	performance bool                  // serve the performance routes (needs portfolios and trades)
+	identity    port.IdentityProvider // nil = Google sign-in off
 }
 
 // testOTPSecret keys the OTP digests of every harness, so a test can build the digest of a code.
@@ -295,6 +297,34 @@ func newAuthHarness(t *testing.T, opts ...harnessOption) *authHarness {
 		valuation, err := service.NewValuation(service.ValuationDeps{Store: store, Prices: prices, Clock: clock, Logger: log})
 		must(err)
 		options.Valuation = ValuationOptions{Service: valuation}
+	}
+	if cfg.bars {
+		if instruments == nil {
+			instruments = &fakeInstrumentProvider{calls: map[string]int{}}
+		}
+		if prices == nil {
+			prices = &fakePriceProvider{prices: map[string]string{}}
+		}
+		history, err := service.NewPriceHistory(service.PriceHistoryDeps{
+			Store: store, UnitOfWork: uow, Prices: prices, Instruments: instruments, Source: domain.BarSourceAlpaca,
+			Clock: clock, Limits: limits, Logger: log,
+		})
+		must(err)
+		options.PriceHistory = PriceHistoryOptions{Service: history}
+	}
+	if cfg.performance {
+		if instruments == nil {
+			instruments = &fakeInstrumentProvider{calls: map[string]int{}}
+		}
+		if prices == nil {
+			prices = &fakePriceProvider{prices: map[string]string{}}
+		}
+		performance, err := service.NewPerformance(service.PerformanceDeps{
+			Store: store, UnitOfWork: uow, Prices: prices, Instruments: instruments, Source: domain.BarSourceAlpaca,
+			Clock: clock, Limits: limits, Logger: log,
+		})
+		must(err)
+		options.Performance = PerformanceOptions{Service: performance}
 	}
 	app := NewServer(options)
 	return &authHarness{

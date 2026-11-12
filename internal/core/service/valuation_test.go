@@ -88,6 +88,11 @@ type valPrices struct {
 	deadline time.Time
 }
 
+// DailyBars is not used by valuation.
+func (f *valPrices) DailyBars(context.Context, []domain.Symbol, domain.TradingDate, domain.TradingDate) (domain.DailyBarBatch, error) {
+	return domain.DailyBarBatch{}, errors.New("valPrices: daily bars are not part of valuation")
+}
+
 func (f *valPrices) Quotes(ctx context.Context, symbols []domain.Symbol, cutoff time.Time) (domain.QuoteBatch, error) {
 	f.calls++
 	f.symbols, f.cutoff = symbols, cutoff

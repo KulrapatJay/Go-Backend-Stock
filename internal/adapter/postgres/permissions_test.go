@@ -56,7 +56,16 @@ func TestRuntimeRolePrivileges(t *testing.T) {
 		{`DELETE FROM app.instruments WHERE false`, false},
 		{`UPDATE app.auth_providers SET provider = provider WHERE false`, false},
 		{`DELETE FROM app.rate_limit_events WHERE false`, false},
+		// Daily bars are market data copies: added, never changed or deleted by the API.
+		{`UPDATE app.price_bars SET close = close WHERE false`, false},
+		{`DELETE FROM app.price_bars WHERE false`, false},
+		{`DELETE FROM app.price_bar_coverage WHERE false`, false},
 		// What the repositories need.
+		{`SELECT 1 FROM app.price_bars LIMIT 1`, true},
+		{`INSERT INTO app.price_bars SELECT * FROM app.price_bars WHERE false`, true},
+		{`SELECT 1 FROM app.price_bar_coverage LIMIT 1`, true},
+		{`INSERT INTO app.price_bar_coverage SELECT * FROM app.price_bar_coverage WHERE false`, true},
+		{`UPDATE app.price_bar_coverage SET covered_through = covered_through WHERE false`, true},
 		{`SELECT 1 FROM app.users LIMIT 1`, true},
 		{`UPDATE app.users SET updated_at = updated_at WHERE false`, true},
 		{`UPDATE app.sessions SET revoked_at = revoked_at WHERE false`, true},
@@ -90,6 +99,8 @@ func TestMaintenanceRolePrivileges(t *testing.T) {
 		{`UPDATE app.audit_events SET outcome = 'success' WHERE false`, false},
 		{`SELECT 1 FROM app.users LIMIT 1`, false},
 		{`SELECT 1 FROM app.portfolios LIMIT 1`, false},
+		{`SELECT 1 FROM app.price_bars LIMIT 1`, false},
+		{`DELETE FROM app.price_bars WHERE false`, false},
 		{`DELETE FROM app.transactions WHERE false`, false},
 		{`CREATE TABLE app.should_not_exist (id int)`, false},
 	})

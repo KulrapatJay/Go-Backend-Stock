@@ -2,12 +2,12 @@ package postgres
 
 import "testing"
 
-// TestMigrationsCreateEveryTable checks that migrations 00002-00004 created every phase 1 table in
+// TestMigrationsCreateEveryTable checks that migrations 00002-00008 created every table in
 // schema app (and nothing else there besides goose's version table).
 func TestMigrationsCreateEveryTable(t *testing.T) {
 	want := []string{
 		"audit_events", "auth_providers", "goose_db_version", "idempotency_keys", "instruments", "oauth_flows",
-		"otp_challenges", "portfolios", "rate_limit_events", "rate_limit_keys", "sessions", "transactions", "users",
+		"otp_challenges", "portfolios", "price_bar_coverage", "price_bars", "rate_limit_events", "rate_limit_keys", "sessions", "transactions", "users",
 	}
 	rows, err := openPool(t, "TEST_ADMIN_DATABASE_URL").Query(t.Context(),
 		`SELECT tablename FROM pg_tables WHERE schemaname = 'app' ORDER BY tablename`)

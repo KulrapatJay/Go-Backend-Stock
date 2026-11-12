@@ -68,7 +68,7 @@ var fiberParam = regexp.MustCompile(`:([A-Za-z_][A-Za-z0-9_]*)`)
 // the Swagger UI and spec routes document themselves.
 func TestEveryRouteIsDocumented(t *testing.T) {
 	spec, _ := readSpec(t)
-	h := newAuthHarness(t, withValuation())
+	h := newAuthHarness(t, withValuation(), withBars(), withPerformance())
 
 	registered := map[string]bool{}
 	heads := map[string]bool{}

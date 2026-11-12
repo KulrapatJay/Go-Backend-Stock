@@ -27,6 +27,16 @@ type fakePriceProvider struct {
 	calls   int
 	asked   [][]string
 	cutoffs []time.Time
+
+	bars     map[string][]domain.DailyBar // symbol -> daily bars, oldest first
+	barsDown bool
+	barCalls []barCall
+}
+
+// barCall is one DailyBars request the fake received.
+type barCall struct {
+	symbols  []domain.Symbol
+	from, to domain.TradingDate
 }
 
 func (f *fakePriceProvider) setPrice(symbol, price string) {
@@ -45,6 +55,27 @@ func (f *fakePriceProvider) callCount() int {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return f.calls
+}
+
+// DailyBars serves the bars a test gave setBars, as the real provider would: only the days of the range
+// that lie before today in New York, oldest first, and an empty list for a symbol it holds nothing for.
+func (f *fakePriceProvider) DailyBars(_ context.Context, symbols []domain.Symbol, from, to domain.TradingDate) (domain.DailyBarBatch, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.barCalls = append(f.barCalls, barCall{symbols: symbols, from: from, to: to})
+	if f.barsDown {
+		return domain.DailyBarBatch{}, errors.New("price provider is down")
+	}
+	batch := domain.DailyBarBatch{Bars: map[string][]domain.DailyBar{}, Source: domain.BarSourceAlpaca, Feed: "sip"}
+	for _, symbol := range symbols {
+		batch.Bars[symbol.String()] = []domain.DailyBar{}
+		for _, b := range f.bars[symbol.String()] {
+			if !b.Date.Before(from) && !b.Date.After(to) {
+				batch.Bars[symbol.String()] = append(batch.Bars[symbol.String()], b)
+			}
+		}
+	}
+	return batch, nil
 }
 
 func (f *fakePriceProvider) Quotes(_ context.Context, symbols []domain.Symbol, cutoff time.Time) (domain.QuoteBatch, error) {
