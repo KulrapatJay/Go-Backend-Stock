@@ -32,3 +32,4 @@
 | [0022](0022-two-step-password-reset.md) | Password reset แบบสองขั้นด้วย reset token ที่ผูกกับ browser | Accepted |
 | [0023](0023-valuation-percentages-and-account-summary.md) | เปอร์เซ็นต์ใน valuation, สรุปรวมทุกพอร์ต และชนิดราคาใน quote | Proposed |
 | [0024](0024-daily-price-bars-table.md) | ราคาปิดรายวันย้อนหลังแบบไม่ปรับ เก็บในตาราง `price_bars` | Proposed |
+| [0025](0025-portfolio-performance-time-weighted.md) | มูลค่าพอร์ตรายวันและผลตอบแทนแบบ time-weighted เทียบ benchmark | Proposed |
