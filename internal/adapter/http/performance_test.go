@@ -1,6 +1,7 @@
 package http
 
 import (
+	"context"
 	"encoding/json"
 	nethttp "net/http"
 	"net/url"
@@ -49,10 +50,18 @@ func (h *authHarness) atNoon(n int) time.Duration {
 }
 
 // setBenchmarks gives SPY and QQQ the same three days in every test. The bars are stored in the shared test
-// database, so a test that asked for a benchmark without them would leave a day recorded as empty for the
-// others.
+// database, where the runtime role cannot delete them, so this first removes what an earlier run or a real
+// provider left for the two ETFs (the admin role may), and every test that asks for a benchmark calls it.
 func (h *authHarness) setBenchmarks(t *testing.T) {
 	t.Helper()
+	for _, stmt := range []string{
+		`DELETE FROM app.price_bars WHERE source = 'alpaca' AND instrument_id IN (SELECT id FROM app.instruments WHERE symbol IN ('SPY', 'QQQ'))`,
+		`DELETE FROM app.price_bar_coverage WHERE source = 'alpaca' AND instrument_id IN (SELECT id FROM app.instruments WHERE symbol IN ('SPY', 'QQQ'))`,
+	} {
+		if _, err := h.admin.Exec(context.Background(), stmt); err != nil {
+			t.Fatalf("clear the stored bars of SPY and QQQ: %v", err)
+		}
+	}
 	for symbol, closes := range map[string][3]string{"SPY": {"500", "505", "510"}, "QQQ": {"400", "404", "408"}} {
 		h.setBars(symbol,
 			httpBar(t, h.day(3), closes[0], closes[0], closes[0], closes[0], "1"),
