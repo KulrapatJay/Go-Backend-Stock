@@ -18,104 +18,119 @@ import (
 // a test can check what was read and written and for which provider.
 
 type fakeBarRepo struct {
-	log      *callLog
-	bars     map[string]domain.DailyBar // key: source/date
-	coverage map[string]domain.BarCoverage
-	saves    []savedBars
-	sources  []domain.BarSource
-	saveErr  error
-	readErr  error
+	log       *callLog
+	defaultID domain.ID                     // the instrument seedCoverage seeds
+	bars      map[string]domain.DailyBar    // key: source/instrument/date
+	coverage  map[string]domain.BarCoverage // key: source/instrument
+	saves     []savedBars
+	sources   []domain.BarSource
+	saveErr   error
+	readErr   error
 }
 
 type savedBars struct {
-	bars    []domain.DailyBar
-	fetched domain.DateRange
-	at      time.Time
+	instrument domain.ID
+	bars       []domain.DailyBar
+	fetched    domain.DateRange
+	at         time.Time
 }
 
 func newFakeBarRepo(log *callLog) *fakeBarRepo {
 	return &fakeBarRepo{log: log, bars: map[string]domain.DailyBar{}, coverage: map[string]domain.BarCoverage{}}
 }
 
-func (f *fakeBarRepo) key(source domain.BarSource) string { return string(source) }
+func (f *fakeBarRepo) key(id domain.ID, source domain.BarSource) string {
+	return string(source) + "/" + id.String()
+}
 
-func (f *fakeBarRepo) Coverage(_ context.Context, _ domain.ID, source domain.BarSource) (domain.BarCoverage, bool, error) {
+func (f *fakeBarRepo) Coverage(_ context.Context, id domain.ID, source domain.BarSource) (domain.BarCoverage, bool, error) {
 	f.log.add("PriceBars.Coverage")
 	f.sources = append(f.sources, source)
 	if f.readErr != nil {
 		return domain.BarCoverage{}, false, f.readErr
 	}
-	c, ok := f.coverage[f.key(source)]
+	c, ok := f.coverage[f.key(id, source)]
 	return c, ok, nil
 }
 
-func (f *fakeBarRepo) Range(_ context.Context, _ domain.ID, source domain.BarSource, from, to domain.TradingDate) ([]domain.DailyBar, error) {
+func (f *fakeBarRepo) Range(_ context.Context, id domain.ID, source domain.BarSource, from, to domain.TradingDate) ([]domain.DailyBar, error) {
 	f.log.add("PriceBars.Range")
 	f.sources = append(f.sources, source)
 	if f.readErr != nil {
 		return nil, f.readErr
 	}
+	return f.barsOf(id, source, from, to), nil
+}
+
+func (f *fakeBarRepo) barsOf(id domain.ID, source domain.BarSource, from, to domain.TradingDate) []domain.DailyBar {
 	var out []domain.DailyBar
 	for k, b := range f.bars {
-		if strings.HasPrefix(k, f.key(source)+"/") && !b.Date.Before(from) && !b.Date.After(to) {
+		if strings.HasPrefix(k, f.key(id, source)+"/") && !b.Date.Before(from) && !b.Date.After(to) {
 			out = append(out, b)
 		}
 	}
-	slices.SortFunc(out, func(a, b domain.DailyBar) int { return a.Date.DaysUntil(b.Date) * -1 })
-	return out, nil
+	slices.SortFunc(out, func(a, b domain.DailyBar) int { return b.Date.DaysUntil(a.Date) })
+	return out
 }
 
-// Coverages and RangeMany serve every instrument the same data: this fake keeps one instrument's bars per
-// source, which is all the PriceHistory tests need.
-func (f *fakeBarRepo) Coverages(ctx context.Context, ids []domain.ID, source domain.BarSource) (map[domain.ID]domain.BarCoverage, error) {
+func (f *fakeBarRepo) Coverages(_ context.Context, ids []domain.ID, source domain.BarSource) (map[domain.ID]domain.BarCoverage, error) {
+	f.log.add("PriceBars.Coverages")
+	f.sources = append(f.sources, source)
+	if f.readErr != nil {
+		return nil, f.readErr
+	}
 	out := map[domain.ID]domain.BarCoverage{}
 	for _, id := range ids {
-		if c, ok, err := f.Coverage(ctx, id, source); err != nil {
-			return nil, err
-		} else if ok {
+		if c, ok := f.coverage[f.key(id, source)]; ok {
 			out[id] = c
 		}
 	}
 	return out, nil
 }
 
-func (f *fakeBarRepo) RangeMany(ctx context.Context, ids []domain.ID, source domain.BarSource, from, to domain.TradingDate) (map[domain.ID][]domain.DailyBar, error) {
+func (f *fakeBarRepo) RangeMany(_ context.Context, ids []domain.ID, source domain.BarSource, from, to domain.TradingDate) (map[domain.ID][]domain.DailyBar, error) {
+	f.log.add("PriceBars.RangeMany")
+	f.sources = append(f.sources, source)
+	if f.readErr != nil {
+		return nil, f.readErr
+	}
 	out := map[domain.ID][]domain.DailyBar{}
 	for _, id := range ids {
-		bars, err := f.Range(ctx, id, source, from, to)
-		if err != nil {
-			return nil, err
-		}
-		if len(bars) > 0 {
+		if bars := f.barsOf(id, source, from, to); len(bars) > 0 {
 			out[id] = bars
 		}
 	}
 	return out, nil
 }
 
-func (f *fakeBarRepo) Save(_ context.Context, _ domain.ID, source domain.BarSource, bars []domain.DailyBar, fetched domain.DateRange, now time.Time) error {
+func (f *fakeBarRepo) Save(_ context.Context, id domain.ID, source domain.BarSource, bars []domain.DailyBar, fetched domain.DateRange, now time.Time) error {
 	f.log.add("PriceBars.Save")
 	f.sources = append(f.sources, source)
 	if f.saveErr != nil {
 		return f.saveErr
 	}
-	f.saves = append(f.saves, savedBars{bars: bars, fetched: fetched, at: now})
+	f.saves = append(f.saves, savedBars{instrument: id, bars: bars, fetched: fetched, at: now})
 	for _, b := range bars {
-		f.bars[f.key(source)+"/"+b.Date.String()] = b
+		f.bars[f.key(id, source)+"/"+b.Date.String()] = b
 	}
-	if c, had := f.coverage[f.key(source)]; had {
-		f.coverage[f.key(source)] = c.ExtendedBy(fetched.From, fetched.To)
+	if c, had := f.coverage[f.key(id, source)]; had {
+		f.coverage[f.key(id, source)] = c.ExtendedBy(fetched.From, fetched.To)
 	} else {
-		f.coverage[f.key(source)] = domain.BarCoverage{From: fetched.From, Through: fetched.To}
+		f.coverage[f.key(id, source)] = domain.BarCoverage{From: fetched.From, Through: fetched.To}
 	}
 	return nil
 }
 
-// seedCoverage marks from..through as already fetched for the source, with the given bars stored.
+// seedCoverage marks from..through as already fetched for the source, with the given bars stored, for the
+// default instrument.
 func (f *fakeBarRepo) seedCoverage(source domain.BarSource, from, through domain.TradingDate, bars ...domain.DailyBar) {
-	f.coverage[f.key(source)] = domain.BarCoverage{From: from, Through: through}
+	f.seedFor(f.defaultID, source, from, through, bars...)
+}
+
+func (f *fakeBarRepo) seedFor(id domain.ID, source domain.BarSource, from, through domain.TradingDate, bars ...domain.DailyBar) {
+	f.coverage[f.key(id, source)] = domain.BarCoverage{From: from, Through: through}
 	for _, b := range bars {
-		f.bars[f.key(source)+"/"+b.Date.String()] = b
+		f.bars[f.key(id, source)+"/"+b.Date.String()] = b
 	}
 }
 
@@ -141,7 +156,11 @@ func (f *fakeBarsProvider) DailyBars(ctx context.Context, symbols []domain.Symbo
 	if err != nil {
 		return domain.DailyBarBatch{}, err
 	}
-	return domain.DailyBarBatch{Bars: map[string][]domain.DailyBar{symbols[0].String(): bars}, Source: f.source, Feed: f.source.Feed()}, nil
+	batch := domain.DailyBarBatch{Bars: map[string][]domain.DailyBar{}, Source: f.source, Feed: f.source.Feed()}
+	for _, sym := range symbols {
+		batch.Bars[sym.String()] = bars
+	}
+	return batch, nil
 }
 
 type fakeInstrumentLookup struct {
@@ -200,6 +219,7 @@ func newTestHistory(t *testing.T) testHistory {
 	aapl := mustInstrument(t, "AAPL", clock.Now())
 	insts := &fakeInstruments{log: log, bySymbol: map[string]domain.Instrument{"AAPL": aapl}}
 	repo := newFakeBarRepo(log)
+	repo.defaultID = aapl.ID
 	limits := &fakeRateLimits{decision: domain.RateLimitDecision{Allowed: true}}
 	scopes := &[]domain.RateLimitScope{}
 	th := testHistory{
@@ -270,8 +290,6 @@ func (th testHistory) provide(t *testing.T, dates ...string) {
 		th.provided[d] = serviceBar(t, d)
 	}
 }
-
-func rangeString(r domain.DateRange) string { return r.From.String() + ".." + r.To.String() }
 
 func askedRanges(th testHistory) []string {
 	out := make([]string, len(th.prices.asked))

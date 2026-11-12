@@ -29,7 +29,7 @@ type PriceHistoryDeps struct {
 // answered without the provider (ADR-0024).
 type PriceHistory struct {
 	store    port.Repositories
-	prices   port.PriceProvider
+	filler   barFiller
 	verifier instrumentVerifier
 	source   domain.BarSource
 	clock    port.Clock
@@ -47,7 +47,8 @@ func NewPriceHistory(d PriceHistoryDeps) (*PriceHistory, error) {
 		return nil, errors.New("price history service needs the source of the price provider (alpaca or demo)")
 	}
 	return &PriceHistory{
-		store: d.Store, prices: d.Prices, source: d.Source, clock: d.Clock, log: d.Logger,
+		store: d.Store, source: d.Source, clock: d.Clock, log: d.Logger,
+		filler:   barFiller{store: d.Store, prices: d.Prices, source: d.Source, clock: d.Clock},
 		verifier: instrumentVerifier{provider: d.Instruments, store: d.Store, uow: d.UnitOfWork, clock: d.Clock, limits: d.Limits, log: d.Logger},
 	}, nil
 }
@@ -160,18 +161,5 @@ func (s *PriceHistory) instrumentFor(ctx context.Context, p domain.Principal, sy
 func (s *PriceHistory) fetch(ctx context.Context, instrument domain.Instrument, r domain.DateRange, meta domain.RequestMeta) (providerErr, err error) {
 	askCtx, cancel := context.WithTimeout(ctx, priceTimeout)
 	defer cancel()
-	batch, askErr := s.prices.DailyBars(askCtx, []domain.Symbol{instrument.Symbol}, r.From, r.To)
-	if askErr != nil {
-		return askErr, nil
-	}
-	if batch.Source != s.source {
-		return nil, fmt.Errorf("%w: the price provider answered as %q but the service is set to %q", domain.ErrInternal, batch.Source, s.source)
-	}
-	bars := batch.Bars[instrument.Symbol.String()]
-	for _, b := range bars {
-		if b.Date.Before(r.From) || b.Date.After(r.To) {
-			return nil, fmt.Errorf("%w: the price provider sent a bar outside the range asked", domain.ErrInternal)
-		}
-	}
-	return nil, s.store.PriceBars().Save(ctx, instrument.ID, s.source, bars, r, NowForStorage(s.clock))
+	return s.filler.fetchRange(askCtx, []domain.Instrument{instrument}, r)
 }
