@@ -404,3 +404,20 @@ func TestInstrumentsHeldSince(t *testing.T) {
 		t.Errorf("no trades: got %v", got)
 	}
 }
+
+func TestPerformanceDoesNotBreakWhenASaleFeeIsAboveItsProceeds(t *testing.T) {
+	aapl, pf := mustID(t), mustID(t)
+	// D1: 3 shares worth 3. D2: all sold at 0.01 with a fee of 2.03, so the sale brings in 0.03 - 2.03 = -2.
+	out := domain.ComputePerformance(domain.PerformanceInput{
+		Trades: []domain.Transaction{
+			perfTrade(t, aapl, pf, domain.SideBuy, "3", "1", "0", perfAt(1), 1),
+			perfTrade(t, aapl, pf, domain.SideSell, "3", "0.01", "2.03", perfAt(2), 2),
+		},
+		Bars:    map[domain.ID][]domain.DailyBar{aapl: perfBars(t, "1:1", "2:0.01")},
+		Start:   perfDay(1),
+		Through: perfDay(2),
+	})
+	// (0 - 2) / 3 = -0.6666...667 rounded half-even at 28 places, so the return is that - 1, times 100. A negative
+	// numerator is divided and rounded like any other and nothing panics.
+	requireDecimals(t, "return_percent", perfReturns(out), []string{"0", "-166.66666666666666666666666667"})
+}
