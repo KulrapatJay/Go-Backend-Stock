@@ -280,11 +280,19 @@ func TestTradesAtTheSameTimeReplayInSequenceOrder(t *testing.T) {
 		}
 		// Rewrite S so its live row lies after C in the table: rows that come back in storage
 		// order, with no sequence tie-breaker, would replay C before S and accept the delete.
-		if _, err := h.admin.Exec(context.Background(), `UPDATE app.transactions SET updated_at = updated_at WHERE id = $1`, sID); err != nil {
-			t.Fatalf("move S in the table: %v", err)
+		// An UPDATE writes the new version into the first free slot of the page, which can be one
+		// that an earlier dead version freed and so lie before C; rewrite until it lies after.
+		var stored []string
+		for range 50 {
+			if _, err := h.admin.Exec(context.Background(), `UPDATE app.transactions SET updated_at = updated_at WHERE id = $1`, sID); err != nil {
+				t.Fatalf("move S in the table: %v", err)
+			}
+			if stored = h.storageOrder(t, p.ID, day(2)); slices.Equal(stored, []string{cID, sID}) {
+				break
+			}
 		}
-		if stored := h.storageOrder(t, p.ID, day(2)); !slices.Equal(stored, []string{cID, sID}) {
-			t.Fatalf("rows at the same time in storage order = %v, want C then S", stored)
+		if !slices.Equal(stored, []string{cID, sID}) {
+			t.Fatalf("rows at the same time in storage order = %v after 50 rewrites, want C then S", stored)
 		}
 		if ids := b.tradeIDs(p.ID); !slices.Equal(ids, []string{cID, sID, a.ID}) {
 			t.Errorf("list order = %v, want C, S, A by sequence", ids)
