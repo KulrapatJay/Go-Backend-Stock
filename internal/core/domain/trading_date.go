@@ -74,6 +74,23 @@ func (d TradingDate) AddDays(n int) TradingDate {
 	return TradingDate{day: d.day.AddDate(0, 0, n)}
 }
 
+// AddMonths returns the date n calendar months later (earlier when n is negative). A day the target
+// month does not have is cut to its last day: 31 March minus one month is the last day of February.
+func (d TradingDate) AddMonths(n int) TradingDate {
+	y, m, day := d.day.Date()
+	first := time.Date(y, m+time.Month(n), 1, 0, 0, 0, 0, time.UTC)
+	last := first.AddDate(0, 1, -1).Day()
+	if day > last {
+		day = last
+	}
+	return TradingDate{day: time.Date(first.Year(), first.Month(), day, 0, 0, 0, 0, time.UTC)}
+}
+
+// StartOfYear returns 1 January of the year of d.
+func (d TradingDate) StartOfYear() TradingDate {
+	return NewTradingDate(d.day.Year(), time.January, 1)
+}
+
 // DaysUntil returns how many calendar days after d the date o is (negative when o is earlier).
 func (d TradingDate) DaysUntil(o TradingDate) int {
 	return int(o.day.Sub(d.day).Hours() / 24)
