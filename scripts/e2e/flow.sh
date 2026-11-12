@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Drives the whole backend flow through HTTP, as a browser would, against a running stack.
 #
-#   scripts/e2e/flow.sh full           sign up, verify email, login, portfolios, trades, valuation, daily bars,
+#   scripts/e2e/flow.sh full           sign up, verify email, login, portfolios, trades, valuation, daily bars, performance,
 #                                      ownership, optimistic locking, logout, password reset
 #   scripts/e2e/flow.sh provider-down  the price provider cannot be reached: known symbols still
 #                                      record, new symbols get 503, valuation is "unavailable"
@@ -168,6 +168,37 @@ flow_full() {
   call "$WORK/anon.jar" GET "/instruments/AAPL/bars?from=2026-10-01&to=2026-10-09"
   expect_error 401 unauthenticated
 
+  step "performance against SPY and QQQ is exact, daily, and needs a valid request"
+  call "$jar_a" GET "/portfolios/$long/performance?range=1m&benchmarks=SPY,QQQ"
+  expect_status 200
+  expect_json .method time_weighted
+  expect_json .fees_included true
+  expect_json .adjustment raw
+  expect_json .interval 1d
+  expect_json .is_demo true
+  expect_json .coverage complete
+  expect_json '.portfolio.points | length > 0' true
+  expect_json '.portfolio.points[0].return_percent' 0
+  expect_json '.portfolio.points[0].market_value | type' string
+  expect_json '.range.from == .portfolio.points[0].date' true
+  expect_json '.benchmarks | length' 2
+  expect_json '.benchmarks[0].symbol' SPY
+  expect_json '.benchmarks[1].symbol' QQQ
+  expect_json '.benchmarks[0].points[0].return_percent' 0
+  call "$jar_a" GET "/performance?range=1m&benchmarks=SPY,QQQ"
+  expect_status 200
+  expect_json .method time_weighted
+  expect_json '.portfolio.points | length > 0' true
+  call "$jar_a" GET "/performance?range=1m"
+  expect_status 200
+  expect_json '.benchmarks | length' 0
+  call "$jar_a" GET "/performance"
+  expect_error 400 invalid_input
+  call "$jar_a" GET "/performance?range=1m&benchmarks=AAPL"
+  expect_error 400 invalid_input
+  call "$WORK/anon.jar" GET "/performance?range=1m"
+  expect_error 401 unauthenticated
+
   step "another user cannot see or change any of it"
   call "$jar_b" GET "/portfolios/$short"
   expect_error 404 not_found
@@ -190,6 +221,8 @@ flow_full() {
   call "$jar_b" GET "/portfolios/$short/holdings"
   expect_error 404 not_found
   call "$jar_b" GET "/portfolios/$short/valuation"
+  expect_error 404 not_found
+  call "$jar_b" GET "/portfolios/$short/performance?range=1m"
   expect_error 404 not_found
   call "$jar_b" GET /portfolios
   expect_status 200

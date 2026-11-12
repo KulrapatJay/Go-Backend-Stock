@@ -293,7 +293,23 @@
 - [x] `GET /api/v1/instruments/{symbol}/bars`, Swagger, wiring ใน `cmd/api`
 - [x] smoke test กับบัญชี Alpaca จริง (`make smoke-alpaca`)
 - [ ] ผู้ใช้ตรวจรับแล้วเปลี่ยน ADR-0024 เป็น Accepted
-- [ ] ขั้น 3-4: มูลค่าพอร์ตรายวันและผลตอบแทน time-weighted เทียบ SPY/QQQ (ต้องมี ADR และแผนแยก)
+- [x] ขั้น 3-4: ทำแล้วในข้อ B ข้างล่าง
+
+### B. มูลค่าพอร์ตรายวันและผลตอบแทน time-weighted เทียบ SPY/QQQ (ขั้น 3-4 ของกราฟเทียบดัชนี)
+
+**แผน:** [2026-11-12-portfolio-performance.md](2026-11-12-portfolio-performance.md) **การตัดสินใจ:** [ADR-0025](../../adr/0025-portfolio-performance-time-weighted.md) (Proposed) **ที่มา:** ข้อเสนอ H ของ frontend
+
+- [x] domain: `PerformanceRange`, `Benchmark`, `ComputePerformance`, `InstrumentsHeldSince` พร้อม golden tests ที่คำนวณด้วยมือ
+- [x] repository: `PriceBarRepository.Coverages` และ `RangeMany` (ไม่มี migration ใหม่)
+- [x] service: `barFiller` ใช้ร่วมกับ `PriceHistory`, `Performance` (เติมเป็นชุดละไม่เกิน 10 symbol, deadline ของการเติม, ตอบ `partial` หรือ 503 เมื่อ provider ล่ม)
+- [x] `GET /api/v1/portfolios/{portfolio_id}/performance` และ `GET /api/v1/performance`, Swagger, wiring ใน `cmd/api`
+- [x] `scripts/e2e/flow.sh full` ผ่านในโหมดเดโม (รวมขั้นราคารายวันของข้อ A ที่ค้างอยู่)
+- [x] วัดกับ Alpaca จริง (ผลอยู่ท้ายแผน)
+- [ ] ผู้ใช้ตรวจรับแล้วเปลี่ยน ADR-0025 เป็น Accepted
+
+### C. ตัวชี้วัดทางเทคนิค (ข้อ I RSI และข้อ J แนวรับ/แนวต้านของข้อเสนอ frontend) — ยังไม่เริ่ม
+
+ไม่อยู่ในขอบเขตเฟส 1 และไม่ขึ้นกับข้อ B ต้องให้เจ้าของโปรเจกต์ยืนยันว่าจะทำเมื่อไหร่ แล้วเขียน ADR กับแผนแยก
 
 ## วิธีเดินงานในแต่ละ milestone
 
